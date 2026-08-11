@@ -59,4 +59,22 @@ class FrequencyNgramPredictionEngine(
             )
         }
     }
+
+    override suspend fun saveWord(word: String) {
+        val normalized = word.trim().lowercase()
+        if (normalized.isEmpty()) return
+        val existing = wordDao.findExact(normalized)
+        wordDao.upsert(
+            WordEntity(
+                word = normalized,
+                frequency = (existing?.frequency ?: 0) + SAVE_WORD_BOOST,
+                isUserAdded = true,
+                lastUsedTimestamp = clock(),
+            ),
+        )
+    }
+
+    private companion object {
+        const val SAVE_WORD_BOOST = 50
+    }
 }

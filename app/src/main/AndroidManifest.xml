@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Normal-protection permission, granted automatically at install with no runtime prompt and
+         no data access — used only for the key-press haptic feedback. Does not affect the
+         offline-by-default claim (no network access is granted or used anywhere in this app). -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
     <application
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"

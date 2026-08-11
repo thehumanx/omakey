@@ -29,6 +29,10 @@ data class OmakeyTheme(
     val keyShape: KeyShape = KeyShape.ROUNDED,
     val keySpacingDp: Float = 4f,
     val fontFamily: FontSpec = FontSpec(),
+    // Default values below so a theme JSON already persisted on a user's device (missing these
+    // newer fields) still deserializes fine via kotlinx.serialization's optional-field handling.
+    val spacebarAccentColor: ColorSpec = ColorSpec(0xFF4A90D9),
+    val middleRowStripeColor: ColorSpec = ColorSpec(0x1FFFFFFF),
 )
 
 object ThemeSerializer {
@@ -51,6 +55,8 @@ object Presets {
         keyTextColor = ColorSpec(0xFF1A1A1A),
         keySpecialBackground = ColorSpec(0xFFE0E0E0),
         suggestionBarBackground = ColorSpec(0xFFFAFAFA),
+        spacebarAccentColor = ColorSpec(0xFFCFE3FA),
+        middleRowStripeColor = ColorSpec(0x14000000),
     )
 
     val Dark = OmakeyTheme(
@@ -63,6 +69,8 @@ object Presets {
         keyTextColor = ColorSpec(0xFFF2F2F2),
         keySpecialBackground = ColorSpec(0xFF3A3A3A),
         suggestionBarBackground = ColorSpec(0xFF161616),
+        spacebarAccentColor = ColorSpec(0xFF3D6FA8),
+        middleRowStripeColor = ColorSpec(0x1FFFFFFF),
     )
 
     val Accent = OmakeyTheme(
@@ -76,6 +84,8 @@ object Presets {
         keySpecialBackground = ColorSpec(0xFF2A2D45),
         suggestionBarBackground = ColorSpec(0xFF0C0D12),
         keyShape = KeyShape.PILL,
+        spacebarAccentColor = ColorSpec(0xFF3D4EFF),
+        middleRowStripeColor = ColorSpec(0x1FFFFFFF),
     )
 
     val all = listOf(Light, Dark, Accent)

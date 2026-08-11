@@ -137,7 +137,12 @@ class GestureStateMachine(
 
     private fun handleUp(sample: TouchSample): GestureEvent? {
         val result = when (state) {
-            State.DOWN, State.TAP_CANDIDATE -> {
+            // SWIPE_CANDIDATE means movement crossed touch slop but never reached the swipe
+            // distance threshold — i.e. an ordinary tap with some finger drift, which is the
+            // common case for fast typing and for swipe attempts that fall just short of the
+            // threshold. Resolving these as taps (same as DOWN/TAP_CANDIDATE) instead of silently
+            // dropping them is what makes fast typing and marginal swipes register reliably.
+            State.DOWN, State.TAP_CANDIDATE, State.SWIPE_CANDIDATE -> {
                 val elapsed = sample.timestampMs - downTimeMs
                 if (elapsed <= thresholds.maxTapDurationMs && !longPressFired) {
                     GestureEvent.KeyTap(downKeyCode, downX, downY)
@@ -145,7 +150,6 @@ class GestureStateMachine(
                     null
                 }
             }
-            State.SWIPE_CANDIDATE -> null // released before crossing swipe threshold; not a valid tap either
             State.SWIPE_COMMITTED -> null // already emitted on threshold-cross
             State.LONG_PRESS_POPUP_ACTIVE -> null // host resolves popup selection itself from move history
             State.IDLE -> null

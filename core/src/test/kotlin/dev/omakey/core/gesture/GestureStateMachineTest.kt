@@ -87,14 +87,28 @@ class GestureStateMachineTest {
     }
 
     @Test
-    fun `diagonal movement without axis dominance does not resolve to a swipe`() {
+    fun `diagonal movement without axis dominance falls back to a tap on release`() {
         assertNull(down(50f, 50f, 0))
-        // dx=90, dy=80: neither exceeds 2x the other -> axis-lock rejects
+        // dx=90, dy=80: neither exceeds 2x the other -> axis-lock rejects a swipe
         assertNull(move(140f, 130f, 30))
-        // gesture remains ambiguous (SWIPE_CANDIDATE); releasing here should not emit a tap either
-        // since we've moved past slop and never crossed swipe threshold on a locked axis
+        // A botched/ambiguous drag that never crosses the swipe threshold must still resolve as a
+        // tap at the down position on release, not silently drop the input — this is what keeps
+        // fast typing (which naturally has some finger drift) and marginal swipe attempts from
+        // registering nothing at all.
         val event = up(140f, 130f, 40)
-        assertNull(event)
+        assertTrue(event is GestureEvent.KeyTap)
+        event as GestureEvent.KeyTap
+        assertEquals(42, event.keyCode)
+    }
+
+    @Test
+    fun `swipe attempt that falls short of the distance threshold resolves as a tap`() {
+        assertNull(down(200f, 50f, 0))
+        // Horizontal, axis-locked, but only 60px of 100px required — same axis as a real swipe,
+        // just short of it. Must still resolve as a tap rather than nothing.
+        assertNull(move(140f, 51f, 30))
+        val event = up(140f, 51f, 40)
+        assertTrue(event is GestureEvent.KeyTap)
     }
 
     @Test

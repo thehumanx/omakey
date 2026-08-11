@@ -9,3 +9,10 @@ captures/
 .cxx/
 *.apk
 *.aab
+
+# Internal design/technical-decisions doc — not for the public repo.
+AGENTS.md
+
+# Release signing key — never commit. Regenerating it would break update installs for anyone
+# who already sideloaded a release build (Android requires matching signatures to upgrade).
+keystore/

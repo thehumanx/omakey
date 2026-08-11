@@ -7,6 +7,10 @@ private fun charKey(label: String, popup: List<String> = emptyList()) =
  * path (community/alternate layouts) is additive, not a restructure. */
 object Layouts {
 
+    /** Rendered in the top strip's "numbers" tab, not as a persistent grid row — reused here
+     * rather than duplicated since it's the same 1-0 key set as the Symbols layout's first row. */
+    val NumberRow = KeyRow(listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0").map(::charKey))
+
     val QwertyEnUS = KeyboardLayout(
         id = "qwerty_en_us",
         rows = listOf(
@@ -26,7 +30,7 @@ object Layouts {
             ),
             KeyRow(
                 listOf(
-                    KeyDefinition("shift", SpecialKeyCode.SHIFT, widthWeight = 1.5f, keyType = KeyType.SPECIAL),
+                    KeyDefinition("⇧", SpecialKeyCode.SHIFT, widthWeight = 1.5f, keyType = KeyType.SPECIAL),
                     charKey("z"), charKey("x"), charKey("c"), charKey("v"), charKey("b"),
                     charKey("n"), charKey("m"),
                     KeyDefinition("⌫", SpecialKeyCode.BACKSPACE, widthWeight = 1.5f, keyType = KeyType.SPECIAL),
@@ -37,7 +41,7 @@ object Layouts {
                     KeyDefinition("?123", SpecialKeyCode.SYMBOLS, widthWeight = 1.5f, keyType = KeyType.SPECIAL),
                     KeyDefinition("😊", SpecialKeyCode.EXTENSIONS, widthWeight = 1f, keyType = KeyType.SPECIAL),
                     KeyDefinition(" ", SpecialKeyCode.SPACE, widthWeight = 4f, keyType = KeyType.SPECIAL),
-                    KeyDefinition(".", ".".first().code, widthWeight = 1f),
+                    charKey(".", listOf(",", "!", "?", "-", ":", ";", "'")),
                     KeyDefinition("⏎", SpecialKeyCode.ENTER, widthWeight = 1.5f, keyType = KeyType.SPECIAL),
                 ),
             ),
@@ -60,7 +64,7 @@ object Layouts {
                 listOf(
                     KeyDefinition("ABC", SpecialKeyCode.LETTERS, widthWeight = 1.5f, keyType = KeyType.SPECIAL),
                     KeyDefinition(" ", SpecialKeyCode.SPACE, widthWeight = 4f, keyType = KeyType.SPECIAL),
-                    KeyDefinition(".", ".".first().code, widthWeight = 1f),
+                    charKey(".", listOf(",", "!", "?", "-", ":", ";", "'")),
                     KeyDefinition("⏎", SpecialKeyCode.ENTER, widthWeight = 1.5f, keyType = KeyType.SPECIAL),
                 ),
             ),

@@ -1,5 +1,6 @@
 package dev.omakey.core.layout
 
+import androidx.compose.runtime.Immutable
 import kotlinx.serialization.Serializable
 
 enum class KeyType { CHARACTER, SPECIAL, SPACER }
@@ -15,6 +16,11 @@ object SpecialKeyCode {
     const val EXTENSIONS = -7
 }
 
+// @Immutable is a promise to the Compose compiler that instances never change after construction
+// (true here — every field is a val, all-the-way down). Without it, Compose treats any List<T>
+// parameter as unstable and can never skip recomposing a composable that takes one, regardless of
+// how well lambda parameters elsewhere are memoized.
+@Immutable
 @Serializable
 data class KeyDefinition(
     val label: String,
@@ -24,9 +30,11 @@ data class KeyDefinition(
     val keyType: KeyType = KeyType.CHARACTER,
 )
 
+@Immutable
 @Serializable
 data class KeyRow(val keys: List<KeyDefinition>)
 
+@Immutable
 @Serializable
 data class KeyboardLayout(val id: String, val rows: List<KeyRow>)
 

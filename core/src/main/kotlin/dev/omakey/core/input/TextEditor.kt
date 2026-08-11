@@ -72,6 +72,25 @@ class TextEditor(private val connectionProvider: () -> InputConnection?) {
         connection.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, keyCode))
     }
 
+    // Routed through the same performContextMenuAction ids the system text-selection toolbar
+    // uses, rather than hand-rolling selection/clipboard logic — every InputConnection
+    // implementation already has to support these for the OS long-press menu to work.
+    fun selectAll() {
+        ic?.performContextMenuAction(android.R.id.selectAll)
+    }
+
+    fun copySelection() {
+        ic?.performContextMenuAction(android.R.id.copy)
+    }
+
+    fun cutSelection() {
+        ic?.performContextMenuAction(android.R.id.cut)
+    }
+
+    fun pasteFromClipboard() {
+        ic?.performContextMenuAction(android.R.id.paste)
+    }
+
     companion object {
         private const val MAX_LOOKBACK_CHARS = 128
     }

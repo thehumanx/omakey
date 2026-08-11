@@ -21,6 +21,11 @@ interface WordDao {
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertSeedBatch(words: List<WordEntity>)
+
+    /** Loaded once at startup into an in-memory AutocorrectIndex — autocorrect fires on every
+     * space/punctuation keystroke, far too often to round-trip SQLite per word. */
+    @Query("SELECT * FROM words")
+    suspend fun all(): List<WordEntity>
 }
 
 @Dao
@@ -36,6 +41,12 @@ interface BigramDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(bigram: BigramEntity)
+
+    @Query("SELECT COUNT(*) FROM bigrams")
+    suspend fun count(): Int
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertSeedBatch(bigrams: List<BigramEntity>)
 }
 
 @Dao
