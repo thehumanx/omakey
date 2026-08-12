@@ -77,6 +77,12 @@ class FrequencyNgramPredictionEngine(
         )
     }
 
+    override suspend fun deleteWord(word: String) {
+        val normalized = word.trim().lowercase()
+        if (normalized.isEmpty()) return
+        wordDao.delete(normalized)
+    }
+
     private companion object {
         const val SAVE_WORD_BOOST = 50
     }

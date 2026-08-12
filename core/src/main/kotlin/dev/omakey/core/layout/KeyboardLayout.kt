@@ -14,6 +14,12 @@ object SpecialKeyCode {
     const val SYMBOLS = -5
     const val LETTERS = -6
     const val EXTENSIONS = -7
+    /** Opens Settings — only ever placed on the Symbols1/Symbols2 layouts, in the exact slot
+     * QwertyEnUS's emoji-launcher key (EXTENSIONS) occupies, so switching between letters and
+     * symbols doesn't shift every other key's width (see Layouts.kt's Symbols1/Symbols2 bottom
+     * row — they used to simply omit that slot entirely, one widthWeight short of QwertyEnUS's
+     * total). */
+    const val SETTINGS = -8
 }
 
 // @Immutable is a promise to the Compose compiler that instances never change after construction

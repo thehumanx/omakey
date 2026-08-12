@@ -60,6 +60,19 @@ class GestureStateMachineTest {
     }
 
     @Test
+    fun `swipe event carries the key code the touch started on`() {
+        // 42 comes from the default hitTester in setUp() — this specifically checks the field is
+        // populated from the DOWN position, not left at some default/zero value, which is what
+        // lets callers (KeyboardRoot's handleGestureEvent) tell a swipe-left starting on the
+        // spacebar apart from one starting anywhere else.
+        assertNull(down(200f, 50f, 0))
+        val committed = move(90f, 51f, 30)
+        assertTrue(committed is GestureEvent.Swipe)
+        committed as GestureEvent.Swipe
+        assertEquals(42, committed.downKeyCode)
+    }
+
+    @Test
     fun `clean horizontal swipe right emits Swipe RIGHT`() {
         assertNull(down(50f, 50f, 0))
         val committed = move(160f, 52f, 30) // dist ~110, dx dominant positive

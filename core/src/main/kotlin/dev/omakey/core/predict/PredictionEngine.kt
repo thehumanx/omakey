@@ -14,6 +14,12 @@ interface PredictionEngine {
      * the incremental +1 from [recordAcceptedWord], so it ranks usefully right away. */
     suspend fun saveWord(word: String)
 
+    /** Reverses [saveWord] — removes a word the user had previously saved via swipe-up, called
+     * when they swipe up on it a second time ("unlearn"). Only ever called for words already
+     * confirmed user-added (see [dev.omakey.core.predict.AutocorrectIndex.isUserAdded]); never
+     * touches the bundled seed dictionary. */
+    suspend fun deleteWord(word: String)
+
     /** Bigram rank for a specific (previousWord, word) pair — higher means more commonly seen as
      * a continuation of [previousWord]; 0 if the pair has never been seen. Used for context-aware
      * "did you mean" corrections of words that are themselves valid dictionary entries (so

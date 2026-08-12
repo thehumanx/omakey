@@ -11,6 +11,10 @@ data class GestureSettings(
      * required (less sensitive, fewer accidental triggers). */
     val swipeSensitivity: Float = DEFAULT_SENSITIVITY,
     val showKeyPopup: Boolean = true,
+    /** Off by default — swipe-right already inserts a space unconditionally today, which some
+     * users want as an explicit opt-in gesture rather than always-on (e.g. it can compete with a
+     * word-cycling swipe started slightly diagonally). */
+    val swipeRightForSpace: Boolean = false,
 ) {
     companion object {
         const val DEFAULT_SENSITIVITY = 1.0f
@@ -44,11 +48,14 @@ class GesturePreferences(context: Context) {
 
     fun setShowKeyPopup(show: Boolean) = update { it.copy(showKeyPopup = show) }
 
+    fun setSwipeRightForSpace(enabled: Boolean) = update { it.copy(swipeRightForSpace = enabled) }
+
     private fun update(transform: (GestureSettings) -> GestureSettings) {
         val next = transform(_settings.value)
         prefs.edit()
             .putFloat(KEY_SENSITIVITY, next.swipeSensitivity)
             .putBoolean(KEY_SHOW_POPUP, next.showKeyPopup)
+            .putBoolean(KEY_SWIPE_RIGHT_FOR_SPACE, next.swipeRightForSpace)
             .apply()
         _settings.value = next
     }
@@ -56,11 +63,13 @@ class GesturePreferences(context: Context) {
     private fun load() = GestureSettings(
         swipeSensitivity = prefs.getFloat(KEY_SENSITIVITY, GestureSettings.DEFAULT_SENSITIVITY),
         showKeyPopup = prefs.getBoolean(KEY_SHOW_POPUP, true),
+        swipeRightForSpace = prefs.getBoolean(KEY_SWIPE_RIGHT_FOR_SPACE, false),
     )
 
     private companion object {
         const val PREFS_NAME = "omakey_gesture_prefs"
         const val KEY_SENSITIVITY = "swipe_sensitivity"
         const val KEY_SHOW_POPUP = "show_key_popup"
+        const val KEY_SWIPE_RIGHT_FOR_SPACE = "swipe_right_for_space"
     }
 }

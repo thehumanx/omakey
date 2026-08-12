@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.StateFlow
 
 data class AutocorrectSettings(
     val autocorrectEnabled: Boolean = true,
+    val autoCapitalizeEnabled: Boolean = false,
 )
 
 /** Persists the autocorrect on/off preference. Same SharedPreferences + cross-instance-sync
@@ -32,12 +33,19 @@ class AutocorrectPreferences(context: Context) {
         _settings.value = _settings.value.copy(autocorrectEnabled = enabled)
     }
 
+    fun setAutoCapitalizeEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_AUTO_CAPITALIZE_ENABLED, enabled).apply()
+        _settings.value = _settings.value.copy(autoCapitalizeEnabled = enabled)
+    }
+
     private fun load() = AutocorrectSettings(
         autocorrectEnabled = prefs.getBoolean(KEY_AUTOCORRECT_ENABLED, true),
+        autoCapitalizeEnabled = prefs.getBoolean(KEY_AUTO_CAPITALIZE_ENABLED, false),
     )
 
     private companion object {
         const val PREFS_NAME = "omakey_autocorrect_prefs"
         const val KEY_AUTOCORRECT_ENABLED = "autocorrect_enabled"
+        const val KEY_AUTO_CAPITALIZE_ENABLED = "auto_capitalize_enabled"
     }
 }

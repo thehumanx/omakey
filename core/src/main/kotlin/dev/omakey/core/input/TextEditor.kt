@@ -64,6 +64,32 @@ class TextEditor(private val connectionProvider: () -> InputConnection?) {
         ic?.deleteSurroundingText(1, 0)
     }
 
+    /** Plain text immediately before the cursor, up to [maxChars] — the same
+     * `getTextBeforeCursor` [wordAtCursor]/[deleteWordBackward] already use internally, exposed
+     * publicly for callers (e.g. the inline calculator) that need to inspect a run of characters
+     * `wordAtCursor`'s letters-only definition doesn't cover, like digits and operators. */
+    fun textBeforeCursor(maxChars: Int): String = ic?.getTextBeforeCursor(maxChars, 0)?.toString() ?: ""
+
+    /** True if there's currently a non-empty text selection (e.g. after "Select all", or a
+     * host-app text-selection drag) — [getSelectedText] is a standard `InputConnection` method,
+     * not a heuristic. Used to make delete-word/delete-character remove the *whole* selection
+     * instead of just nibbling at whatever sits immediately before the cursor, which is what
+     * `deleteSurroundingText`-based deletion does by default (it's relative to the cursor, not
+     * selection-aware). */
+    fun hasSelection(): Boolean = !ic?.getSelectedText(0).isNullOrEmpty()
+
+    /** The currently selected text, if any — read before triggering a copy/cut so the caller
+     * already knows what's about to land on the clipboard, without needing to read it back from
+     * [android.content.ClipboardManager] afterwards (which is exactly the kind of clipboard read
+     * that triggers Android 12+'s privacy toast). */
+    fun selectedText(): String? = ic?.getSelectedText(0)?.toString()
+
+    /** Replaces the active selection with nothing, i.e. deletes it — a plain empty `commitText`
+     * replaces whatever's currently selected, same as typing over a selection replaces it. */
+    fun deleteSelection() {
+        ic?.commitText("", 1)
+    }
+
     /** The contiguous run of letters touching the cursor on both sides, e.g. the cursor sitting
      * anywhere inside/at the edges of "thys" — whether it landed there by typing, a tap, or arrow-
      * key navigation — resolves to the whole word "thys", not just whichever half happens to be

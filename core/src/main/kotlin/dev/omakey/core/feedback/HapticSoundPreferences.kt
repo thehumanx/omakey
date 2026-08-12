@@ -25,11 +25,18 @@ data class HapticSoundSettings(
     val hapticStrength: Float = DEFAULT_HAPTIC_STRENGTH,
     val soundEnabled: Boolean = false,
     val soundChoice: String = SoundChoices.DEFAULT,
+    /** 0..1 multiplier applied on top of each keypress/swipe's own base volume — same "let the
+     * user tune the felt intensity, not a value they have no intuition for" reasoning as
+     * [hapticStrength]. */
+    val soundVolume: Float = DEFAULT_SOUND_VOLUME,
 ) {
     companion object {
         const val DEFAULT_HAPTIC_STRENGTH = 0.5f
         const val MIN_HAPTIC_STRENGTH = 0.1f
         const val MAX_HAPTIC_STRENGTH = 1.0f
+        const val DEFAULT_SOUND_VOLUME = 1.0f
+        const val MIN_SOUND_VOLUME = 0.1f
+        const val MAX_SOUND_VOLUME = 1.0f
     }
 }
 
@@ -68,6 +75,17 @@ class HapticSoundPreferences(context: Context) {
 
     fun setSoundChoice(choice: String) = update { it.copy(soundChoice = choice) }
 
+    fun setSoundVolume(value: Float) {
+        update {
+            it.copy(
+                soundVolume = value.coerceIn(
+                    HapticSoundSettings.MIN_SOUND_VOLUME,
+                    HapticSoundSettings.MAX_SOUND_VOLUME,
+                ),
+            )
+        }
+    }
+
     private fun update(transform: (HapticSoundSettings) -> HapticSoundSettings) {
         val next = transform(_settings.value)
         prefs.edit()
@@ -75,6 +93,7 @@ class HapticSoundPreferences(context: Context) {
             .putFloat(KEY_HAPTIC_STRENGTH, next.hapticStrength)
             .putBoolean(KEY_SOUND_ENABLED, next.soundEnabled)
             .putString(KEY_SOUND_CHOICE, next.soundChoice)
+            .putFloat(KEY_SOUND_VOLUME, next.soundVolume)
             .apply()
         _settings.value = next
     }
@@ -84,6 +103,7 @@ class HapticSoundPreferences(context: Context) {
         hapticStrength = prefs.getFloat(KEY_HAPTIC_STRENGTH, HapticSoundSettings.DEFAULT_HAPTIC_STRENGTH),
         soundEnabled = prefs.getBoolean(KEY_SOUND_ENABLED, false),
         soundChoice = prefs.getString(KEY_SOUND_CHOICE, SoundChoices.DEFAULT) ?: SoundChoices.DEFAULT,
+        soundVolume = prefs.getFloat(KEY_SOUND_VOLUME, HapticSoundSettings.DEFAULT_SOUND_VOLUME),
     )
 
     private companion object {
@@ -92,5 +112,6 @@ class HapticSoundPreferences(context: Context) {
         const val KEY_HAPTIC_STRENGTH = "haptic_strength"
         const val KEY_SOUND_ENABLED = "sound_enabled"
         const val KEY_SOUND_CHOICE = "sound_choice"
+        const val KEY_SOUND_VOLUME = "sound_volume"
     }
 }

@@ -80,21 +80,62 @@ class OmakeyInputMethodService :
     private lateinit var layoutPreferences: LayoutPreferences
     private lateinit var fontPreferences: FontPreferences
     private lateinit var gesturePreferences: GesturePreferences
+    private lateinit var topStripTabPreferences: TopStripTabPreferences
     private lateinit var hapticSoundPreferences: HapticSoundPreferences
     private lateinit var keyboardFeedback: KeyboardFeedback
     private var keyboardViewModel: KeyboardViewModel? = null
 
     private lateinit var clipboardManager: ClipboardManager
     private var lastCapturedClipText: String? = null
+    private var lastCapturedClipUri: String? = null
+    // Set right before Omakey's own Copy/Cut buttons trigger a system clipboard change (see
+    // onClipboardCopy below). Reading ClipboardManager.primaryClip is what triggers Android 12+'s
+    // "app read your clipboard" toast — skipping that read entirely for a change Omakey itself
+    // just caused (the text is already known, no read needed) is what avoids firing a second,
+    // redundant toast on top of the OS's own unavoidable "Copied to clipboard" one.
+    private var suppressNextClipboardRead = false
+    private val onClipboardCopy: (String) -> Unit = { text ->
+        suppressNextClipboardRead = true
+        lastCapturedClipText = text
+        lastCapturedClipUri = null
+        serviceScope.launch {
+            database.clipboardDao().insert(ClipboardEntity(content = text, timestamp = System.currentTimeMillis()))
+            database.clipboardDao().trimUnpinned()
+        }
+    }
     private val clipboardListener = ClipboardManager.OnPrimaryClipChangedListener {
-        val text = clipboardManager.primaryClip
-            ?.takeIf { it.itemCount > 0 }
-            ?.getItemAt(0)
-            ?.coerceToText(this)
-            ?.toString()
-            ?.trim()
+        if (suppressNextClipboardRead) {
+            suppressNextClipboardRead = false
+            return@OnPrimaryClipChangedListener
+        }
+        val clip = clipboardManager.primaryClip?.takeIf { it.itemCount > 0 } ?: return@OnPrimaryClipChangedListener
+        val item = clip.getItemAt(0)
+        val imageUri = item.uri?.takeIf { clip.description?.hasMimeType("image/*") == true }
+        if (imageUri != null) {
+            if (imageUri.toString() == lastCapturedClipUri) return@OnPrimaryClipChangedListener
+            lastCapturedClipUri = imageUri.toString()
+            lastCapturedClipText = null
+            serviceScope.launch {
+                // The clip's content:// URI grant is only guaranteed valid for the moment of
+                // capture, not whenever the user later opens the clipboard panel — so the bytes
+                // are copied into app-private storage right now, not just the URI referenced.
+                val path = copyClipboardImage(imageUri) ?: return@launch
+                database.clipboardDao().insert(
+                    ClipboardEntity(
+                        content = "Image",
+                        timestamp = System.currentTimeMillis(),
+                        contentType = ClipboardEntity.TYPE_IMAGE,
+                        imagePath = path,
+                    ),
+                )
+                database.clipboardDao().trimUnpinned()
+            }
+            return@OnPrimaryClipChangedListener
+        }
+        val text = item.coerceToText(this)?.toString()?.trim()
         if (text.isNullOrEmpty() || text == lastCapturedClipText) return@OnPrimaryClipChangedListener
         lastCapturedClipText = text
+        lastCapturedClipUri = null
         serviceScope.launch {
             database.clipboardDao().insert(
                 ClipboardEntity(content = text, timestamp = System.currentTimeMillis()),
@@ -102,6 +143,14 @@ class OmakeyInputMethodService :
             database.clipboardDao().trimUnpinned()
         }
     }
+
+    private fun copyClipboardImage(uri: android.net.Uri): String? = runCatching {
+        val dir = java.io.File(filesDir, "clipboard_images").apply { mkdirs() }
+        val file = java.io.File(dir, "clip_${System.currentTimeMillis()}.png")
+        val input = contentResolver.openInputStream(uri) ?: return null
+        input.use { stream -> file.outputStream().use { stream.copyTo(it) } }
+        file.absolutePath
+    }.getOrNull()
 
     override fun onCreate() {
         super.onCreate()
@@ -119,6 +168,7 @@ class OmakeyInputMethodService :
         layoutPreferences = LayoutPreferences(applicationContext)
         fontPreferences = FontPreferences(applicationContext)
         gesturePreferences = GesturePreferences(applicationContext)
+        topStripTabPreferences = TopStripTabPreferences(applicationContext)
         hapticSoundPreferences = HapticSoundPreferences(applicationContext)
         keyboardFeedback = VibratorKeyboardFeedback(applicationContext, hapticSoundPreferences)
 
@@ -140,11 +190,12 @@ class OmakeyInputMethodService :
         // GifSearchExtension is a stub — a real implementation needs INTERNET, which the app
         // deliberately doesn't request. Hidden from the panel tab strip until that's built for real.
 
-        // Registered for the service's lifetime, not just while the panel is open — foreground-IME
-        // clipboard reads are permitted without a runtime permission on modern Android (the
-        // Android 12+ "clipboard read" toast is expected here, not a bug).
+        // NOT registered here — see onStartInputView()/onFinishInputView() below. Registering for
+        // the whole service lifetime meant this listener (and the Android 12+ "app read your
+        // clipboard" toast it triggers) fired every time *any* app on the device copied anything,
+        // even while Omakey wasn't visible — surprising and needlessly clipboard-hungry for a
+        // keyboard that isn't currently in front of the user.
         clipboardManager = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        clipboardManager.addPrimaryClipChangedListener(clipboardListener)
     }
 
     private fun buildExtensionContext(): ExtensionContext = object : ExtensionContext {
@@ -154,8 +205,29 @@ class OmakeyInputMethodService :
         }
         override val clipboardRepository: ClipboardRepository = object : ClipboardRepository {
             override suspend fun recent(limit: Int): List<ClipboardItem> =
-                database.clipboardDao().recent(limit).map { ClipboardItem(it.id, it.content, it.timestamp, it.pinned) }
+                database.clipboardDao().recent(limit).map {
+                    ClipboardItem(
+                        id = it.id,
+                        content = it.content,
+                        timestamp = it.timestamp,
+                        pinned = it.pinned,
+                        contentType = if (it.contentType == ClipboardEntity.TYPE_IMAGE) {
+                            dev.omakey.extapi.ClipboardContentType.IMAGE
+                        } else {
+                            dev.omakey.extapi.ClipboardContentType.TEXT
+                        },
+                        imagePath = it.imagePath,
+                    )
+                }
             override suspend fun pin(id: Long, pinned: Boolean) = Unit // v1: pin toggling deferred
+            override suspend fun delete(id: Long) {
+                // Delete the backing image file too, if any — otherwise removing a clipboard row
+                // would leave an orphaned file in app-private storage indefinitely.
+                database.clipboardDao().findById(id)?.imagePath?.let { path ->
+                    runCatching { java.io.File(path).delete() }
+                }
+                database.clipboardDao().delete(id)
+            }
         }
         override fun requestPanelClose() {
             keyboardViewModel?.extensionHost?.close()
@@ -185,7 +257,9 @@ class OmakeyInputMethodService :
             layoutPreferences = layoutPreferences,
             fontPreferences = fontPreferences,
             gesturePreferences = gesturePreferences,
+            topStripTabPreferences = topStripTabPreferences,
             scope = serviceScope,
+            onClipboardCopy = onClipboardCopy,
         )
         keyboardViewModel = viewModel
 
@@ -194,12 +268,11 @@ class OmakeyInputMethodService :
             setContent {
                 val uiState by viewModel.uiState.collectAsState()
                 androidx.compose.runtime.CompositionLocalProvider(
-                    LocalOmakeyTheme provides uiState.theme,
+                    LocalOmakeyTheme provides resolveEffectiveTheme(uiState.theme, uiState.useSystemAccent),
                 ) {
                     KeyboardRoot(
                         viewModel,
                         accessibilityPreferences,
-                        onHideKeyboard = { requestHideSelf(0) },
                         onOpenSettings = ::openSettings,
                         feedback = keyboardFeedback,
                     )
@@ -216,11 +289,23 @@ class OmakeyInputMethodService :
         super.onStartInputView(info, restarting)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
         keyboardViewModel?.resetForNewField(info)
+        // Only listens for clipboard changes while the keyboard is actually on screen — see the
+        // comment in onCreate() for why this isn't registered for the whole service lifetime.
+        // onStartInputView can fire again without a matching onFinishInputView in between (e.g.
+        // switching fields within the same app calls this again with restarting = true) —
+        // removing any previous registration first keeps exactly one active at a time. Without
+        // this, a duplicate registration meant every clipboard change fired the listener twice:
+        // the first invocation consumed the copy-suppression flag below and skipped the read,
+        // but the second (extra, un-removed) registration didn't see the flag anymore and read
+        // primaryClip for real — silently firing the "read your clipboard" toast a second time.
+        clipboardManager.removePrimaryClipChangedListener(clipboardListener)
+        clipboardManager.addPrimaryClipChangedListener(clipboardListener)
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE)
+        clipboardManager.removePrimaryClipChangedListener(clipboardListener)
     }
 
     // Fires for every selection/cursor change regardless of cause — our own commits, a tap

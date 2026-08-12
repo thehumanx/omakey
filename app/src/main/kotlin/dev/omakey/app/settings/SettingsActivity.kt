@@ -4,23 +4,28 @@ import android.content.Intent
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -28,10 +33,16 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.material3.Button
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
@@ -55,6 +66,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -78,6 +90,8 @@ import dev.omakey.core.layout.Layouts
 import dev.omakey.core.predict.AutocorrectPreferences
 import dev.omakey.core.predict.PredictionPreferences
 import dev.omakey.core.theme.AccessibilityPreferences
+import dev.omakey.core.theme.ColorSpec
+import dev.omakey.core.theme.CustomThemePreferences
 import dev.omakey.core.theme.FontChoices
 import dev.omakey.core.theme.FontPreferences
 import dev.omakey.core.theme.OmakeyTheme
@@ -94,6 +108,7 @@ class SettingsActivity : ComponentActivity() {
         // system draws an opaque status bar and the title row underneath it visually blends in.
         enableEdgeToEdge()
         val themeRepository = ThemeRepository(applicationContext)
+        val customThemePreferences = CustomThemePreferences(applicationContext)
         val accessibilityPreferences = AccessibilityPreferences(applicationContext)
         val layoutPreferences = LayoutPreferences(applicationContext)
         val fontPreferences = FontPreferences(applicationContext)
@@ -108,6 +123,7 @@ class SettingsActivity : ComponentActivity() {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     SettingsScreen(
                         themeRepository = themeRepository,
+                        customThemePreferences = customThemePreferences,
                         accessibilityPreferences = accessibilityPreferences,
                         layoutPreferences = layoutPreferences,
                         fontPreferences = fontPreferences,
@@ -178,6 +194,7 @@ private fun OmakeySettingsTheme(content: @Composable () -> Unit) {
 @Composable
 private fun SettingsScreen(
     themeRepository: ThemeRepository,
+    customThemePreferences: CustomThemePreferences,
     accessibilityPreferences: AccessibilityPreferences,
     layoutPreferences: LayoutPreferences,
     fontPreferences: FontPreferences,
@@ -191,9 +208,23 @@ private fun SettingsScreen(
     onSwitchKeyboard: () -> Unit,
 ) {
     val currentTheme by themeRepository.currentTheme.collectAsState()
+    val useSystemAccent by themeRepository.useSystemAccent.collectAsState()
+    // The raw stored theme (above) is what ThemePicker highlights as "selected" — this resolved
+    // version (following "Follow system"/"pick accent from system" if either is on) is what every
+    // live preview mock should actually show, so previews reflect what really gets applied.
+    val effectiveTheme = dev.omakey.app.keyboard.resolveEffectiveTheme(currentTheme, useSystemAccent)
     val currentFontId by fontPreferences.fontId.collectAsState()
     var showTestOverlay by remember { mutableStateOf(false) }
     var showLearnedWordsOverlay by remember { mutableStateOf(false) }
+    var showSizePositionOverlay by remember { mutableStateOf(false) }
+    // Hoisted up from ThemePicker (which lives inside a LazyColumn item) rather than kept local
+    // there — ThemeEditorOverlay's Modifier.verticalScroll() crashes with "measured with an
+    // infinity maximum height constraints" if composed as a LazyColumn item's descendant, the
+    // classic nested-scrollable-in-unbounded-height bug. Every other full-screen overlay here
+    // (TestKeyboardOverlay, LearnedWordsOverlay, KeyboardSizePositionOverlay) is already rendered
+    // from this top-level Box for the same reason — ThemeEditorOverlay just hadn't followed suit.
+    var showThemeEditor by remember { mutableStateOf(false) }
+    var themeBeingEdited by remember { mutableStateOf<OmakeyTheme?>(null) }
 
     Box(Modifier.fillMaxSize()) {
         LazyColumn(
@@ -208,11 +239,26 @@ private fun SettingsScreen(
 
             item {
                 SettingsSection(title = "Setup") {
-                    Button(onClick = onOpenSystemSettings) {
-                        Text(text = stringResource(R.string.settings_enable_keyboard))
+                    val (isEnabled, isDefault) = rememberSetupStatus()
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        SetupStatusIcon(done = isEnabled)
+                        Button(onClick = onOpenSystemSettings, modifier = Modifier.weight(1f).padding(start = 8.dp)) {
+                            Text(text = stringResource(R.string.settings_enable_keyboard))
+                        }
                     }
-                    Button(onClick = onSwitchKeyboard) {
-                        Text(text = stringResource(R.string.settings_choose_keyboard))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        SetupStatusIcon(done = isDefault)
+                        Button(onClick = onSwitchKeyboard, modifier = Modifier.weight(1f).padding(start = 8.dp)) {
+                            Text(text = stringResource(R.string.settings_choose_keyboard))
+                        }
                     }
                 }
             }
@@ -220,7 +266,22 @@ private fun SettingsScreen(
             item {
                 SettingsSection(title = "Appearance") {
                     Text(text = "Theme", style = MaterialTheme.typography.bodyLarge)
-                    ThemePicker(themeRepository)
+                    ThemePicker(
+                        themeRepository = themeRepository,
+                        customThemePreferences = customThemePreferences,
+                        onCreateTheme = { themeBeingEdited = null; showThemeEditor = true },
+                        onEditTheme = { theme -> themeBeingEdited = theme; showThemeEditor = true },
+                    )
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                        SettingToggle(
+                            title = "Pick accent color from system",
+                            description = "Use your device's Material You accent color for the " +
+                                "spacebar instead of the theme's own.",
+                            checked = useSystemAccent,
+                            onCheckedChange = themeRepository::setUseSystemAccent,
+                        )
+                    }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     Text(text = "Font", style = MaterialTheme.typography.bodyLarge)
                     FontPicker(fontPreferences, currentFontId)
                 }
@@ -229,23 +290,22 @@ private fun SettingsScreen(
             item {
                 SettingsSection(title = "Typing") {
                     AutocorrectToggle(autocorrectPreferences)
+                    AutoCapitalizeToggle(autocorrectPreferences)
                     NextWordPredictionToggle(predictionPreferences)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        Column(Modifier.weight(1f)) {
-                            Text(text = "Learned words", style = MaterialTheme.typography.bodyLarge)
-                            Text(
-                                text = "Words your own typing has taught the keyboard — view, " +
-                                    "search, or remove any that shouldn't have been learned.",
-                                style = MaterialTheme.typography.bodySmall,
-                            )
-                        }
-                        TextButton(onClick = { showLearnedWordsOverlay = true }) { Text(text = "Manage") }
-                    }
-                    KeyboardHeightEditor(layoutPreferences, currentTheme, currentFontId)
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    ClickableSettingRow(
+                        title = "Learned words",
+                        description = "Words your own typing has taught the keyboard — view, " +
+                            "search, or remove any that shouldn't have been learned.",
+                        onClick = { showLearnedWordsOverlay = true },
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    ClickableSettingRow(
+                        title = "Keyboard size & position",
+                        description = "Resize the keyboard and raise it off the bottom edge for " +
+                            "easier one-handed thumb reach — drag to adjust both.",
+                        onClick = { showSizePositionOverlay = true },
+                    )
                     LayoutTogglesSection(layoutPreferences)
                     GestureSettingsSection(gesturePreferences)
                 }
@@ -266,6 +326,11 @@ private fun SettingsScreen(
             item {
                 SettingsSection(title = "About") {
                     Text(text = stringResource(R.string.privacy_notice), style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        text = "Version ${dev.omakey.app.BuildConfig.VERSION_NAME}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
         }
@@ -288,6 +353,171 @@ private fun SettingsScreen(
     if (showLearnedWordsOverlay) {
         LearnedWordsOverlay(wordDao = wordDao, onClose = { showLearnedWordsOverlay = false })
     }
+    if (showSizePositionOverlay) {
+        KeyboardSizePositionOverlay(
+            layoutPreferences = layoutPreferences,
+            theme = effectiveTheme,
+            fontId = currentFontId,
+            onClose = { showSizePositionOverlay = false },
+        )
+    }
+    if (showThemeEditor) {
+        ThemeEditorOverlay(
+            initialTheme = themeBeingEdited,
+            onSave = { theme ->
+                customThemePreferences.save(theme)
+                themeRepository.setTheme(theme)
+                showThemeEditor = false
+            },
+            onClose = { showThemeEditor = false },
+        )
+    }
+}
+
+/** Combined drag-to-resize + drag-to-position overlay — used to be two separate screens
+ * ("Keyboard height" and "Keyboard position"), merged into one since they're both "make the
+ * keyboard mock at 1:1 scale and drag part of it" interactions and were confusing to keep
+ * separate. Two independent drag affordances on the same live [KeyRowView] preview:
+ * - The handle bar above the preview resizes [LayoutSettings.keyboardHeightDp]. Dragging it *up*
+ *   makes the keyboard taller (like pulling a window edge outward), dragging it *down* makes it
+ *   shorter.
+ * - The pill-shaped grip centered *inside* the preview repositions [LayoutSettings.bottomOffsetDp]
+ *   — drag up to raise the keyboard off the bottom edge for easier one-handed thumb reach, capped
+ *   so it can never be dragged up past the vertical center of the screen.
+ * Both act on the same live-updating preview so the effect of one is visible while adjusting the
+ * other, instead of needing to bounce between two separate screens to get the combination right. */
+@Composable
+private fun KeyboardSizePositionOverlay(
+    layoutPreferences: LayoutPreferences,
+    theme: OmakeyTheme,
+    fontId: String,
+    onClose: () -> Unit,
+) {
+    BackHandler(onBack = onClose)
+    val settings by layoutPreferences.settings.collectAsState()
+    val density = LocalDensity.current
+    val configuration = LocalConfiguration.current
+    val fontFamily = remember(fontId) { FontCatalog.resolve(fontId) }
+    var heightDp by remember(settings.keyboardHeightDp) { mutableFloatStateOf(settings.keyboardHeightDp.toFloat()) }
+    var offsetDp by remember(settings.bottomOffsetDp) { mutableFloatStateOf(settings.bottomOffsetDp.toFloat()) }
+
+    val rows = Layouts.QwertyEnUS.rows
+    val rowHeightDp = (heightDp.roundToInt() / rows.size)
+    val keyboardTotalHeightDp = rowHeightDp * rows.size
+    val maxOffsetDp = (configuration.screenHeightDp / 2f - keyboardTotalHeightDp).coerceAtLeast(0f)
+    val noOpAncestor: () -> androidx.compose.ui.layout.LayoutCoordinates? = remember { { null } }
+
+    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .statusBarsPadding()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(text = "Keyboard size & position", style = MaterialTheme.typography.titleMedium)
+                    TextButton(onClick = onClose) { Text(text = "Done") }
+                }
+                Text(
+                    text = "Height: ${heightDp.roundToInt()}dp — drag the handle to resize. Drag " +
+                        "the grip inside the preview to move it up or down; it's capped at the " +
+                        "middle of the screen so there's always room to see what you're typing into.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+
+            // Resize handle, directly above the preview — dragging it up (finger moves toward the
+            // top of the screen, negative deltaPx) grows the keyboard, matching the intuitive
+            // "pull the edge outward to make it bigger" gesture; dragging down shrinks it.
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(32.dp)
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .draggable(
+                        orientation = Orientation.Vertical,
+                        state = rememberDraggableState { deltaPx ->
+                            heightDp = with(density) { (heightDp.dp - deltaPx.toDp()).value }
+                                .coerceIn(LayoutSettings.MIN_HEIGHT_DP.toFloat(), LayoutSettings.MAX_HEIGHT_DP.toFloat())
+                        },
+                        onDragStopped = { layoutPreferences.setKeyboardHeightDp(heightDp.roundToInt()) },
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Box(
+                    Modifier
+                        .size(width = 48.dp, height = 5.dp)
+                        .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(3.dp)),
+                )
+            }
+
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(keyboardTotalHeightDp.dp)
+                    .background(theme.keyboardBackground.toComposeColor()),
+            ) {
+                Column(Modifier.fillMaxWidth().padding(horizontal = 4.dp)) {
+                    rows.forEachIndexed { index, row ->
+                        dev.omakey.app.keyboard.ui.KeyRowView(
+                            rowKeys = row.keys,
+                            rowHeightDp = rowHeightDp,
+                            shiftOn = false,
+                            theme = theme,
+                            accessibleMode = false,
+                            showKeyBackgrounds = settings.showKeyBackgrounds,
+                            isHomeRow = settings.showMiddleRowStripe && index == 1,
+                            onKeyTap = {},
+                            ancestorCoordinates = noOpAncestor,
+                            onBoundsMeasured = { _, _, _ -> },
+                            fontFamily = fontFamily,
+                        )
+                    }
+                }
+                // Position grip — centered inside the preview, its own draggable so it doesn't
+                // fight the resize handle above or accidentally trigger on ordinary key taps
+                // elsewhere in the preview (this mock isn't otherwise interactive anyway).
+                Box(
+                    Modifier
+                        .align(Alignment.Center)
+                        .size(width = 56.dp, height = 28.dp)
+                        .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(14.dp))
+                        .draggable(
+                            orientation = Orientation.Vertical,
+                            state = rememberDraggableState { deltaPx ->
+                                // Dragging up (negative deltaPx, since y decreases upward) raises
+                                // the keyboard — i.e. increases the offset below it.
+                                offsetDp = (offsetDp - with(density) { deltaPx.toDp().value }).coerceIn(0f, maxOffsetDp)
+                            },
+                            onDragStopped = { layoutPreferences.setBottomOffsetDp(offsetDp.roundToInt()) },
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Box(
+                        Modifier
+                            .size(width = 28.dp, height = 5.dp)
+                            .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(3.dp)),
+                    )
+                }
+            }
+            if (offsetDp > 0f) {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(offsetDp.dp)
+                        .background(theme.keyboardBackground.toComposeColor()),
+                )
+            }
+            Box(Modifier.fillMaxWidth().navigationBarsPadding())
+        }
+    }
 }
 
 /** Full-screen overlay listing every word the user's own typing has taught the dictionary
@@ -300,10 +530,12 @@ private fun SettingsScreen(
  * design as the rest of the dictionary (see AGENTS.md §6). */
 @Composable
 private fun LearnedWordsOverlay(wordDao: WordDao, onClose: () -> Unit) {
+    BackHandler(onBack = onClose)
     val scope = rememberCoroutineScope()
     var query by remember { mutableStateOf("") }
     var words by remember { mutableStateOf<List<WordEntity>>(emptyList()) }
     var showDeleteAllConfirm by remember { mutableStateOf(false) }
+    var wordBeingEdited by remember { mutableStateOf<WordEntity?>(null) }
 
     suspend fun reload() {
         words = wordDao.findUserAdded(query.trim().lowercase())
@@ -365,6 +597,7 @@ private fun LearnedWordsOverlay(wordDao: WordDao, onClose: () -> Unit) {
                         horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
                         Text(text = entry.word, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                        TextButton(onClick = { wordBeingEdited = entry }) { Text(text = "Edit") }
                         TextButton(
                             onClick = {
                                 scope.launch {
@@ -400,6 +633,38 @@ private fun LearnedWordsOverlay(wordDao: WordDao, onClose: () -> Unit) {
             },
         )
     }
+
+    wordBeingEdited?.let { entry ->
+        var editedWord by remember(entry.word) { mutableStateOf(entry.word) }
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { wordBeingEdited = null },
+            title = { Text(text = "Edit word") },
+            text = {
+                OutlinedTextField(
+                    value = editedWord,
+                    onValueChange = { editedWord = it },
+                    singleLine = true,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val newWord = editedWord.trim().lowercase()
+                        wordBeingEdited = null
+                        if (newWord.isNotEmpty() && newWord != entry.word) {
+                            scope.launch {
+                                wordDao.rename(entry.word, newWord)
+                                reload()
+                            }
+                        }
+                    },
+                ) { Text(text = "Save") }
+            },
+            dismissButton = {
+                TextButton(onClick = { wordBeingEdited = null }) { Text(text = "Cancel") }
+            },
+        )
+    }
 }
 
 /** Groups related settings into a labeled, visually distinct card instead of a flat list of raw
@@ -429,6 +694,7 @@ private fun SettingsSection(title: String, content: @Composable () -> Unit) {
  * exercises Omakey if it's the active keyboard, hence the banner below when it isn't. */
 @Composable
 private fun TestKeyboardOverlay(onClose: () -> Unit, onSwitchKeyboard: () -> Unit) {
+    BackHandler(onBack = onClose)
     val context = LocalContext.current
     var text by remember { mutableStateOf("") }
     val focusRequester = remember { FocusRequester() }
@@ -500,6 +766,49 @@ private fun isOmakeyDefaultIme(context: android.content.Context): Boolean {
     return current?.contains(context.packageName) == true
 }
 
+/** Whether Omakey is enabled at all as an available input method — distinct from
+ * [isOmakeyDefaultIme] (enabled but not necessarily the one currently selected). Same
+ * best-effort-only caveat. */
+private fun isOmakeyEnabled(context: android.content.Context): Boolean {
+    val imm = context.getSystemService(android.content.Context.INPUT_METHOD_SERVICE)
+        as android.view.inputmethod.InputMethodManager
+    return imm.enabledInputMethodList.any { it.packageName == context.packageName }
+}
+
+/** Re-checked on every `ON_RESUME` (not just once) — the whole point of these two checks is to
+ * reflect whatever just happened in the system Settings screen the two Setup buttons send the
+ * user to, and that screen is a separate Activity this one resumes underneath when they come
+ * back. */
+@Composable
+private fun rememberSetupStatus(): Pair<Boolean, Boolean> {
+    val context = LocalContext.current
+    var isEnabled by remember { mutableStateOf(isOmakeyEnabled(context)) }
+    var isDefault by remember { mutableStateOf(isOmakeyDefaultIme(context)) }
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                isEnabled = isOmakeyEnabled(context)
+                isDefault = isOmakeyDefaultIme(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    return isEnabled to isDefault
+}
+
+/** A checkmark once the corresponding Setup step is done, an exclamation mark while it still
+ * needs attention — quick at-a-glance status instead of having to tap each button to find out. */
+@Composable
+private fun SetupStatusIcon(done: Boolean) {
+    Text(
+        text = if (done) "✓" else "!",
+        color = if (done) androidx.compose.ui.graphics.Color(0xFF3A9D5D) else androidx.compose.ui.graphics.Color(0xFFC77B00),
+        style = MaterialTheme.typography.titleMedium,
+    )
+}
+
 @Composable
 private fun FontPicker(fontPreferences: FontPreferences, currentFontId: String) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -541,6 +850,18 @@ private fun AutocorrectToggle(autocorrectPreferences: AutocorrectPreferences) {
             "(swipe or tap to accept) stay available either way.",
         checked = settings.autocorrectEnabled,
         onCheckedChange = autocorrectPreferences::setAutocorrectEnabled,
+    )
+}
+
+@Composable
+private fun AutoCapitalizeToggle(autocorrectPreferences: AutocorrectPreferences) {
+    val settings by autocorrectPreferences.settings.collectAsState()
+    SettingToggle(
+        title = "Auto-capitalize",
+        description = "Capitalizes the first letter of a new field and after sentence-ending " +
+            "punctuation (. ! ?). Off by default.",
+        checked = settings.autoCapitalizeEnabled,
+        onCheckedChange = autocorrectPreferences::setAutoCapitalizeEnabled,
     )
 }
 
@@ -591,71 +912,30 @@ private fun SettingToggle(title: String, description: String, checked: Boolean, 
     }
 }
 
-/** Drag the handle below the preview to resize the keyboard. Renders the actual KeyRowView used
- * by the real keyboard (not a mock) so the height change is judged against real key rendering —
- * letters, spacebar accent, home-row stripe, boxed-keys setting, all exactly as they'll appear
- * when typing. Non-interactive: taps don't type anything, since there's no InputConnection here. */
+/** A settings row that opens something (an overlay, a picker) — the whole row is the tap target,
+ * not just a trailing button, per standard Android settings-list UX (Settings app itself, most
+ * system preference screens). The trailing "❯" is a plain visual affordance, not itself
+ * interactive — it doesn't need to be, since the whole row already is. */
 @Composable
-private fun KeyboardHeightEditor(layoutPreferences: LayoutPreferences, theme: OmakeyTheme, fontId: String) {
-    val settings by layoutPreferences.settings.collectAsState()
-    val density = LocalDensity.current
-    var heightDp by remember(settings.keyboardHeightDp) { mutableFloatStateOf(settings.keyboardHeightDp.toFloat()) }
-    val fontFamily = remember(fontId) { FontCatalog.resolve(fontId) }
-
-    val rows = Layouts.QwertyEnUS.rows
-    val rowHeightDp = (heightDp.roundToInt() / Layouts.QwertyEnUS.rows.size)
-    val noOpAncestor: () -> androidx.compose.ui.layout.LayoutCoordinates? = remember { { null } }
-
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+private fun ClickableSettingRow(title: String, description: String, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(text = title, style = MaterialTheme.typography.bodyLarge)
+            Text(text = description, style = MaterialTheme.typography.bodySmall)
+        }
         Text(
-            text = "Height: ${heightDp.roundToInt()}dp — drag the handle below",
-            style = MaterialTheme.typography.bodySmall,
+            text = "❯",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier.padding(start = 12.dp),
         )
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height((rowHeightDp * rows.size).dp)
-                .background(theme.keyboardBackground.toComposeColor(), RoundedCornerShape(8.dp))
-                .padding(horizontal = 4.dp),
-        ) {
-            Column(Modifier.fillMaxWidth()) {
-                rows.forEachIndexed { index, row ->
-                    dev.omakey.app.keyboard.ui.KeyRowView(
-                        rowKeys = row.keys,
-                        rowHeightDp = rowHeightDp,
-                        shiftOn = false,
-                        theme = theme,
-                        accessibleMode = false,
-                        showKeyBackgrounds = settings.showKeyBackgrounds,
-                        isHomeRow = settings.showMiddleRowStripe && index == 1,
-                        onKeyTap = {},
-                        ancestorCoordinates = noOpAncestor,
-                        onBoundsMeasured = { _, _, _ -> },
-                        fontFamily = fontFamily,
-                    )
-                }
-            }
-        }
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(20.dp)
-                .draggable(
-                    orientation = Orientation.Vertical,
-                    state = rememberDraggableState { deltaPx ->
-                        heightDp = with(density) { (heightDp.dp + deltaPx.toDp()).value }
-                            .coerceIn(LayoutSettings.MIN_HEIGHT_DP.toFloat(), LayoutSettings.MAX_HEIGHT_DP.toFloat())
-                    },
-                    onDragStopped = { layoutPreferences.setKeyboardHeightDp(heightDp.roundToInt()) },
-                ),
-            contentAlignment = Alignment.Center,
-        ) {
-            Box(
-                Modifier
-                    .size(width = 40.dp, height = 4.dp)
-                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f), RoundedCornerShape(2.dp)),
-            )
-        }
     }
 }
 
@@ -687,6 +967,12 @@ private fun GestureSettingsSection(gesturePreferences: GesturePreferences) {
             checked = settings.showKeyPopup,
             onCheckedChange = gesturePreferences::setShowKeyPopup,
         )
+        SettingToggle(
+            title = "Swipe right for space",
+            description = "Swipe right anywhere on the keys to insert a space. Off by default.",
+            checked = settings.swipeRightForSpace,
+            onCheckedChange = gesturePreferences::setSwipeRightForSpace,
+        )
     }
 }
 
@@ -717,6 +1003,7 @@ private fun FeedbackSettingsSection(preferences: HapticSoundPreferences, feedbac
                 Text(text = "Strong", style = MaterialTheme.typography.bodySmall)
             }
         }
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         SettingToggle(
             title = "Key sounds",
             description = "Plays a keypress click sound while typing.",
@@ -724,6 +1011,18 @@ private fun FeedbackSettingsSection(preferences: HapticSoundPreferences, feedbac
             onCheckedChange = preferences::setSoundEnabled,
         )
         if (settings.soundEnabled) {
+            Text(text = "Volume", style = MaterialTheme.typography.bodyLarge)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(text = "Quiet", style = MaterialTheme.typography.bodySmall)
+                Slider(
+                    value = settings.soundVolume,
+                    onValueChange = preferences::setSoundVolume,
+                    onValueChangeFinished = { feedback.onKeyPress() },
+                    valueRange = HapticSoundSettings.MIN_SOUND_VOLUME..HapticSoundSettings.MAX_SOUND_VOLUME,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(text = "Loud", style = MaterialTheme.typography.bodySmall)
+            }
             Text(text = "Sound", style = MaterialTheme.typography.bodyLarge)
             SoundChoicePicker(preferences, settings.soundChoice, feedback)
         }
@@ -781,21 +1080,80 @@ private fun AccessibleModeToggle(accessibilityPreferences: AccessibilityPreferen
 }
 
 @Composable
-private fun ThemePicker(themeRepository: ThemeRepository) {
+private fun ThemePicker(
+    themeRepository: ThemeRepository,
+    customThemePreferences: CustomThemePreferences,
+    onCreateTheme: () -> Unit,
+    onEditTheme: (OmakeyTheme) -> Unit,
+) {
     val currentTheme by themeRepository.currentTheme.collectAsState()
+    val customThemes by customThemePreferences.themes.collectAsState()
+    var themeToDelete by remember { mutableStateOf<OmakeyTheme?>(null) }
+
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Presets.all.forEach { preset ->
+        (Presets.all + customThemes).forEach { theme ->
+            val isCustom = theme.id.startsWith(CustomThemePreferences.ID_PREFIX)
             ThemeRow(
-                theme = preset,
-                selected = preset.id == currentTheme.id,
-                onClick = { themeRepository.setTheme(preset) },
+                theme = theme,
+                selected = theme.id == currentTheme.id,
+                onClick = { themeRepository.setTheme(theme) },
+                onEdit = if (isCustom) { { onEditTheme(theme) } } else null,
+                onDelete = if (isCustom) { { themeToDelete = theme } } else null,
             )
         }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onCreateTheme)
+                .border(width = 2.dp, color = Color.Transparent, shape = RoundedCornerShape(12.dp))
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(56.dp)
+                    .border(width = 1.dp, color = MaterialTheme.colorScheme.outline, shape = RoundedCornerShape(8.dp)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(text = "+", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary)
+            }
+            Text(text = "Create your own theme", style = MaterialTheme.typography.bodyLarge)
+        }
+    }
+
+    // AlertDialog renders via Compose's own Dialog composable under the hood, which draws in a
+    // separate window with its own constraints — safe to keep here even though ThemePicker itself
+    // sits inside a LazyColumn item. ThemeEditorOverlay does NOT get this for free (see below).
+    themeToDelete?.let { theme ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { themeToDelete = null },
+            title = { Text(text = "Delete \"${theme.name}\"?") },
+            text = { Text(text = "This can't be undone. If it's the theme currently applied, the keyboard falls back to Dark.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        customThemePreferences.delete(theme.id)
+                        if (currentTheme.id == theme.id) themeRepository.setTheme(Presets.Dark)
+                        themeToDelete = null
+                    },
+                ) { Text(text = "Delete") }
+            },
+            dismissButton = {
+                TextButton(onClick = { themeToDelete = null }) { Text(text = "Cancel") }
+            },
+        )
     }
 }
 
 @Composable
-private fun ThemeRow(theme: OmakeyTheme, selected: Boolean, onClick: () -> Unit) {
+private fun ThemeRow(
+    theme: OmakeyTheme,
+    selected: Boolean,
+    onClick: () -> Unit,
+    onEdit: (() -> Unit)? = null,
+    onDelete: (() -> Unit)? = null,
+) {
     val borderColor = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent
     Row(
         modifier = Modifier
@@ -812,6 +1170,12 @@ private fun ThemeRow(theme: OmakeyTheme, selected: Boolean, onClick: () -> Unit)
         }
         if (selected) {
             Text(text = "✓", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleMedium)
+        }
+        if (onEdit != null) {
+            TextButton(onClick = onEdit) { Text(text = "Edit") }
+        }
+        if (onDelete != null) {
+            TextButton(onClick = onDelete) { Text(text = "Delete") }
         }
     }
 }
@@ -860,3 +1224,250 @@ private fun KeyboardSwatch(theme: OmakeyTheme) {
 }
 
 private fun dev.omakey.core.theme.ColorSpec.toComposeColor() = Color(argb.toInt())
+
+/** "Build your own theme" — full-screen editor for exactly the 4 colors requested (background,
+ * key, home-row stripe, spacebar), matching [LearnedWordsOverlay]'s full-screen-overlay pattern.
+ * Every other [OmakeyTheme] field (text color, pressed/special key backgrounds, suggestion bar,
+ * `isDark`) is derived automatically from those 4 via simple luminance rules in
+ * [buildCustomTheme] — a 9-field form would defeat the point of scoping this to "the 4 colors a
+ * user actually thinks about." [initialTheme] non-null means editing an existing custom theme
+ * (keeps its id); null means creating a new one. */
+@Composable
+private fun ThemeEditorOverlay(initialTheme: OmakeyTheme?, onSave: (OmakeyTheme) -> Unit, onClose: () -> Unit) {
+    BackHandler(onBack = onClose)
+    var name by remember { mutableStateOf(initialTheme?.name ?: "My theme") }
+    var background by remember { mutableStateOf(initialTheme?.keyboardBackground?.toComposeColor() ?: Color(0xFF1E1E1E)) }
+    var keyColor by remember { mutableStateOf(initialTheme?.keyBackground?.toComposeColor() ?: Color(0xFF2C2C2C)) }
+    var stripeColor by remember { mutableStateOf(initialTheme?.middleRowStripeColor?.toComposeColor() ?: Color(0xFF3A3A3A)) }
+    var spacebarColor by remember { mutableStateOf(initialTheme?.spacebarAccentColor?.toComposeColor() ?: Color(0xFF4A90D9)) }
+
+    val previewTheme = remember(name, background, keyColor, stripeColor, spacebarColor) {
+        buildCustomTheme(
+            id = initialTheme?.id ?: (CustomThemePreferences.ID_PREFIX + java.util.UUID.randomUUID().toString()),
+            name = name.ifBlank { "My theme" },
+            backgroundColor = background,
+            keyColor = keyColor,
+            stripeColor = stripeColor,
+            spacebarColor = spacebarColor,
+        )
+    }
+
+    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .padding(16.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = if (initialTheme == null) "Create theme" else "Edit theme",
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                TextButton(onClick = onClose) { Text(text = "Cancel") }
+            }
+
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text(text = "Name") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+            )
+
+            Text(text = "Preview", style = MaterialTheme.typography.bodyLarge)
+            ThemePreviewMock(previewTheme)
+
+            ColorPickerField(label = "Background", color = background, onColorChange = { background = it })
+            ColorPickerField(label = "Key color", color = keyColor, onColorChange = { keyColor = it })
+            ColorPickerField(label = "Home-row stripe", color = stripeColor, onColorChange = { stripeColor = it })
+            ColorPickerField(label = "Spacebar", color = spacebarColor, onColorChange = { spacebarColor = it })
+
+            Button(onClick = { onSave(previewTheme) }, modifier = Modifier.fillMaxWidth()) {
+                Text(text = "Save theme")
+            }
+        }
+    }
+}
+
+/** A real `KeyRowView` row (same composable the actual keyboard renders, reused rather than a
+ * bespoke mock — same trick as `KeyboardSizePositionOverlay`) so the editor's preview is
+ * pixel-accurate to what typing will actually look like. */
+@Composable
+private fun ThemePreviewMock(theme: OmakeyTheme) {
+    val noOpAncestor: () -> androidx.compose.ui.layout.LayoutCoordinates? = remember { { null } }
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .height(56.dp)
+            .background(theme.keyboardBackground.toComposeColor(), RoundedCornerShape(8.dp))
+            .padding(horizontal = 4.dp),
+    ) {
+        dev.omakey.app.keyboard.ui.KeyRowView(
+            rowKeys = Layouts.QwertyEnUS.rows[3].keys,
+            rowHeightDp = 56,
+            shiftOn = false,
+            theme = theme,
+            accessibleMode = false,
+            showKeyBackgrounds = false,
+            isHomeRow = false,
+            onKeyTap = {},
+            ancestorCoordinates = noOpAncestor,
+            onBoundsMeasured = { _, _, _ -> },
+        )
+    }
+}
+
+/** A labeled swatch that expands an [HsvColorPicker] inline when tapped — collapsed by default so
+ * 4 pickers don't all fight for screen space at once. */
+@Composable
+private fun ColorPickerField(label: String, color: Color, onColorChange: (Color) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { expanded = !expanded },
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Box(
+                Modifier
+                    .size(32.dp)
+                    .background(color, RoundedCornerShape(6.dp))
+                    .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(6.dp)),
+            )
+            Text(text = label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+            Text(text = if (expanded) "▲" else "▼", style = MaterialTheme.typography.bodySmall)
+        }
+        if (expanded) {
+            HsvColorPicker(color = color, onColorChange = onColorChange)
+        }
+    }
+}
+
+/** A plain hue-strip + saturation/value square, drawn with `Canvas`-free layered gradients
+ * (`Modifier.background(Brush...)`, composited via normal alpha blending) rather than a new
+ * dependency — Compose has no built-in color picker. Tap or drag either control to update. */
+@Composable
+private fun HsvColorPicker(color: Color, onColorChange: (Color) -> Unit) {
+    val initialHsv = remember(Unit) {
+        val out = FloatArray(3)
+        android.graphics.Color.colorToHSV(color.toArgb(), out)
+        out
+    }
+    var hue by remember { mutableFloatStateOf(initialHsv[0]) }
+    var saturation by remember { mutableFloatStateOf(initialHsv[1]) }
+    var value by remember { mutableFloatStateOf(initialHsv[2]) }
+
+    fun emit() {
+        onColorChange(Color(android.graphics.Color.HSVToColor(floatArrayOf(hue, saturation, value))))
+    }
+
+    val hueColor = Color(android.graphics.Color.HSVToColor(floatArrayOf(hue, 1f, 1f)))
+
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        BoxWithConstraints(
+            modifier = Modifier
+                .size(160.dp)
+                .background(hueColor)
+                .background(Brush.horizontalGradient(listOf(Color.White, Color.Transparent)))
+                .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black)))
+                .pointerInput(Unit) {
+                    detectTapGestures { offset ->
+                        saturation = (offset.x / size.width).coerceIn(0f, 1f)
+                        value = 1f - (offset.y / size.height).coerceIn(0f, 1f)
+                        emit()
+                    }
+                }
+                .pointerInput(Unit) {
+                    detectDragGestures { change, _ ->
+                        change.consume()
+                        saturation = (change.position.x / size.width).coerceIn(0f, 1f)
+                        value = 1f - (change.position.y / size.height).coerceIn(0f, 1f)
+                        emit()
+                    }
+                },
+        ) {
+            Box(
+                modifier = Modifier
+                    .offset(x = maxWidth * saturation - 6.dp, y = maxHeight * (1f - value) - 6.dp)
+                    .size(12.dp)
+                    .border(2.dp, Color.White, CircleShape),
+            )
+        }
+        Box(
+            modifier = Modifier
+                .width(28.dp)
+                .height(160.dp)
+                .background(
+                    Brush.verticalGradient(
+                        listOf(Color.Red, Color.Yellow, Color.Green, Color.Cyan, Color.Blue, Color.Magenta, Color.Red),
+                    ),
+                )
+                .pointerInput(Unit) {
+                    detectTapGestures { offset ->
+                        hue = (offset.y / size.height).coerceIn(0f, 1f) * 360f
+                        emit()
+                    }
+                }
+                .pointerInput(Unit) {
+                    detectDragGestures { change, _ ->
+                        change.consume()
+                        hue = (change.position.y / size.height).coerceIn(0f, 1f) * 360f
+                        emit()
+                    }
+                },
+        )
+    }
+}
+
+/** Derives a complete [OmakeyTheme] from just the 4 colors the editor exposes — text color picks
+ * black/white by the key color's relative luminance (light key → dark text, and vice versa);
+ * pressed/special key backgrounds are the base key color nudged lighter (dark themes) or darker
+ * (light themes); the suggestion bar is the background color nudged the same way. Keeps the
+ * editor's UI to exactly 4 fields instead of exposing all 9 of [OmakeyTheme]'s color fields. */
+private fun buildCustomTheme(
+    id: String,
+    name: String,
+    backgroundColor: Color,
+    keyColor: Color,
+    stripeColor: Color,
+    spacebarColor: Color,
+): OmakeyTheme {
+    val isDark = relativeLuminance(keyColor) < 0.5f
+    val textColor = if (isDark) Color(0xFFF2F2F2) else Color(0xFF1A1A1A)
+    val nudge = if (isDark) 0.15f else -0.15f
+    val smallNudge = if (isDark) 0.08f else -0.08f
+    return OmakeyTheme(
+        id = id,
+        name = name,
+        isDark = isDark,
+        keyboardBackground = backgroundColor.toColorSpec(),
+        keyBackground = keyColor.toColorSpec(),
+        keyBackgroundPressed = nudgeColor(keyColor, nudge).toColorSpec(),
+        keyTextColor = textColor.toColorSpec(),
+        keySpecialBackground = nudgeColor(keyColor, smallNudge).toColorSpec(),
+        suggestionBarBackground = nudgeColor(backgroundColor, smallNudge).toColorSpec(),
+        spacebarAccentColor = spacebarColor.toColorSpec(),
+        middleRowStripeColor = stripeColor.toColorSpec(),
+    )
+}
+
+private fun relativeLuminance(color: Color): Float = 0.299f * color.red + 0.587f * color.green + 0.114f * color.blue
+
+private fun nudgeColor(color: Color, amount: Float): Color = Color(
+    red = (color.red + amount).coerceIn(0f, 1f),
+    green = (color.green + amount).coerceIn(0f, 1f),
+    blue = (color.blue + amount).coerceIn(0f, 1f),
+    alpha = color.alpha,
+)
+
+private fun Color.toColorSpec(): ColorSpec = ColorSpec.fromArgbInt(this.toArgb())

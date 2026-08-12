@@ -3,6 +3,161 @@
 All notable changes to Omakey are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.0.0] — 2026-08-13
+
+A full rethink of the suggestion strip and correction engine, plus gestures, theming, the
+extension bar, the emoji panel, and the settings screens — enough ground covered since 1.1.1 to
+call this the 2.0 release.
+
+### Added
+- **The suggestion strip now offers alternatives for a word even when it's already valid** — e.g.
+  typing "well" (correctly) still offers "we'll" and other close real words to swipe/tap to,
+  since only you can tell which one was actually meant.
+- **Swipe up/down now genuinely cycles** through alternatives in either direction, however many
+  times, whether the word is still being typed, just finished, or the cursor is sitting inside an
+  already-committed one after a tap — not a one-shot "accept the fix" anymore.
+- **Real edit-distance-2 correction** — typos needing two fixes (like a swapped pair *and* a
+  wrong letter, e.g. "keynaord" → "keyboard") are now caught, not just single-character typos.
+- **Contraction suggestions** ("well" → "we'll", plus the existing "im"/"weve"/etc. set) work
+  correctly now regardless of whether the plain form happens to already be a "known" word.
+- **Contraction coverage significantly expanded** (he'd/he'll, she'd/she'll, it'd/it'll,
+  there's/there'd, here's, who'll/who'd, that'd/that'll, should've/could've/would've/might've/
+  must've, mightn't/oughtn't, ain't, y'all, o'clock, and more) plus **fuzzy matching** for typos
+  of a contraction itself (e.g. "shoudve" → "should've"), and a fix for short contraction forms
+  like "im"/"id" that were being silently dropped before contraction lookup ever ran.
+- **A "Keyboard position" setting** — drag the keyboard up or down to raise it off the bottom edge
+  for easier one-handed thumb reach, capped so it can never be dragged past the middle of the
+  screen.
+- **A consistent Phosphor-style filled icon set** for Shift, Backspace, and every Enter state
+  (not just "Done" — Go, Search, Send, Next, Previous, and the plain return key all get their own
+  icon now) — styled after Fleksy: dimmed by default, lighting up to full brightness the moment
+  you actually press it.
+- **Caps lock** — long-press (hold) shift to lock in all-caps typing, distinct from a plain tap's
+  one-shot "capitalize just the next letter." The shift icon and key background both change while
+  it's engaged so it's obvious it's on; tapping shift again turns it fully off.
+- **Swipe right for space** — off by default — a Settings toggle under Typing → Gestures.
+- **Icons for the Tools tab** (select all / copy / cut / paste / clipboard history) replacing
+  plain text labels, same Phosphor icon family as the rest of the keyboard.
+- **Version number** now shown at the bottom of the About section in Settings.
+
+### Changed
+- **Numbers page now comes before Tools** in the suggestion strip's swipeable pages (Suggestions →
+  Numbers → Tools).
+- **Number keys now match the size/font/padding of every other key** — previously noticeably
+  smaller and differently spaced.
+- **Swiping between suggestion-strip pages (Suggestions/Numbers/Tools) needs a much shorter swipe**
+  to commit — previously required a near-full-width flick.
+- **Removed the page-position dots** from the suggestion strip.
+- **Light and Dark themes now use the same spacebar accent color** — they used to differ, which
+  read as inconsistent rather than intentional.
+
+### Added (theming)
+- **"Follow system" theme option** — a new entry in the theme picker, alongside Light/Dark/Accent,
+  that switches the keyboard between Light and Dark automatically to match your device's system
+  setting, live.
+- **"Pick accent color from system"** toggle (Android 12+ only) — pulls the spacebar's accent
+  color from your device's actual Material You palette instead of the theme's own fixed color.
+- **Build your own theme** — a new "Create your own theme" entry in the theme picker opens a
+  full HSV color picker for the 4 colors that matter most (background, key color, home-row
+  stripe, spacebar), with a live preview. Save as many as you like, switch between them like any
+  other theme, and edit or delete them later.
+- **Long-press-and-drag the spacebar to move the cursor** — hold the spacebar, then drag left or
+  right to move the cursor one character at a time, without needing to tap precisely in the text.
+- **A simple inline calculator** — type an expression like "12+7=" and the result ("19") shows up
+  in the suggestion strip, ready to swipe or tap in. Handles +, -, *, / with standard order of
+  operations; never applies itself automatically.
+- **Undo/redo** — two new buttons in the Tools tab undo or redo your last few typed or deleted
+  words.
+- **A tidier Settings page** — divider lines now separate individual settings within each
+  section, and rows like "Learned words" and "Keyboard position" are fully tappable instead of
+  needing to hit a small button on the right.
+- **A sound volume slider** in Settings, independent of which click sound is selected.
+
+### Removed
+- **The redundant dismiss ("⌄") strip** beneath the key grid — the system's own back button/
+  gesture already hides the keyboard, so this was duplicate and just ate vertical space.
+
+### Fixed
+- **A real bug where "thisis" corrected to "thesis" instead of splitting into "this is"** —
+  "thisis" is also one edit away from the real word "thesis," and the old engine tried single-word
+  fixes before ever attempting a split. Splits are now tried first.
+- **Swipe-up-to-save now saves what you actually typed**, not whatever alternative happened to be
+  displayed after cycling through a few options.
+- **Swipe up was silently replacing the typed word with the first suggestion instead of saving
+  it** — a real bug in the swipe-up handler where "not cycling yet" was wrongly treated the same
+  as "advance to the first suggestion" instead of "keep what I typed."
+- **The alternatives search no longer suggests obscure/rare words** it happened to find nearby.
+- Swipe-up-to-save skips words that are already in the dictionary instead of redundantly re-saving them.
+- **Swipe-left-to-delete-word could fire instead of the spacebar cursor-drag gesture** on a fast
+  left-drag starting on the spacebar — the two gestures raced, and delete-word sometimes won.
+  Swipe-left is now never recognized when it starts on the spacebar.
+- **Swipe-up to save/learn a word only worked while the word was still being typed** — the far more
+  common case (a word you'd already finished, or navigated back into) silently did nothing. Swipe
+  up now works uniformly, and swiping up a second time on a word you saved un-learns it again —
+  either way, a brief "`word` learnt"/"`word` unlearnt" confirmation flashes in the suggestion
+  strip.
+- **Selecting all text and then swiping left or backspacing now deletes the whole selection**,
+  instead of only removing one word/character next to the cursor and leaving the rest selected.
+- **The clipboard-history listener no longer runs for the keyboard's entire lifetime** — it's now
+  only active while the keyboard is actually visible, so it doesn't read (and trigger Android's
+  "app read your clipboard" notification for) clipboard changes made in other apps while Omakey
+  isn't on screen.
+- **The suggestion strip now remembers which page (Suggestions/Numbers/Tools) you last had open**,
+  across app restarts, instead of always resetting to Suggestions.
+- **The Tools tab is now visually grouped** — Undo/Redo, then Select all/Copy/Cut/Paste, then
+  Clipboard, separated by dividers instead of one flat row of icons.
+- **A redesigned clipboard-manager mode** — opening it keeps the familiar top strip in place
+  (rather than swapping in a separate header), dims every icon except Clipboard, and disables
+  swiping between pages while it's open. Tapping Clipboard again closes it.
+- **Copied images now show up in the clipboard manager**, not just text.
+- **Long-press a clipboard item to remove it.**
+- **Fixed invisible emoji/special-character keys** — the emoji grid had no explicit text color at
+  all, so every glyph rendered in the platform default (black), invisible on dark themes.
+- **The emoji panel's backspace key now matches the alphabet keyboard's exactly** — same icon,
+  same dimmed-by-default/lit-on-press treatment, instead of a plain "⌫" glyph.
+- **Smooth transitions** — switching emoji categories, and switching between the normal keyboard
+  and the emoji/clipboard panels, now cross-fades instead of swapping instantly.
+- **A dedicated emoticons/kaomoji category** — "(^_^)" style text faces, separate from unicode
+  emoji.
+- **Fixed the keyboard visibly shifting width when switching between letters and symbols** — the
+  symbols pages were missing the extra key slot letters mode has for the emoji shortcut. That
+  slot now holds a Settings shortcut on the symbols pages instead of being left empty.
+- **The Numbers page in the suggestion strip shows extra special characters while you're on a
+  symbols page**, instead of repeating the same digits already on the main grid.
+- **Keyboard height is now the same full-screen drag-to-resize experience as Keyboard position**,
+  instead of an always-visible inline editor taking up space in the Typing section.
+- **"Pick accent color from system" no longer overrides your own custom themes** — it only ever
+  applies to Light, Dark, Follow system, and Accent.
+- **The Setup section now shows a checkmark or exclamation mark** next to each step, so you can
+  tell at a glance whether Omakey is enabled and set as your active keyboard.
+- **Learned words can now be edited**, not just removed.
+- **The Keyboard height drag handle now sits above the preview and is clearly visible**, instead
+  of a barely-visible bar pushed down near the bottom of the screen — and dragging it up now
+  correctly grows the keyboard (was backwards).
+- **"Keyboard height" and "Keyboard position" are now one combined "Keyboard size & position"
+  screen** — drag the handle to resize, drag the grip inside the preview to reposition, both on
+  the same live preview instead of two separate screens.
+- **Back button/gesture on the Keyboard position/height, theme editor, learned words, and test-
+  typing screens now returns to Settings**, instead of exiting the app entirely.
+- **Emoticons/kaomoji now fit their own width** instead of being squeezed into the same fixed
+  8-column grid as single-character emoji — adaptive columns and a smaller font stop long kaomoji
+  strings from wrapping awkwardly.
+- **A new "Auto-capitalize" setting** (off by default) — capitalizes the first letter of a new
+  field and after sentence-ending punctuation (`.`/`!`/`?`).
+- **Fixed the backspace key shifting position when switching between letters and symbols mode** —
+  the symbols pages' bottom row had one more key than the letters layout's equivalent row, so its
+  total width didn't match, visibly nudging every key after the first special key.
+- **Switching between the keyboard and the emoji/clipboard panel now slides up/down**, and
+  swiping between emoji categories now slides left/right, instead of a directionless cross-fade.
+- **Copying/cutting text no longer shows a second "read your clipboard" toast** on top of the
+  system's own "Copied to clipboard" one — Omakey already knows what it just copied, so it no
+  longer needs to read the clipboard back to record it in history. (Fixed for real this time — the
+  first attempt suppressed the read but missed that the underlying listener could end up
+  registered twice, which independently re-triggered the same toast.)
+- **Light, Dark, and Follow-system themes now use a neutral spacebar** — it blends in with the
+  rest of the keys unless you turn on "Pick accent color from system," instead of always showing
+  a blue accent whether you asked for it or not.
+
 ## [1.1.1] — 2026-08-12
 
 A round of fixes from real daily-driver feedback on 1.1.0.

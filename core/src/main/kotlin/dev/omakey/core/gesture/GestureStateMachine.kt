@@ -16,7 +16,7 @@ enum class SwipeDirection { LEFT, RIGHT, UP, DOWN }
 sealed interface GestureEvent {
     data class KeyTap(val keyCode: Int, val x: Float, val y: Float) : GestureEvent
     data class KeyLongPress(val keyCode: Int, val x: Float, val y: Float) : GestureEvent
-    data class Swipe(val direction: SwipeDirection, val velocityPxPerMs: Float) : GestureEvent
+    data class Swipe(val direction: SwipeDirection, val velocityPxPerMs: Float, val downKeyCode: Int) : GestureEvent
     data object GestureCancelled : GestureEvent
 }
 
@@ -128,7 +128,7 @@ class GestureStateMachine(
             state = State.SWIPE_COMMITTED
             val elapsed = (sample.timestampMs - downTimeMs).coerceAtLeast(1L)
             val velocity = dist / elapsed
-            return GestureEvent.Swipe(direction, velocity)
+            return GestureEvent.Swipe(direction, velocity, downKeyCode)
         }
 
         state = State.SWIPE_CANDIDATE

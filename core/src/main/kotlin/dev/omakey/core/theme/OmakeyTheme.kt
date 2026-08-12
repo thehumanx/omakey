@@ -55,7 +55,11 @@ object Presets {
         keyTextColor = ColorSpec(0xFF1A1A1A),
         keySpecialBackground = ColorSpec(0xFFE0E0E0),
         suggestionBarBackground = ColorSpec(0xFFFAFAFA),
-        spacebarAccentColor = ColorSpec(0xFFCFE3FA),
+        // Neutral (same as keyBackground) by default — the spacebar blends in with the rest of
+        // the row unless the user explicitly opts into "Pick accent color from system", which is
+        // the only thing that colors it (see resolveEffectiveTheme). It used to be a fixed blue
+        // shown unconditionally, which looked like an accent color nobody asked for.
+        spacebarAccentColor = ColorSpec(0xFFFFFFFF),
         middleRowStripeColor = ColorSpec(0x14000000),
     )
 
@@ -69,9 +73,17 @@ object Presets {
         keyTextColor = ColorSpec(0xFFF2F2F2),
         keySpecialBackground = ColorSpec(0xFF3A3A3A),
         suggestionBarBackground = ColorSpec(0xFF161616),
-        spacebarAccentColor = ColorSpec(0xFF3D6FA8),
+        // Neutral (same as keyBackground) — see Light's identical comment above.
+        spacebarAccentColor = ColorSpec(0xFF2C2C2C),
         middleRowStripeColor = ColorSpec(0x1FFFFFFF),
     )
+
+    /** Not a real color scheme of its own — a sentinel selected via [id] that tells the render
+     * layer (see `resolveEffectiveTheme` in the app module) to substitute [Light] or [Dark] based
+     * on the system's current light/dark setting, live, without needing a restart. Its own color
+     * fields are never actually shown (Dark's, copied here only as a harmless fallback in case
+     * resolution is ever skipped) — resolution always replaces them before rendering. */
+    val Auto = Dark.copy(id = "preset_auto", name = "Follow system")
 
     val Accent = OmakeyTheme(
         id = "preset_accent",
@@ -88,5 +100,5 @@ object Presets {
         middleRowStripeColor = ColorSpec(0x1FFFFFFF),
     )
 
-    val all = listOf(Light, Dark, Accent)
+    val all = listOf(Light, Dark, Auto, Accent)
 }

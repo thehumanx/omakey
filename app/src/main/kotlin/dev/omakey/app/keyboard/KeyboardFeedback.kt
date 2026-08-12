@@ -70,7 +70,7 @@ class VibratorKeyboardFeedback(context: Context, private val preferences: Haptic
             // gets a real, adjustable buzz instead of the same barely-there tick every time.
             vibrate(durationMs = 20 + (settings.hapticStrength * 25).toLong(), amplitudeFraction = settings.hapticStrength)
         }
-        if (settings.soundEnabled) playClick(settings.soundChoice, volume = 0.5f)
+        if (settings.soundEnabled) playClick(settings.soundChoice, volume = 0.5f * settings.soundVolume)
     }
 
     override fun onSwipe() {
@@ -83,7 +83,7 @@ class VibratorKeyboardFeedback(context: Context, private val preferences: Haptic
                 amplitudeFraction = (settings.hapticStrength * 1.2f).coerceAtMost(1f),
             )
         }
-        if (settings.soundEnabled) playClick(settings.soundChoice, volume = 0.8f)
+        if (settings.soundEnabled) playClick(settings.soundChoice, volume = 0.8f * settings.soundVolume)
     }
 
     private fun playClick(soundChoice: String, volume: Float) {

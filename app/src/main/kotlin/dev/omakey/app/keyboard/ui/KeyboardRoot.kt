@@ -1,5 +1,6 @@
 package dev.omakey.app.keyboard.ui
 
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -20,6 +21,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -33,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.changedToDownIgnoreConsumed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -44,6 +47,8 @@ import androidx.compose.ui.unit.sp
 import dev.omakey.app.keyboard.KeyboardFeedback
 import dev.omakey.app.keyboard.KeyboardViewModel
 import dev.omakey.app.keyboard.NoOpKeyboardFeedback
+import dev.omakey.app.keyboard.resolveEffectiveTheme
+import dev.omakey.core.icons.*
 import dev.omakey.core.gesture.GestureEvent
 import dev.omakey.core.gesture.GestureStateMachine
 import dev.omakey.core.gesture.GestureThresholds
@@ -73,16 +78,19 @@ private const val SUGGESTION_STRIP_HEIGHT_DP = 44
  * shared reference since both existing call sites already hardcode the same id string. */
 private const val EMOJI_EXTENSION_ID = "builtin.emoji"
 
+/** Matches `ClipboardHistoryExtension.id` — kept as a plain string constant for the same reason
+ * as [EMOJI_EXTENSION_ID] above. */
+private const val CLIPBOARD_EXTENSION_ID = "builtin.clipboard"
+
 @Composable
 fun KeyboardRoot(
     viewModel: KeyboardViewModel,
     accessibilityPreferences: AccessibilityPreferences? = null,
-    onHideKeyboard: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
     feedback: KeyboardFeedback = NoOpKeyboardFeedback,
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val theme = uiState.theme
+    val theme = resolveEffectiveTheme(uiState.theme, uiState.useSystemAccent)
     val scope = rememberCoroutineScope()
     val fontFamily = remember(uiState.fontId) { FontCatalog.resolve(uiState.fontId) }
 
@@ -117,6 +125,11 @@ fun KeyboardRoot(
     }
 
     var accentPopupKey by remember { mutableStateOf<KeyDefinition?>(null) }
+    // Which key (if any) is currently held down — special keys (shift, backspace, ?123, emoji,
+    // enter) render dimmed by default and "light up" to full brightness while pressed, matching
+    // the Fleksy reference the theme is modeled on. Separate from `previewKey`'s enlarged bubble
+    // above, which is character-keys-only.
+    var pressedKeyCode by remember { mutableStateOf<Int?>(null) }
     val keyLookupByCode = remember {
         { code: Int -> keyBoundsState.value.values.firstOrNull { (key, _) -> key.code == code }?.first }
     }
@@ -157,9 +170,7 @@ fun KeyboardRoot(
     val ancestorCoordinatesStable = remember { { keysAreaCoordinates } }
 
     val layoutSettings = uiState.layoutSettings
-    val effectiveRows = remember(uiState.layout, uiState.enterAction) {
-        withContextualEnterLabel(uiState.layout.rows, uiState.enterAction)
-    }
+    val effectiveRows = uiState.layout.rows
     // Row height is derived from each layout's own BASE row count (always 4, for both letters and
     // symbols — QwertyEnUS.rows.size), so keys are always the same size regardless of which
     // layout is active.
@@ -178,55 +189,137 @@ fun KeyboardRoot(
             .navigationBarsPadding(),
     ) {
         val popupKey = accentPopupKey
-        if (uiState.activeExtensionId != null && popupKey == null) {
-            if (uiState.activeExtensionId == EMOJI_EXTENSION_ID) {
+        // Which of the 3 "TopStrip is visible" bottom-content modes is active — used only to
+        // drive the Crossfade below, not the branching itself (that's still the same explicit
+        // if/else it always was). Keeping this a plain nullable key (not the bottom content
+        // itself) means Crossfade briefly composes both the old and new mode's own composables
+        // side by side during the ~150ms animation, which is safe here specifically because
+        // KeyGrid and ExtensionPanelSlot each own entirely separate gesture/state — unlike
+        // animating *within* KeyGrid across a layout change, which would risk two conflicting
+        // sets of key-bounds being written into the same shared hit-testing map mid-transition.
+        val bottomContentMode = when {
+            popupKey != null -> null // accent popup replaces the strip entirely; no crossfade
+            uiState.activeExtensionId == EMOJI_EXTENSION_ID -> "emoji"
+            uiState.activeExtensionId == CLIPBOARD_EXTENSION_ID -> "clipboard"
+            uiState.activeExtensionId == null -> "keys"
+            else -> null // any other extension takes over the whole strip+grid area; see below
+        }
+        if (uiState.activeExtensionId != null && popupKey == null && bottomContentMode == null) {
+            // Replaces the suggestion strip AND the key grid entirely — matches how the
+            // clipboard/GIF pickers behave on every mainstream keyboard, instead of stacking
+            // above the keys and making the keyboard taller.
+            ExtensionPanelSlot(
+                viewModel = viewModel,
+                heightDp = SUGGESTION_STRIP_HEIGHT_DP + gridHeightDp,
+            )
+        } else if (bottomContentMode != null) {
+            when (bottomContentMode) {
                 // The emoji panel already has its own alphabet-switch (ABC) and category tabs at
-                // its bottom, so the extension switcher's own header row (clipboard/emoji/keyboard
-                // icons) is redundant here — keep the normal suggestions/tools/numbers top strip
-                // instead, exactly like the regular typing view, and let the panel occupy just the
-                // key-grid's vertical slot.
-                TopStrip(
-                    viewModel = viewModel,
-                    uiState = uiState,
-                    theme = theme,
-                    fontFamily = fontFamily,
-                    feedback = feedback,
+                // its bottom, so the extension switcher's own header row (clipboard/emoji/
+                // keyboard icons) is redundant here — keep the normal suggestions/tools/numbers
+                // top strip instead, exactly like the regular typing view.
+                "emoji" -> TopStrip(viewModel = viewModel, uiState = uiState, theme = theme, fontFamily = fontFamily, feedback = feedback)
+                // Locked to the Tools page with everything except Clipboard dimmed and swiping
+                // between pages disabled — the top strip becomes a single-purpose "you're in
+                // clipboard mode" bar. Tapping the (still enabled) Clipboard icon again exits.
+                "clipboard" -> TopStrip(
+                    viewModel = viewModel, uiState = uiState, theme = theme, fontFamily = fontFamily,
+                    feedback = feedback, clipboardModeActive = true,
                 )
-                ExtensionPanelSlot(
-                    viewModel = viewModel,
-                    heightDp = gridHeightDp,
-                    showHeaderRow = false,
-                )
-            } else {
-                // Replaces the suggestion strip AND the key grid entirely — matches how the
-                // clipboard/GIF pickers behave on every mainstream keyboard, instead of stacking
-                // above the keys and making the keyboard taller.
-                ExtensionPanelSlot(
-                    viewModel = viewModel,
-                    heightDp = SUGGESTION_STRIP_HEIGHT_DP + gridHeightDp,
-                )
+                else -> TopStrip(viewModel = viewModel, uiState = uiState, theme = theme, fontFamily = fontFamily, feedback = feedback)
             }
-        } else {
-            if (popupKey != null) {
-                AccentPickerBar(
-                    key = popupKey,
-                    theme = theme,
-                    onSelect = { char ->
-                        viewModel.onAccentSelected(char)
-                        accentPopupKey = null
+            // A short directional slide for the region below the top strip when switching between
+            // the normal keyboard and the emoji/clipboard panels — entering a panel slides up,
+            // returning to the keyboard slides back down, instead of a directionless cross-fade.
+            // Pure slide, deliberately no accompanying fadeIn/fadeOut — combining a translation
+            // layer with an alpha layer on top of KeyGrid/ExtensionPanelSlot (both non-trivial
+            // composables: real pointer-input gesture detectors and hit-testing bounds, or a
+            // LazyVerticalGrid of emoji) doubled the compositing work during the animation window.
+            //
+            // The real cause of the reported "laggy, stutters, still looks like slide up" bug
+            // (confirmed via adb screenrecord + frame-diffing: the emoji->keys transition visibly
+            // kept changing for ~700ms, versus ~200ms for keys->emoji) was neither of the above —
+            // it was AnimatedContent's *default* SizeTransform, which nobody had overridden.
+            // Whenever this ContentTransform's two children report even a slightly different
+            // measured height (KeyGrid vs ExtensionPanelSlot, at different composition/measure
+            // passes, both nominally driven by the same gridHeightDp but not guaranteed pixel-
+            // identical), the default SizeTransform animates the container size with a
+            // Spring.StiffnessMediumLow spring — which takes ~500-700ms to settle, is clipped to
+            // that slowly-resizing container the whole time, and starts every transition over
+            // again if it's still mid-flight when interrupted. That's the actual multi-hundred-ms
+            // "stutter," not a direction bug or compositing cost. Since both children are always
+            // meant to be exactly gridHeightDp tall, there's nothing to animate here — disabling
+            // size animation entirely (snap, no clip) removes the spring altogether.
+            val slideSpec = androidx.compose.animation.core.tween<androidx.compose.ui.unit.IntOffset>(180)
+            // clip = false (tried in the previous attempt) let the sliding content paint outside
+            // its own box while translated — which meant it could visually paint over TopStrip
+            // above it instead of just sliding within its own area, making TopStrip look like it
+            // "disappeared." Keeping clip = true (the safe default) but wrapping AnimatedContent
+            // in its own fixed-height Box (exactly gridHeightDp, matching both children exactly)
+            // is what actually removes the need for any size animation in the first place — the
+            // container's size is now decided by the outer Box, never by AnimatedContent itself,
+            // so its default spring-based SizeTransform has nothing to do regardless.
+            val noSizeAnimation = androidx.compose.animation.SizeTransform(clip = true) { _, _ ->
+                androidx.compose.animation.core.snap()
+            }
+            Box(Modifier.fillMaxWidth().height(gridHeightDp.dp)) {
+                androidx.compose.animation.AnimatedContent(
+                    targetState = bottomContentMode,
+                    transitionSpec = {
+                        if (targetState == "keys") {
+                            (androidx.compose.animation.slideInVertically(slideSpec) { -it } togetherWith
+                                androidx.compose.animation.slideOutVertically(slideSpec) { it })
+                                .using(noSizeAnimation)
+                        } else {
+                            (androidx.compose.animation.slideInVertically(slideSpec) { it } togetherWith
+                                androidx.compose.animation.slideOutVertically(slideSpec) { -it })
+                                .using(noSizeAnimation)
+                        }
                     },
-                    onDismiss = { accentPopupKey = null },
-                )
-            } else {
-                TopStrip(
-                    viewModel = viewModel,
-                    uiState = uiState,
-                    theme = theme,
-                    fontFamily = fontFamily,
-                    feedback = feedback,
-                )
+                    label = "bottom-content-mode",
+                ) { mode ->
+                when (mode) {
+                    "emoji", "clipboard" -> ExtensionPanelSlot(viewModel = viewModel, heightDp = gridHeightDp, showHeaderRow = false)
+                    else -> KeyGrid(
+                        viewModel = viewModel,
+                        uiState = uiState,
+                        theme = theme,
+                        layoutSettings = layoutSettings,
+                        effectiveRows = effectiveRows,
+                        rowHeightDp = rowHeightDp,
+                        gridHeightDp = gridHeightDp,
+                        homeRowIndex = homeRowIndex,
+                        accessibleMode = accessibleMode,
+                        touchSlopPx = touchSlopPx,
+                        hitTester = hitTester,
+                        keyLookupByCode = keyLookupByCode,
+                        keyBoundsState = keyBoundsState,
+                        scope = scope,
+                        onKeyTapStable = onKeyTapStable,
+                        ancestorCoordinatesStable = ancestorCoordinatesStable,
+                        onKeysAreaPositioned = { keysAreaCoordinates = it },
+                        onShowAccentPopup = { accentPopupKey = it },
+                        onPreviewKey = onPreviewKeyStable,
+                        previewKey = previewKey,
+                        onOpenSettings = onOpenSettings,
+                        feedback = feedback,
+                        fontFamily = fontFamily,
+                        pressedKeyCode = pressedKeyCode,
+                        onPressedKeyChange = { pressedKeyCode = it },
+                    )
+                }
+                }
             }
-
+        } else if (popupKey != null) {
+            AccentPickerBar(
+                key = popupKey,
+                theme = theme,
+                onSelect = { char ->
+                    viewModel.onAccentSelected(char)
+                    accentPopupKey = null
+                },
+                onDismiss = { accentPopupKey = null },
+            )
             KeyGrid(
                 viewModel = viewModel,
                 uiState = uiState,
@@ -251,19 +344,22 @@ fun KeyboardRoot(
                 onOpenSettings = onOpenSettings,
                 feedback = feedback,
                 fontFamily = fontFamily,
+                pressedKeyCode = pressedKeyCode,
+                onPressedKeyChange = { pressedKeyCode = it },
             )
         }
 
-        // A dedicated strip for dismissing the keyboard (Fleksy-style), rather than relying only
-        // on the system's own IME-switcher affordance in the nav area.
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(22.dp)
-                .clickable(onClick = onHideKeyboard),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(text = "⌄", color = theme.keyTextColor.toComposeColor(), fontSize = 14.sp)
+        // User-adjustable breathing room below the spacebar row, set via the drag-to-position
+        // "placement mode" in Settings (see SettingsActivity's KeyboardPlacementOverlay) rather
+        // than a plain height slider — raises the whole keyboard for easier one-handed thumb
+        // reach. Zero by default (no visual change for anyone who hasn't opted in).
+        if (layoutSettings.bottomOffsetDp > 0) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(layoutSettings.bottomOffsetDp.dp)
+                    .background(theme.keyboardBackground.toComposeColor()),
+            )
         }
     }
 }
@@ -293,6 +389,8 @@ private fun KeyGrid(
     onOpenSettings: () -> Unit,
     feedback: KeyboardFeedback,
     fontFamily: androidx.compose.ui.text.font.FontFamily?,
+    pressedKeyCode: Int?,
+    onPressedKeyChange: (Int?) -> Unit,
 ) {
     val gestureSettings = uiState.gestureSettings
     Box(
@@ -325,7 +423,18 @@ private fun KeyGrid(
                         awaitEachGesture {
                             val down = awaitFirstDown(requireUnconsumed = false)
                             val downTime = System.currentTimeMillis()
+                            onPressedKeyChange(hitTester.keyCodeAt(down.position.x, down.position.y).takeIf { it != 0 })
                             machine.onTouch(TouchSample(down.position.x, down.position.y, downTime, TouchAction.DOWN))
+
+                            // Long-press-and-drag-to-move-cursor (spacebar only): once engaged,
+                            // this whole gesture is "consumed" by cursor dragging — the normal
+                            // GestureStateMachine tap/swipe path below is skipped entirely for the
+                            // rest of this touch (see the `if (!cursorDragActive)` guards), same
+                            // idea as how held-BACKSPACE-repeat/held-SHIFT-caps-lock already
+                            // short-circuit the generic long-press fallback.
+                            var cursorDragActive = false
+                            var cursorDragAnchorX = down.position.x
+                            val cursorDragStepPx = 10.dp.toPx()
 
                             val longPressJob: Job = scope.launch {
                                 delay(400)
@@ -341,9 +450,22 @@ private fun KeyGrid(
                                             viewModel.onKeyTap(SpecialKeyCode.BACKSPACE)
                                             delay(60)
                                         }
+                                    } else if (heldKey?.code == SpecialKeyCode.SHIFT) {
+                                        // Holding shift engages caps lock (stays on until shift is
+                                        // tapped again), distinct from a plain tap's one-shot
+                                        // "capitalize just the next letter" — matches standard
+                                        // mobile keyboard convention. Routing this through the
+                                        // generic KeyLongPress -> onKeyTap fallback below would
+                                        // just toggle one-shot shift a second time instead.
+                                        feedback.onKeyPress()
+                                        viewModel.enableCapsLock()
+                                    } else if (heldKey?.code == SpecialKeyCode.SPACE) {
+                                        feedback.onKeyPress()
+                                        cursorDragActive = true
+                                        cursorDragAnchorX = down.position.x
                                     } else {
                                         handleGestureEvent(
-                                            event, viewModel, keyLookupByCode, gestureSettings.showKeyPopup,
+                                            event, viewModel, keyLookupByCode, gestureSettings.showKeyPopup, gestureSettings.swipeRightForSpace,
                                             onShowAccentPopup, onPreviewKey, onOpenSettings, feedback,
                                         )
                                     }
@@ -364,13 +486,15 @@ private fun KeyGrid(
                                 // immediately as a plain tap — simultaneous secondary fingers during
                                 // typing are never meant as swipes, so no need to route them through
                                 // the swipe/long-press machine.
-                                event.changes.forEach { other ->
-                                    if (other.id != down.id && other.changedToDownIgnoreConsumed()) {
-                                        val code = hitTester.keyCodeAt(other.position.x, other.position.y)
-                                        if (code != 0) {
-                                            feedback.onKeyPress()
-                                            onPreviewKey(code)
-                                            viewModel.onKeyTap(code)
+                                if (!cursorDragActive) {
+                                    event.changes.forEach { other ->
+                                        if (other.id != down.id && other.changedToDownIgnoreConsumed()) {
+                                            val code = hitTester.keyCodeAt(other.position.x, other.position.y)
+                                            if (code != 0) {
+                                                feedback.onKeyPress()
+                                                onPreviewKey(code)
+                                                viewModel.onKeyTap(code)
+                                            }
                                         }
                                     }
                                 }
@@ -379,21 +503,37 @@ private fun KeyGrid(
                                 val now = System.currentTimeMillis()
                                 if (!change.pressed) {
                                     longPressJob.cancel()
-                                    val gestureEvent = machine.onTouch(
-                                        TouchSample(change.position.x, change.position.y, now, TouchAction.UP),
-                                    )
-                                    handleGestureEvent(
-                                        gestureEvent, viewModel, keyLookupByCode, gestureSettings.showKeyPopup,
-                                        onShowAccentPopup, onPreviewKey, onOpenSettings, feedback,
-                                    )
-                                    settled = true
+                                    onPressedKeyChange(null)
+                                    if (cursorDragActive) {
+                                        settled = true
+                                    } else {
+                                        val gestureEvent = machine.onTouch(
+                                            TouchSample(change.position.x, change.position.y, now, TouchAction.UP),
+                                        )
+                                        handleGestureEvent(
+                                            gestureEvent, viewModel, keyLookupByCode, gestureSettings.showKeyPopup, gestureSettings.swipeRightForSpace,
+                                            onShowAccentPopup, onPreviewKey, onOpenSettings, feedback,
+                                        )
+                                        settled = true
+                                    }
+                                } else if (cursorDragActive) {
+                                    val delta = change.position.x - cursorDragAnchorX
+                                    if (delta >= cursorDragStepPx) {
+                                        feedback.onKeyPress()
+                                        viewModel.moveCursor(forward = true)
+                                        cursorDragAnchorX = change.position.x
+                                    } else if (delta <= -cursorDragStepPx) {
+                                        feedback.onKeyPress()
+                                        viewModel.moveCursor(forward = false)
+                                        cursorDragAnchorX = change.position.x
+                                    }
                                 } else {
                                     val gestureEvent = machine.onTouch(
                                         TouchSample(change.position.x, change.position.y, now, TouchAction.MOVE),
                                     )
                                     if (gestureEvent != null) longPressJob.cancel()
                                     handleGestureEvent(
-                                        gestureEvent, viewModel, keyLookupByCode, gestureSettings.showKeyPopup,
+                                        gestureEvent, viewModel, keyLookupByCode, gestureSettings.showKeyPopup, gestureSettings.swipeRightForSpace,
                                         onShowAccentPopup, onPreviewKey, onOpenSettings, feedback,
                                     )
                                 }
@@ -422,6 +562,9 @@ private fun KeyGrid(
                     ancestorCoordinates = ancestorCoordinatesStable,
                     onBoundsMeasured = onBoundsMeasuredStable,
                     fontFamily = fontFamily,
+                    pressedKeyCode = pressedKeyCode,
+                    capsLockOn = uiState.capsLockOn,
+                    enterAction = uiState.enterAction,
                 )
             }
         }
@@ -454,40 +597,51 @@ private fun KeyGrid(
     }
 }
 
-/** Swaps the Enter key's label for one reflecting what it'll actually do in the focused field
- * (e.g. "Go" in a URL bar, "Send" in a chat compose box) instead of always showing a generic
- * return glyph — mirrors the label change every mainstream keyboard makes for the same reason.
- * Rows/keys are `@Immutable` data classes, so this is a cheap `.copy()` on just the one row that
- * contains the Enter key, recomputed only when the layout or resolved action actually changes. */
-private fun withContextualEnterLabel(rows: List<LayoutKeyRow>, enterAction: Int): List<LayoutKeyRow> {
-    val label = enterKeyLabel(enterAction) ?: return rows
-    return rows.map { row ->
-        if (row.keys.none { it.code == SpecialKeyCode.ENTER }) {
-            row
-        } else {
-            LayoutKeyRow(row.keys.map { if (it.code == SpecialKeyCode.ENTER) it.copy(label = label) else it })
-        }
-    }
+/** Every key gets an icon now (shift/backspace always; Enter always, reflecting whatever the
+ * focused field's [android.view.inputmethod.EditorInfo] action actually is — "Go" in a URL bar,
+ * "Send" in a chat compose box, a plain return glyph otherwise) — a full, consistent Phosphor
+ * "fill" icon family (see `PhosphorIcons.kt`) rather than the old mix of raw unicode glyphs
+ * (`⇧`/`⌫`/`⏎`) plus ad-hoc emoji/text substitutions per Enter action ("🔍", "➤", "Go", "Next",
+ * "Prev"). Every other key (letters, symbols, `?123`, emoji) keeps its plain text/emoji label —
+ * only these two/three logical keys get icon treatment. */
+private fun keyIcon(key: KeyDefinition, capsLockOn: Boolean, enterAction: Int): ImageVector? = when (key.code) {
+    SpecialKeyCode.SHIFT -> if (capsLockOn) PhosphorShiftLocked else PhosphorShift
+    SpecialKeyCode.BACKSPACE -> PhosphorBackspace
+    SpecialKeyCode.ENTER -> enterIcon(enterAction)
+    SpecialKeyCode.SETTINGS -> PhosphorGear
+    else -> null
 }
 
-private fun enterKeyLabel(enterAction: Int): String? = when (enterAction) {
+private fun enterIcon(enterAction: Int): ImageVector = when (enterAction) {
+    android.view.inputmethod.EditorInfo.IME_ACTION_GO,
+    android.view.inputmethod.EditorInfo.IME_ACTION_NEXT,
+    -> PhosphorArrowRight
+    android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH -> PhosphorSearch
+    android.view.inputmethod.EditorInfo.IME_ACTION_SEND -> PhosphorSend
+    android.view.inputmethod.EditorInfo.IME_ACTION_DONE -> PhosphorCheck
+    android.view.inputmethod.EditorInfo.IME_ACTION_PREVIOUS -> PhosphorArrowLeft
+    else -> PhosphorEnter // NONE/UNSPECIFIED — plain newline.
+}
+
+private fun enterDescription(enterAction: Int): String = when (enterAction) {
     android.view.inputmethod.EditorInfo.IME_ACTION_GO -> "Go"
-    android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH -> "🔍"
-    android.view.inputmethod.EditorInfo.IME_ACTION_SEND -> "➤"
     android.view.inputmethod.EditorInfo.IME_ACTION_NEXT -> "Next"
-    android.view.inputmethod.EditorInfo.IME_ACTION_DONE -> "✓"
-    android.view.inputmethod.EditorInfo.IME_ACTION_PREVIOUS -> "Prev"
-    else -> null // NONE/UNSPECIFIED keep the layout's default "⏎" — no override needed.
+    android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH -> "Search"
+    android.view.inputmethod.EditorInfo.IME_ACTION_SEND -> "Send"
+    android.view.inputmethod.EditorInfo.IME_ACTION_DONE -> "Done"
+    android.view.inputmethod.EditorInfo.IME_ACTION_PREVIOUS -> "Previous"
+    else -> "Enter"
 }
 
-private fun describeKey(key: KeyDefinition): String = when (key.code) {
+private fun describeKey(key: KeyDefinition, enterAction: Int = android.view.inputmethod.EditorInfo.IME_ACTION_NONE): String = when (key.code) {
     SpecialKeyCode.SHIFT -> "Shift"
     SpecialKeyCode.BACKSPACE -> "Backspace"
     SpecialKeyCode.SPACE -> "Space"
-    SpecialKeyCode.ENTER -> "Enter"
+    SpecialKeyCode.ENTER -> enterDescription(enterAction)
     SpecialKeyCode.SYMBOLS -> "Symbols"
     SpecialKeyCode.LETTERS -> "Letters"
     SpecialKeyCode.EXTENSIONS -> "Emoji and extensions"
+    SpecialKeyCode.SETTINGS -> "Settings"
     else -> key.label
 }
 
@@ -496,6 +650,7 @@ private fun handleGestureEvent(
     viewModel: KeyboardViewModel,
     keyLookupByCode: (Int) -> KeyDefinition?,
     showKeyPopup: Boolean,
+    swipeRightForSpace: Boolean,
     onShowAccentPopup: (KeyDefinition?) -> Unit,
     onPreviewKey: (Int) -> Unit,
     onOpenSettings: () -> Unit,
@@ -506,11 +661,28 @@ private fun handleGestureEvent(
             onShowAccentPopup(null)
             if (event.keyCode != 0) {
                 feedback.onKeyPress()
-                onPreviewKey(event.keyCode)
-                viewModel.onKeyTap(event.keyCode)
+                if (event.keyCode == SpecialKeyCode.SETTINGS) {
+                    // Opens Settings directly, same as long-pressing the emoji/extensions key
+                    // does — intercepted here rather than routed through KeyboardViewModel.
+                    // onKeyTap(), which has no concept of "open the host Activity" (that
+                    // callback lives at the UI layer, passed down from OmakeyInputMethodService).
+                    onOpenSettings()
+                } else {
+                    onPreviewKey(event.keyCode)
+                    viewModel.onKeyTap(event.keyCode)
+                }
             }
         }
         is GestureEvent.Swipe -> {
+            // Off by default (see GestureSettings.swipeRightForSpace) — a disabled swipe-right is
+            // a full no-op, not just a suppressed action, so it doesn't fire haptic/popup-dismiss
+            // feedback for a gesture that visibly did nothing.
+            if (event.direction == SwipeDirection.RIGHT && !swipeRightForSpace) return
+            // A swipe-left starting on the spacebar is reserved exclusively for the long-press-
+            // and-drag cursor-move gesture (see KeyGrid's `cursorDragActive`) — without this, a
+            // fast left-drag on the spacebar could win the race and delete a word before the
+            // 400ms long-press timer had a chance to engage cursor-drag mode instead.
+            if (event.direction == SwipeDirection.LEFT && event.downKeyCode == SpecialKeyCode.SPACE) return
             onShowAccentPopup(null)
             feedback.onSwipe()
             when (event.direction) {
@@ -556,6 +728,9 @@ internal fun KeyRowView(
     ancestorCoordinates: () -> androidx.compose.ui.layout.LayoutCoordinates?,
     onBoundsMeasured: (Int, KeyDefinition, Rect) -> Unit,
     fontFamily: androidx.compose.ui.text.font.FontFamily? = null,
+    pressedKeyCode: Int? = null,
+    capsLockOn: Boolean = false,
+    enterAction: Int = android.view.inputmethod.EditorInfo.IME_ACTION_NONE,
 ) {
     Box(
         Modifier
@@ -584,22 +759,28 @@ internal fun KeyRowView(
                 val label = key.label.let { if (it.length == 1) it.uppercase() else it }
                 val fontSize = if (key.label.length == 1) 24.sp else 15.sp
                 val isSpace = key.code == SpecialKeyCode.SPACE
+                val isCapsLockKey = key.code == SpecialKeyCode.SHIFT && capsLockOn
                 val keyBackground = when {
                     isSpace -> theme.spacebarAccentColor.toComposeColor()
+                    // Caps lock gets its own persistent highlight, same visual language as a
+                    // physical caps-lock LED — distinguishes "locked on" from a plain momentary
+                    // press, which only brightens the icon (see isPressed below).
+                    isCapsLockKey -> theme.keySpecialBackground.toComposeColor()
                     !showKeyBackgrounds -> Color.Transparent
                     key.keyType == dev.omakey.core.layout.KeyType.SPECIAL -> theme.keySpecialBackground.toComposeColor()
                     else -> theme.keyBackground.toComposeColor()
                 }
+                val keyDescription = if (key.code == SpecialKeyCode.ENTER) describeKey(key, enterAction) else describeKey(key)
                 Box(
                     modifier = Modifier
                         .weight(key.widthWeight)
                         .fillMaxHeight()
                         .let { m ->
                             if (accessibleMode) {
-                                m.clickable(onClickLabel = describeKey(key)) { onKeyTap(key.code) }
-                                    .semantics { contentDescription = describeKey(key) }
+                                m.clickable(onClickLabel = keyDescription) { onKeyTap(key.code) }
+                                    .semantics { contentDescription = keyDescription }
                             } else {
-                                m.semantics { contentDescription = describeKey(key) }
+                                m.semantics { contentDescription = keyDescription }
                             }
                         }
                         .padding(horizontal = 1.5.dp, vertical = 1.5.dp)
@@ -607,16 +788,29 @@ internal fun KeyRowView(
                     contentAlignment = Alignment.Center,
                 ) {
                     val isActiveShift = key.code == SpecialKeyCode.SHIFT && shiftOn
-                    Text(
-                        text = label,
-                        color = if (isActiveShift) {
-                            theme.keyBackgroundPressed.toComposeColor()
-                        } else {
-                            theme.keyTextColor.toComposeColor()
-                        },
-                        fontFamily = fontFamily,
-                        fontSize = fontSize,
-                    )
+                    // Fleksy-style treatment: special (non-space) keys sit dimmed by default and
+                    // light up to full brightness the moment they're actually held — makes the
+                    // letter keys (always full brightness) read as the primary content and the
+                    // control keys as secondary, plus gives a clear "yes, I registered your
+                    // press" cue for keys like backspace that have no other visual feedback.
+                    val isDimmable = key.keyType == dev.omakey.core.layout.KeyType.SPECIAL && !isSpace
+                    val isPressed = pressedKeyCode == key.code
+                    val tint = when {
+                        isActiveShift -> theme.keyBackgroundPressed.toComposeColor()
+                        isDimmable && !isPressed -> theme.keyTextColor.toComposeColor().copy(alpha = 0.5f)
+                        else -> theme.keyTextColor.toComposeColor()
+                    }
+                    val icon = keyIcon(key, capsLockOn, enterAction)
+                    if (icon != null) {
+                        Icon(imageVector = icon, contentDescription = keyDescription, tint = tint, modifier = Modifier.size(20.dp))
+                    } else {
+                        Text(
+                            text = label,
+                            color = tint,
+                            fontFamily = fontFamily,
+                            fontSize = fontSize,
+                        )
+                    }
                 }
             }
         }
@@ -664,21 +858,20 @@ private fun AccentPickerBar(key: KeyDefinition, theme: OmakeyTheme, onSelect: (C
 
 private fun tabToPage(tab: dev.omakey.app.keyboard.TopStripTab): Int = when (tab) {
     dev.omakey.app.keyboard.TopStripTab.SUGGESTIONS -> 0
-    dev.omakey.app.keyboard.TopStripTab.TOOLS -> 1
-    dev.omakey.app.keyboard.TopStripTab.NUMBERS -> 2
+    dev.omakey.app.keyboard.TopStripTab.NUMBERS -> 1
+    dev.omakey.app.keyboard.TopStripTab.TOOLS -> 2
 }
 
 private fun pageToTab(page: Int): dev.omakey.app.keyboard.TopStripTab = when (page) {
-    1 -> dev.omakey.app.keyboard.TopStripTab.TOOLS
-    2 -> dev.omakey.app.keyboard.TopStripTab.NUMBERS
+    1 -> dev.omakey.app.keyboard.TopStripTab.NUMBERS
+    2 -> dev.omakey.app.keyboard.TopStripTab.TOOLS
     else -> dev.omakey.app.keyboard.TopStripTab.SUGGESTIONS
 }
 
 /**
  * The strip above the key grid — one shared slot with three horizontally swipeable pages
- * (Fleksy-style, not tap-driven tabs): word suggestions (default), text-editing tools +
- * clipboard, and a numbers row. Small dots at the right edge hint that more pages exist and show
- * which one is active.
+ * (Fleksy-style, not tap-driven tabs): word suggestions (default), a numbers row, and
+ * text-editing tools + clipboard.
  */
 @Composable
 private fun TopStrip(
@@ -687,21 +880,32 @@ private fun TopStrip(
     theme: OmakeyTheme,
     fontFamily: androidx.compose.ui.text.font.FontFamily?,
     feedback: KeyboardFeedback,
+    clipboardModeActive: Boolean = false,
 ) {
     val pagerState = androidx.compose.foundation.pager.rememberPagerState(
-        initialPage = tabToPage(uiState.topStripTab),
+        initialPage = if (clipboardModeActive) 2 else tabToPage(uiState.topStripTab),
     ) { 3 }
 
     // Two-way sync with the ViewModel: a swipe here updates topStripTab (so other logic — e.g.
     // resetForNewField snapping back to Suggestions on a new text field — has one source of
     // truth), and an external change to topStripTab (not currently triggered from elsewhere, but
-    // keeps the pager honest if something ever does) scrolls the pager to match.
-    androidx.compose.runtime.LaunchedEffect(pagerState.currentPage) {
-        viewModel.selectTopStripTab(pageToTab(pagerState.currentPage))
-    }
-    androidx.compose.runtime.LaunchedEffect(uiState.topStripTab) {
-        val target = tabToPage(uiState.topStripTab)
-        if (pagerState.currentPage != target) pagerState.scrollToPage(target)
+    // keeps the pager honest if something ever does) scrolls the pager to match. Suppressed
+    // entirely in clipboard mode — see below, the pager is locked to the Tools page there anyway.
+    if (!clipboardModeActive) {
+        androidx.compose.runtime.LaunchedEffect(pagerState.currentPage) {
+            viewModel.selectTopStripTab(pageToTab(pagerState.currentPage))
+        }
+        androidx.compose.runtime.LaunchedEffect(uiState.topStripTab) {
+            val target = tabToPage(uiState.topStripTab)
+            if (pagerState.currentPage != target) pagerState.scrollToPage(target)
+        }
+    } else {
+        // Force (and keep forcing) the Tools page while clipboard mode is active, regardless of
+        // whatever tab was last active — entering clipboard mode always shows the dimmed Tools
+        // row, never leaves the user on Suggestions/Numbers underneath it.
+        androidx.compose.runtime.LaunchedEffect(Unit) {
+            if (pagerState.currentPage != 2) pagerState.scrollToPage(2)
+        }
     }
 
     Box(
@@ -713,6 +917,16 @@ private fun TopStrip(
         androidx.compose.foundation.pager.HorizontalPager(
             state = pagerState,
             modifier = Modifier.fillMaxSize(),
+            // Locked to the current page in clipboard mode — swiping between suggestions/numbers/
+            // tools makes no sense while a full-screen clipboard picker is open underneath.
+            userScrollEnabled = !clipboardModeActive,
+            // Default snap threshold (0.5f — needs a near-full-width flick to commit to the next
+            // page) read as "swipe for extension bar is not seamless." Lowered so a shorter,
+            // easier swipe still lands on the next/previous page.
+            flingBehavior = androidx.compose.foundation.pager.PagerDefaults.flingBehavior(
+                state = pagerState,
+                snapPositionalThreshold = 0.2f,
+            ),
         ) { page ->
             when (page) {
                 0 -> SuggestionsTabContent(
@@ -722,25 +936,25 @@ private fun TopStrip(
                     fontFamily = fontFamily,
                     onAccept = viewModel::onSuggestionAccepted,
                 )
-                1 -> ToolsTabContent(theme, fontFamily, viewModel, feedback)
-                else -> NumbersTabContent(theme, fontFamily, viewModel, feedback)
+                1 -> NumbersTabContent(theme, fontFamily, viewModel, feedback, uiState.layout.id)
+                else -> ToolsTabContent(
+                    theme, fontFamily, viewModel, feedback, uiState.canUndo, uiState.canRedo,
+                    clipboardModeActive = clipboardModeActive,
+                )
             }
         }
-        Row(
-            Modifier
-                .align(Alignment.CenterEnd)
-                .padding(end = 6.dp),
-            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(3.dp),
-        ) {
-            repeat(3) { index ->
-                Box(
-                    Modifier
-                        .size(5.dp)
-                        .background(
-                            theme.keyTextColor.toComposeColor().copy(alpha = if (pagerState.currentPage == index) 0.9f else 0.3f),
-                            androidx.compose.foundation.shape.CircleShape,
-                        ),
-                )
+        // Learn/unlearn confirmation ("hello learnt") — briefly covers whichever page is showing,
+        // same visual slot as the suggestions themselves, cleared automatically after ~0.5s (see
+        // KeyboardViewModel.showBanner).
+        val banner = uiState.bannerMessage
+        if (banner != null) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(theme.suggestionBarBackground.toComposeColor()),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(text = banner, color = theme.keyTextColor.toComposeColor(), fontFamily = fontFamily, fontSize = 14.sp)
             }
         }
     }
@@ -789,57 +1003,136 @@ private fun ToolsTabContent(
     fontFamily: androidx.compose.ui.text.font.FontFamily?,
     viewModel: KeyboardViewModel,
     feedback: KeyboardFeedback,
+    canUndo: Boolean,
+    canRedo: Boolean,
+    // Non-null while the clipboard panel is open — every icon except Clipboard itself renders
+    // dimmed and non-interactive, and Clipboard becomes a toggle-back-to-keys button instead of
+    // an open action (see item 7: clipboard-mode top bar redesign).
+    clipboardModeActive: Boolean = false,
 ) {
-    val tools = remember(viewModel) {
+    val editTools = remember(viewModel) {
         listOf(
-            "Select all" to viewModel::onSelectAll,
-            "Copy" to viewModel::onCopy,
-            "Cut" to viewModel::onCut,
-            "Paste" to viewModel::onPaste,
-            "Clipboard" to { viewModel.selectExtension("builtin.clipboard") },
+            Triple("Select all", PhosphorSelectAll, viewModel::onSelectAll),
+            Triple("Copy", PhosphorCopy, viewModel::onCopy),
+            Triple("Cut", PhosphorCut, viewModel::onCut),
+            Triple("Paste", PhosphorPaste, viewModel::onPaste),
         )
     }
     LazyRow(
         Modifier.fillMaxWidth().fillMaxHeight().padding(horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(2.dp),
     ) {
-        items(tools) { (label, action) ->
-            Box(
-                Modifier
-                    .padding(horizontal = 4.dp)
-                    .clickable { feedback.onKeyPress(); action() }
-                    .padding(horizontal = 10.dp, vertical = 6.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(text = label, color = theme.keyTextColor.toComposeColor(), fontFamily = fontFamily, fontSize = 14.sp)
-            }
+        // Group 1: Undo / Redo.
+        item {
+            ToolButton(
+                description = "Undo",
+                icon = PhosphorUndo,
+                enabled = canUndo && !clipboardModeActive,
+                theme = theme,
+                onClick = { feedback.onKeyPress(); viewModel.undo() },
+            )
+        }
+        item {
+            ToolButton(
+                description = "Redo",
+                icon = PhosphorRedo,
+                enabled = canRedo && !clipboardModeActive,
+                theme = theme,
+                onClick = { feedback.onKeyPress(); viewModel.redo() },
+            )
+        }
+        item { ToolGroupDivider(theme) }
+        // Group 2: Select all / Copy / Cut / Paste.
+        items(editTools) { (description, icon, action) ->
+            ToolButton(
+                description = description,
+                icon = icon,
+                enabled = !clipboardModeActive,
+                theme = theme,
+                onClick = { feedback.onKeyPress(); action() },
+            )
+        }
+        item { ToolGroupDivider(theme) }
+        // Group 3: Clipboard — always enabled, since it's also how clipboard mode is exited.
+        item {
+            ToolButton(
+                description = if (clipboardModeActive) "Close clipboard" else "Clipboard",
+                icon = PhosphorClipboardHistory,
+                enabled = true,
+                theme = theme,
+                onClick = {
+                    feedback.onKeyPress()
+                    if (clipboardModeActive) viewModel.extensionHost.close() else viewModel.selectExtension("builtin.clipboard")
+                },
+            )
         }
     }
 }
 
+@Composable
+private fun ToolGroupDivider(theme: OmakeyTheme) {
+    Box(
+        Modifier
+            .padding(horizontal = 4.dp)
+            .width(1.dp)
+            .fillMaxHeight(0.5f)
+            .background(theme.middleRowStripeColor.toComposeColor()),
+    )
+}
+
+@Composable
+private fun ToolButton(description: String, icon: ImageVector, enabled: Boolean, theme: OmakeyTheme, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .padding(horizontal = 4.dp)
+            .let { m -> if (enabled) m.clickable(onClick = onClick) else m }
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .semantics { contentDescription = description },
+        contentAlignment = Alignment.Center,
+    ) {
+        val tint = theme.keyTextColor.toComposeColor().let { if (enabled) it else it.copy(alpha = 0.35f) }
+        Icon(imageVector = icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
+    }
+}
+
+// Reuses KeyRowView (the exact same composable the main key grid renders) instead of a bespoke
+// Box+Text row, so number keys get pixel-identical sizing/font/padding — and the same Fleksy
+// dim/press-brighten treatment — as every other key, rather than the smaller mismatched look a
+// hand-rolled version drifted into. `accessibleMode = true` is what makes each key directly
+// `.clickable` here (KeyRowView normally leaves hit-testing to the main key grid's own gesture
+// loop, which this standalone strip isn't part of — see KeyRowView's own doc comment).
 @Composable
 private fun NumbersTabContent(
     theme: OmakeyTheme,
     fontFamily: androidx.compose.ui.text.font.FontFamily?,
     viewModel: KeyboardViewModel,
     feedback: KeyboardFeedback,
+    currentLayoutId: String,
 ) {
-    Row(
-        Modifier.fillMaxWidth().fillMaxHeight().padding(horizontal = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Layouts.NumberRow.keys.forEach { key ->
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .clickable { feedback.onKeyPress(); viewModel.onKeyTap(key.code) }
-                    .padding(horizontal = 2.dp, vertical = 4.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(text = key.label, color = theme.keyTextColor.toComposeColor(), fontFamily = fontFamily, fontSize = 18.sp)
-            }
-        }
+    val noOpAncestor: () -> androidx.compose.ui.layout.LayoutCoordinates? = remember { { null } }
+    // Digits are already the Symbols grid's own first row, so repeating them here while a Symbols
+    // layout is active is redundant — extra special characters are more useful in that slot,
+    // reverting to plain digits the instant the user switches back to letters.
+    val rowKeys = if (currentLayoutId == Layouts.Symbols1.id || currentLayoutId == Layouts.Symbols2.id) {
+        Layouts.SymbolsExtraRow.keys
+    } else {
+        Layouts.NumberRow.keys
+    }
+    Box(Modifier.fillMaxWidth().fillMaxHeight().padding(horizontal = 4.dp)) {
+        KeyRowView(
+            rowKeys = rowKeys,
+            rowHeightDp = 44,
+            shiftOn = false,
+            theme = theme,
+            accessibleMode = true,
+            showKeyBackgrounds = false,
+            isHomeRow = false,
+            onKeyTap = { code -> feedback.onKeyPress(); viewModel.onKeyTap(code) },
+            ancestorCoordinates = noOpAncestor,
+            onBoundsMeasured = { _, _, _ -> },
+            fontFamily = fontFamily,
+        )
     }
 }
 

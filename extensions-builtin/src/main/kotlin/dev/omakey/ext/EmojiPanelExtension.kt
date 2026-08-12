@@ -1,8 +1,16 @@
 package dev.omakey.ext
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,12 +19,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items as lazyRowItems
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -29,6 +39,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.omakey.core.icons.PhosphorBackspace
 import dev.omakey.core.theme.LocalOmakeyTheme
 import dev.omakey.extapi.ExtensionContext
 import dev.omakey.extapi.ExtensionHost
@@ -65,15 +76,16 @@ class EmojiPanelExtension : OmakeyExtension {
         var dragAccumX by remember { mutableStateOf(0f) }
 
         Column(Modifier.fillMaxSize()) {
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(8),
-                modifier = Modifier
+            Box(
+                Modifier
                     .fillMaxWidth()
                     .weight(1f)
                     .padding(8.dp)
                     // Left/right swipe on the grid itself steps to the previous/next category —
                     // same left="back"/right="forward" convention as the rest of the app's
-                    // gesture surface (see GestureStateMachine). LazyVerticalGrid only scrolls
+                    // gesture surface (see GestureStateMachine). Lives on this stable outer Box,
+                    // not inside the AnimatedContent below, so the gesture detector doesn't get
+                    // torn down and restarted mid-transition. LazyVerticalGrid only scrolls
                     // vertically, so a horizontal drag detector here doesn't fight its own
                     // scrolling.
                     .pointerInput(Unit) {
@@ -93,14 +105,50 @@ class EmojiPanelExtension : OmakeyExtension {
                         }
                     },
             ) {
-                items(category.emoji) { emoji ->
-                    Text(
-                        text = emoji,
-                        fontSize = 26.sp,
-                        modifier = Modifier
-                            .clickable { host.insertText(emoji) }
-                            .padding(6.dp),
-                    )
+                // A short (150ms) slide when the category changes — either by swipe or by tapping
+                // a tab below — direction follows the same left="back"/right="forward" convention
+                // as the swipe gesture itself, instead of a directionless cross-fade. Kept brief on
+                // purpose: this is a keyboard, not a media app, and anything longer would feel
+                // laggy mid-typing.
+                AnimatedContent(
+                    targetState = categoryIndex,
+                    transitionSpec = {
+                        if (targetState > initialState) {
+                            (slideInHorizontally(tween(150)) { it } + fadeIn(tween(150))) togetherWith
+                                (slideOutHorizontally(tween(150)) { -it } + fadeOut(tween(150)))
+                        } else {
+                            (slideInHorizontally(tween(150)) { -it } + fadeIn(tween(150))) togetherWith
+                                (slideOutHorizontally(tween(150)) { it } + fadeOut(tween(150)))
+                        }
+                    },
+                    label = "emoji-category",
+                ) { index ->
+                    val animatedCategory = EmojiCategories.all[index]
+                    val isEmoticons = animatedCategory === EmojiCategories.Emoticons
+                    // Kaomoji are multi-character strings, several times wider than a single
+                    // unicode emoji glyph — reusing the emoji grid's fixed 8-column layout wraps
+                    // them mid-string. Adaptive columns + a smaller font let each kaomoji claim
+                    // only the width it actually needs.
+                    LazyVerticalGrid(
+                        columns = if (isEmoticons) GridCells.Adaptive(72.dp) else GridCells.Fixed(8),
+                    ) {
+                        items(animatedCategory.emoji) { emoji ->
+                            Text(
+                                text = emoji,
+                                // Real bug, not just the tab row: this Text() had no explicit
+                                // color at all, so every glyph (and the "Special"/#category's
+                                // actual symbols, which — unlike emoji — have no built-in color of
+                                // their own) rendered in the platform default (black), invisible
+                                // against a dark theme.
+                                color = textColor,
+                                fontSize = if (isEmoticons) 14.sp else 26.sp,
+                                maxLines = 1,
+                                modifier = Modifier
+                                    .clickable { host.insertText(emoji) }
+                                    .padding(if (isEmoticons) 10.dp else 6.dp),
+                            )
+                        }
+                    }
                 }
             }
 
@@ -140,14 +188,29 @@ class EmojiPanelExtension : OmakeyExtension {
                         }
                     }
                 }
-                Box(
-                    modifier = Modifier
-                        .fillMaxHeight()
-                        .clickable { extensionContext?.textEditor?.deleteBackward(1) }
-                        .padding(horizontal = 12.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(text = "⌫", color = textColor, fontSize = 18.sp)
+                run {
+                    // Same icon + dimmed-by-default/lit-on-press treatment as the alphabet
+                    // keyboard's own backspace key (KeyRowView in KeyboardRoot.kt) — this used to
+                    // be a plain "⌫" glyph, visually inconsistent with the rest of the keyboard.
+                    val interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                    val isPressed by interactionSource.collectIsPressedAsState()
+                    Box(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .clickable(
+                                interactionSource = interactionSource,
+                                indication = null,
+                            ) { extensionContext?.textEditor?.deleteBackward(1) }
+                            .padding(horizontal = 12.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = PhosphorBackspace,
+                            contentDescription = "Backspace",
+                            tint = if (isPressed) textColor else textColor.copy(alpha = 0.5f),
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
                 }
             }
         }
@@ -413,6 +476,20 @@ private object EmojiCategories {
             "¾", "α", "β", "γ", "δ",
         ),
     )
+    // Plain text "faces," not unicode emoji glyphs — EmojiCategory.emoji is just List<String>,
+    // so these slot in via the exact same data model and rendering path as everything else.
+    val Emoticons = EmojiCategory(
+        icon = "(^_^)",
+        emoji = listOf(
+            "(^_^)", "(^o^)", "(^_-)", "(-_-)", "(>_<)", "(T_T)", "(;_;)", "(ToT)", "(*_*)", "(o_o)",
+            "(O_O)", "(0_0)", "(-_-)zzz", "(¬_¬)", "(¯\\_(ツ)_/¯)", "(╯°□°)╯", "ヽ(´▽`)/", "(づ｡◕‿‿◕｡)づ",
+            "(ノಠ益ಠ)ノ", "щ(゚Д゚щ)", "(っ˘̩╭╮˘̩)っ", "ʕ•ᴥ•ʔ", "(◕‿◕)", "(¬‿¬)", "(＾▽＾)", "(≧▽≦)", "(๑˃̵ᴗ˂̵)و",
+            "(灬º‿º灬)", "(・∀・)", "(´∀｀)", "(￣ω￣)", "(￣3￣)", "(*≧ω≦*)", "(๑>◡<๑)", "(*^▽^*)", "٩(◕‿◕)۶",
+            "(⌒▽⌒)", "＼(≧▽≦)／", "(*¯︶¯*)", "(´｡• ᵕ •｡`)", "(◍•ᴗ•◍)", "( ˘ ³˘)♥", "(｡♥‿♥｡)", "(￣▽￣)ノ",
+            "orz", "OTZ", "凸(-_-)凸", "ヽ(`Д´)ﾉ", "(╬ ಠ益ಠ)", "( ˘ ˘)", "(－‸ლ)", "(＃￣ω￣)", "(・_・;)",
+            "(・・;)", "٩(๛ ˘ ³˘)۶", "(づ￣ ³￣)づ", "(*^_^*)", "＼(^o^)／", "٩(◕‿◕｡)۶", "(ง'̀-'́)ง", "ヽ(°〇°)ﾉ",
+        ),
+    )
 
-    val all = listOf(Smileys, People, Animals, Food, Travel, Activities, Objects, Symbols, Flags, Special)
+    val all = listOf(Smileys, People, Animals, Food, Travel, Activities, Objects, Symbols, Flags, Emoticons, Special)
 }

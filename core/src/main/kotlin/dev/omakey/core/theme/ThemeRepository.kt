@@ -19,11 +19,19 @@ class ThemeRepository(context: Context) {
     private val _currentTheme = MutableStateFlow(loadPersistedTheme())
     val currentTheme: StateFlow<OmakeyTheme> = _currentTheme
 
+    /** "Pick accent color from system" — independent of [currentTheme] itself (you can want a
+     * fixed Light theme but still have the spacebar pulled from the device's Material You
+     * palette). See `resolveEffectiveTheme` in the app module for where this is actually applied;
+     * this class only stores the flag. */
+    private val _useSystemAccent = MutableStateFlow(prefs.getBoolean(KEY_USE_SYSTEM_ACCENT, false))
+    val useSystemAccent: StateFlow<Boolean> = _useSystemAccent
+
     // Held as a field, not an inline lambda — SharedPreferences only keeps a weak reference to
     // registered listeners, so an unreferenced lambda would get garbage collected almost
     // immediately and silently stop firing.
     private val prefsChangeListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
         _currentTheme.value = loadPersistedTheme()
+        _useSystemAccent.value = prefs.getBoolean(KEY_USE_SYSTEM_ACCENT, false)
     }
 
     init {
@@ -35,6 +43,11 @@ class ThemeRepository(context: Context) {
         _currentTheme.value = theme
     }
 
+    fun setUseSystemAccent(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_USE_SYSTEM_ACCENT, enabled).apply()
+        _useSystemAccent.value = enabled
+    }
+
     private fun loadPersistedTheme(): OmakeyTheme {
         val json = prefs.getString(KEY_THEME_JSON, null) ?: return Presets.Dark
         return runCatching { ThemeSerializer.fromJson(json) }.getOrDefault(Presets.Dark)
@@ -43,5 +56,6 @@ class ThemeRepository(context: Context) {
     private companion object {
         const val PREFS_NAME = "omakey_theme_prefs"
         const val KEY_THEME_JSON = "current_theme_json"
+        const val KEY_USE_SYSTEM_ACCENT = "use_system_accent"
     }
 }

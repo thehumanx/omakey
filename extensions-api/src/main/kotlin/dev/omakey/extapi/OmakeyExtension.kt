@@ -20,9 +20,21 @@ interface TextEditorFacade {
 interface ClipboardRepository {
     suspend fun recent(limit: Int = 50): List<ClipboardItem>
     suspend fun pin(id: Long, pinned: Boolean)
+    suspend fun delete(id: Long)
 }
 
-data class ClipboardItem(val id: Long, val content: String, val timestamp: Long, val pinned: Boolean)
+enum class ClipboardContentType { TEXT, IMAGE }
+
+data class ClipboardItem(
+    val id: Long,
+    val content: String,
+    val timestamp: Long,
+    val pinned: Boolean,
+    val contentType: ClipboardContentType = ClipboardContentType.TEXT,
+    /** Set only when [contentType] is [ClipboardContentType.IMAGE] — an app-private file path
+     * (never a `content://` URI; those aren't guaranteed readable after the moment of capture). */
+    val imagePath: String? = null,
+)
 
 interface ExtensionContext {
     val textEditor: TextEditorFacade
