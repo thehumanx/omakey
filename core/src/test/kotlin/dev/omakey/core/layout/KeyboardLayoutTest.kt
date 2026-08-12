@@ -27,4 +27,19 @@ class KeyboardLayoutTest {
         val widths = row.computeKeyWidthsPx(400f)
         assertEquals(0f, widths[0], 0.01f)
     }
+
+    @Test
+    fun `Symbols1 has a directly-tappable comma key, not just a period popup`() {
+        val allKeys = Layouts.Symbols1.rows.flatMap { it.keys }
+        assertEquals(true, allKeys.any { it.label == "," })
+    }
+
+    @Test
+    fun `Symbols1 and Symbols2 both expose a SYMBOLS toggle key to switch pages`() {
+        assertEquals(true, Layouts.Symbols1.rows.flatMap { it.keys }.any { it.code == SpecialKeyCode.SYMBOLS })
+        assertEquals(true, Layouts.Symbols2.rows.flatMap { it.keys }.any { it.code == SpecialKeyCode.SYMBOLS })
+        // Distinct ids are what let KeyboardViewModel.onKeyTap tell the two pages apart when
+        // deciding which page the SYMBOLS toggle should switch to next.
+        assertEquals(true, Layouts.Symbols1.id != Layouts.Symbols2.id)
+    }
 }

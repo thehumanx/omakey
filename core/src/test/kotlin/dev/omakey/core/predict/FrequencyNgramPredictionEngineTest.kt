@@ -66,4 +66,12 @@ class FrequencyNgramPredictionEngineTest {
 
         assertEquals("wide", suggestions.first())
     }
+
+    @Test
+    fun `bigramRank returns the stored count for a seen pair and 0 for an unseen one`() = runTest {
+        repeat(3) { engine.recordAcceptedWord("is", previousWord = "this") }
+
+        assertEquals(3, engine.bigramRank("this", "is"))
+        assertEquals(0, engine.bigramRank("this", "banana"))
+    }
 }

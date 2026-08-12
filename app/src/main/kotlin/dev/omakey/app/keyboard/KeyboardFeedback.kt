@@ -8,7 +8,6 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import android.util.Log
-import dev.omakey.app.R
 import dev.omakey.core.feedback.HapticSoundPreferences
 
 /** Decouples KeyboardViewModel/KeyboardRoot from raw Vibrator/SoundPool calls — those live here,
@@ -51,13 +50,14 @@ class VibratorKeyboardFeedback(context: Context, private val preferences: Haptic
             )
             .build()
     }
-    private var clickSoundId = 0
-    private var clickSoundLoaded = false
+    // Keyed by sound-choice id rather than a single fixed slot — the user can switch which click
+    // plays from Settings at any time, and each choice's SoundPool sample only needs loading once
+    // per process, not on every switch back to a previously-picked choice.
+    private val loadedSoundIds = mutableMapOf<String, Int>()
 
-    private fun ensureSoundLoaded() {
-        if (clickSoundId != 0) return
-        soundPool.setOnLoadCompleteListener { _, _, status -> clickSoundLoaded = status == 0 }
-        clickSoundId = soundPool.load(appContext, R.raw.key_click, 1)
+    private fun ensureSoundLoaded(soundChoice: String) {
+        if (loadedSoundIds.containsKey(soundChoice)) return
+        loadedSoundIds[soundChoice] = soundPool.load(appContext, SoundCatalog.resolve(soundChoice), 1)
     }
 
     override fun onKeyPress() {
@@ -70,7 +70,7 @@ class VibratorKeyboardFeedback(context: Context, private val preferences: Haptic
             // gets a real, adjustable buzz instead of the same barely-there tick every time.
             vibrate(durationMs = 20 + (settings.hapticStrength * 25).toLong(), amplitudeFraction = settings.hapticStrength)
         }
-        if (settings.soundEnabled) playClick(volume = 0.5f)
+        if (settings.soundEnabled) playClick(settings.soundChoice, volume = 0.5f)
     }
 
     override fun onSwipe() {
@@ -83,14 +83,13 @@ class VibratorKeyboardFeedback(context: Context, private val preferences: Haptic
                 amplitudeFraction = (settings.hapticStrength * 1.2f).coerceAtMost(1f),
             )
         }
-        if (settings.soundEnabled) playClick(volume = 0.8f)
+        if (settings.soundEnabled) playClick(settings.soundChoice, volume = 0.8f)
     }
 
-    private fun playClick(volume: Float) {
-        ensureSoundLoaded()
-        if (clickSoundLoaded) {
-            soundPool.play(clickSoundId, volume, volume, 1, 0, 1f)
-        }
+    private fun playClick(soundChoice: String, volume: Float) {
+        ensureSoundLoaded(soundChoice)
+        val soundId = loadedSoundIds[soundChoice] ?: return
+        soundPool.play(soundId, volume, volume, 1, 0, 1f)
     }
 
     private fun vibrate(durationMs: Long, amplitudeFraction: Float) {

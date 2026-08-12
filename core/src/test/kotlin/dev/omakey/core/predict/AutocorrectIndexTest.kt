@@ -63,4 +63,54 @@ class AutocorrectIndexTest {
         index.learn("helo")
         assertNull(index.correct("helo"))
     }
+
+    @Test
+    fun `splits two concatenated words missing a space`() {
+        val words = buildList {
+            add(WordEntity("this", frequency = 100, isUserAdded = false, lastUsedTimestamp = 0))
+            add(WordEntity("is", frequency = 99, isUserAdded = false, lastUsedTimestamp = 0))
+            for (i in 1..95) add(WordEntity("word$i", frequency = 96 - i, isUserAdded = false, lastUsedTimestamp = 0))
+        }
+        val splitIndex = AutocorrectIndex()
+        splitIndex.load(words)
+        // "thisis" isn't itself a real word and has no close single-edit dictionary neighbor —
+        // only the split fallback should be able to explain it.
+        assertEquals("this is", splitIndex.correct("thisis"))
+    }
+
+    @Test
+    fun `splits with one stray character where the space should have been`() {
+        val words = buildList {
+            add(WordEntity("this", frequency = 100, isUserAdded = false, lastUsedTimestamp = 0))
+            add(WordEntity("is", frequency = 99, isUserAdded = false, lastUsedTimestamp = 0))
+            for (i in 1..95) add(WordEntity("word$i", frequency = 96 - i, isUserAdded = false, lastUsedTimestamp = 0))
+        }
+        val splitIndex = AutocorrectIndex()
+        splitIndex.load(words)
+        // "thisbis" = "this" + a stray 'b' + "is" — a fat-fingered key landed where the spacebar
+        // should have been, on top of the missing space itself.
+        assertEquals("this is", splitIndex.correct("thisbis"))
+    }
+
+    @Test
+    fun `realWordNeighbors finds a valid word one substitution away from another valid word`() {
+        val words = buildList {
+            add(WordEntity("this", frequency = 100, isUserAdded = false, lastUsedTimestamp = 0))
+            add(WordEntity("thus", frequency = 50, isUserAdded = false, lastUsedTimestamp = 0))
+            for (i in 1..95) add(WordEntity("word$i", frequency = 96 - i, isUserAdded = false, lastUsedTimestamp = 0))
+        }
+        val neighborIndex = AutocorrectIndex()
+        neighborIndex.load(words)
+        // "thus" is itself a real word (correct() would refuse to touch it), but it's still a
+        // valid one-edit neighbor of "this" for a context-aware caller to consider.
+        assertEquals(setOf("this"), neighborIndex.realWordNeighbors("thus"))
+    }
+
+    @Test
+    fun `does not split when one half is not a real word`() {
+        // "helloxyzzy" isn't a real word, isn't a close single-edit neighbor of one, and doesn't
+        // split into two real words either ("xyzzy" isn't in the dictionary) — should stay null
+        // rather than force a low-confidence split.
+        assertNull(index.correct("helloxyzzy"))
+    }
 }

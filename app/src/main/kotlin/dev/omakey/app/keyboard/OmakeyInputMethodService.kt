@@ -28,6 +28,8 @@ import dev.omakey.core.gesture.GesturePreferences
 import dev.omakey.core.input.TextEditor
 import dev.omakey.core.layout.LayoutPreferences
 import dev.omakey.core.predict.AutocorrectIndex
+import dev.omakey.core.predict.AutocorrectPreferences
+import dev.omakey.core.predict.PredictionPreferences
 import dev.omakey.core.predict.DictionarySeeder
 import dev.omakey.core.predict.FrequencyNgramPredictionEngine
 import dev.omakey.core.theme.AccessibilityPreferences
@@ -69,6 +71,8 @@ class OmakeyInputMethodService :
     private lateinit var database: OmakeyDatabase
     private lateinit var predictionEngine: FrequencyNgramPredictionEngine
     private lateinit var autocorrectIndex: AutocorrectIndex
+    private lateinit var autocorrectPreferences: AutocorrectPreferences
+    private lateinit var predictionPreferences: PredictionPreferences
     private lateinit var extensionRegistry: LazyExtensionRegistry
     private lateinit var textEditor: TextEditor
     private lateinit var themeRepository: ThemeRepository
@@ -107,6 +111,8 @@ class OmakeyInputMethodService :
         database = OmakeyDatabase.getInstance(applicationContext)
         predictionEngine = FrequencyNgramPredictionEngine(database.wordDao(), database.bigramDao())
         autocorrectIndex = AutocorrectIndex()
+        autocorrectPreferences = AutocorrectPreferences(applicationContext)
+        predictionPreferences = PredictionPreferences(applicationContext)
         textEditor = TextEditor { currentInputConnection }
         themeRepository = ThemeRepository(applicationContext)
         accessibilityPreferences = AccessibilityPreferences(applicationContext)
@@ -172,6 +178,8 @@ class OmakeyInputMethodService :
             textEditor = textEditor,
             predictionEngine = predictionEngine,
             autocorrectIndex = autocorrectIndex,
+            autocorrectPreferences = autocorrectPreferences,
+            predictionPreferences = predictionPreferences,
             extensionRegistry = extensionRegistry,
             themeRepository = themeRepository,
             layoutPreferences = layoutPreferences,
@@ -207,12 +215,28 @@ class OmakeyInputMethodService :
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
-        keyboardViewModel?.resetForNewField()
+        keyboardViewModel?.resetForNewField(info)
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE)
+    }
+
+    // Fires for every selection/cursor change regardless of cause — our own commits, a tap
+    // elsewhere in the text, arrow-key navigation, autofill. KeyboardViewModel.onCursorMoved()
+    // cheaply no-ops for the ordinary "cursor is right where our own typing left it" case, so
+    // this doesn't need to filter out our own edits before forwarding.
+    override fun onUpdateSelection(
+        oldSelStart: Int,
+        oldSelEnd: Int,
+        newSelStart: Int,
+        newSelEnd: Int,
+        candidatesStart: Int,
+        candidatesEnd: Int,
+    ) {
+        super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
+        keyboardViewModel?.onCursorMoved()
     }
 
     override fun onEvaluateFullscreenMode(): Boolean = false

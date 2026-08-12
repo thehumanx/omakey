@@ -60,6 +60,9 @@ class FrequencyNgramPredictionEngine(
         }
     }
 
+    override suspend fun bigramRank(previousWord: String, word: String): Int =
+        bigramDao.findExact(previousWord.lowercase(), word.lowercase())?.count ?: 0
+
     override suspend fun saveWord(word: String) {
         val normalized = word.trim().lowercase()
         if (normalized.isEmpty()) return

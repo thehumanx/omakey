@@ -56,7 +56,33 @@ object Layouts {
             KeyRow(
                 listOf(
                     KeyDefinition("=\\<", SpecialKeyCode.SYMBOLS, widthWeight = 1.5f, keyType = KeyType.SPECIAL),
-                    *listOf("*", "\"", "'", ":", ";", "!", "?").map(::charKey).toTypedArray(),
+                    *listOf("*", "\"", "'", ":", ",", ";", "!", "?").map(::charKey).toTypedArray(),
+                    KeyDefinition("⌫", SpecialKeyCode.BACKSPACE, widthWeight = 1.5f, keyType = KeyType.SPECIAL),
+                ),
+            ),
+            KeyRow(
+                listOf(
+                    KeyDefinition("ABC", SpecialKeyCode.LETTERS, widthWeight = 1.5f, keyType = KeyType.SPECIAL),
+                    KeyDefinition(" ", SpecialKeyCode.SPACE, widthWeight = 4f, keyType = KeyType.SPECIAL),
+                    charKey(".", listOf(",", "!", "?", "-", ":", ";", "'")),
+                    KeyDefinition("⏎", SpecialKeyCode.ENTER, widthWeight = 1.5f, keyType = KeyType.SPECIAL),
+                ),
+            ),
+        ),
+    )
+
+    /** Second symbols page, reached via the "=\<" toggle key on [Symbols1] (and back again via
+     * this page's "123" key) — the classic Gboard-style extra tier of less-common special
+     * characters that don't fit the primary symbols grid. */
+    val Symbols2 = KeyboardLayout(
+        id = "symbols_2",
+        rows = listOf(
+            KeyRow(listOf("~", "`", "|", "•", "√", "π", "÷", "×", "¶", "∆").map(::charKey)),
+            KeyRow(listOf("£", "¥", "€", "¢", "^", "°", "=", "{", "}", "\\").map(::charKey)),
+            KeyRow(
+                listOf(
+                    KeyDefinition("123", SpecialKeyCode.SYMBOLS, widthWeight = 1.5f, keyType = KeyType.SPECIAL),
+                    *listOf("©", "®", "™", "✓", "[", "]", "<", ">").map(::charKey).toTypedArray(),
                     KeyDefinition("⌫", SpecialKeyCode.BACKSPACE, widthWeight = 1.5f, keyType = KeyType.SPECIAL),
                 ),
             ),

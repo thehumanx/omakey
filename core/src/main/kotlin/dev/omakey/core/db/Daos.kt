@@ -26,6 +26,24 @@ interface WordDao {
      * space/punctuation keystroke, far too often to round-trip SQLite per word. */
     @Query("SELECT * FROM words")
     suspend fun all(): List<WordEntity>
+
+    /** Backs the Settings "Learned words" screen — only words the user's own typing added (not
+     * the bundled 60k seed list), newest-used first, optionally filtered by prefix. */
+    @Query("SELECT * FROM words WHERE isUserAdded = 1 AND word LIKE :query || '%' ORDER BY lastUsedTimestamp DESC LIMIT :limit")
+    suspend fun findUserAdded(query: String = "", limit: Int = 500): List<WordEntity>
+
+    /** Settings "Learned words" screen's delete action. Only affects Room — an already-running
+     * IME's in-memory `AutocorrectIndex` isn't live-notified (unlike the SharedPreferences-backed
+     * settings, the dictionary is deliberately load-once-at-startup, see DictionarySeeder), so a
+     * forgotten word stops being protected from autocorrect the next time the keyboard process
+     * restarts, not necessarily instantly. */
+    @Query("DELETE FROM words WHERE word = :word")
+    suspend fun delete(word: String)
+
+    /** "Delete all" action on the same screen — clears every user-learned word in one go, leaving
+     * the bundled seed dictionary untouched (`isUserAdded = 0` rows aren't matched). */
+    @Query("DELETE FROM words WHERE isUserAdded = 1")
+    suspend fun deleteAllUserAdded()
 }
 
 @Dao

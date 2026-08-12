@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -66,6 +67,11 @@ import kotlinx.coroutines.launch
 private fun ColorSpec.toComposeColor() = Color(argb.toInt())
 
 private const val SUGGESTION_STRIP_HEIGHT_DP = 44
+
+/** Matches `EmojiPanelExtension.id` (`extensions-builtin`) and
+ * `KeyboardViewModel.PREFERRED_EXTENSION_ID` — kept as a plain string constant here rather than a
+ * shared reference since both existing call sites already hardcode the same id string. */
+private const val EMOJI_EXTENSION_ID = "builtin.emoji"
 
 @Composable
 fun KeyboardRoot(
@@ -151,7 +157,9 @@ fun KeyboardRoot(
     val ancestorCoordinatesStable = remember { { keysAreaCoordinates } }
 
     val layoutSettings = uiState.layoutSettings
-    val effectiveRows = uiState.layout.rows
+    val effectiveRows = remember(uiState.layout, uiState.enterAction) {
+        withContextualEnterLabel(uiState.layout.rows, uiState.enterAction)
+    }
     // Row height is derived from each layout's own BASE row count (always 4, for both letters and
     // symbols — QwertyEnUS.rows.size), so keys are always the same size regardless of which
     // layout is active.
@@ -171,13 +179,33 @@ fun KeyboardRoot(
     ) {
         val popupKey = accentPopupKey
         if (uiState.activeExtensionId != null && popupKey == null) {
-            // Replaces the suggestion strip AND the key grid entirely — matches how emoji/GIF
-            // pickers behave on every mainstream keyboard, instead of stacking above the keys and
-            // making the keyboard taller.
-            ExtensionPanelSlot(
-                viewModel = viewModel,
-                heightDp = SUGGESTION_STRIP_HEIGHT_DP + gridHeightDp,
-            )
+            if (uiState.activeExtensionId == EMOJI_EXTENSION_ID) {
+                // The emoji panel already has its own alphabet-switch (ABC) and category tabs at
+                // its bottom, so the extension switcher's own header row (clipboard/emoji/keyboard
+                // icons) is redundant here — keep the normal suggestions/tools/numbers top strip
+                // instead, exactly like the regular typing view, and let the panel occupy just the
+                // key-grid's vertical slot.
+                TopStrip(
+                    viewModel = viewModel,
+                    uiState = uiState,
+                    theme = theme,
+                    fontFamily = fontFamily,
+                    feedback = feedback,
+                )
+                ExtensionPanelSlot(
+                    viewModel = viewModel,
+                    heightDp = gridHeightDp,
+                    showHeaderRow = false,
+                )
+            } else {
+                // Replaces the suggestion strip AND the key grid entirely — matches how the
+                // clipboard/GIF pickers behave on every mainstream keyboard, instead of stacking
+                // above the keys and making the keyboard taller.
+                ExtensionPanelSlot(
+                    viewModel = viewModel,
+                    heightDp = SUGGESTION_STRIP_HEIGHT_DP + gridHeightDp,
+                )
+            }
         } else {
             if (popupKey != null) {
                 AccentPickerBar(
@@ -426,6 +454,32 @@ private fun KeyGrid(
     }
 }
 
+/** Swaps the Enter key's label for one reflecting what it'll actually do in the focused field
+ * (e.g. "Go" in a URL bar, "Send" in a chat compose box) instead of always showing a generic
+ * return glyph — mirrors the label change every mainstream keyboard makes for the same reason.
+ * Rows/keys are `@Immutable` data classes, so this is a cheap `.copy()` on just the one row that
+ * contains the Enter key, recomputed only when the layout or resolved action actually changes. */
+private fun withContextualEnterLabel(rows: List<LayoutKeyRow>, enterAction: Int): List<LayoutKeyRow> {
+    val label = enterKeyLabel(enterAction) ?: return rows
+    return rows.map { row ->
+        if (row.keys.none { it.code == SpecialKeyCode.ENTER }) {
+            row
+        } else {
+            LayoutKeyRow(row.keys.map { if (it.code == SpecialKeyCode.ENTER) it.copy(label = label) else it })
+        }
+    }
+}
+
+private fun enterKeyLabel(enterAction: Int): String? = when (enterAction) {
+    android.view.inputmethod.EditorInfo.IME_ACTION_GO -> "Go"
+    android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH -> "🔍"
+    android.view.inputmethod.EditorInfo.IME_ACTION_SEND -> "➤"
+    android.view.inputmethod.EditorInfo.IME_ACTION_NEXT -> "Next"
+    android.view.inputmethod.EditorInfo.IME_ACTION_DONE -> "✓"
+    android.view.inputmethod.EditorInfo.IME_ACTION_PREVIOUS -> "Prev"
+    else -> null // NONE/UNSPECIFIED keep the layout's default "⏎" — no override needed.
+}
+
 private fun describeKey(key: KeyDefinition): String = when (key.code) {
     SpecialKeyCode.SHIFT -> "Shift"
     SpecialKeyCode.BACKSPACE -> "Backspace"
@@ -663,6 +717,7 @@ private fun TopStrip(
             when (page) {
                 0 -> SuggestionsTabContent(
                     suggestions = uiState.suggestions,
+                    firstSuggestionKind = uiState.firstSuggestionKind,
                     theme = theme,
                     fontFamily = fontFamily,
                     onAccept = viewModel::onSuggestionAccepted,
@@ -694,6 +749,7 @@ private fun TopStrip(
 @Composable
 private fun SuggestionsTabContent(
     suggestions: List<String>,
+    firstSuggestionKind: dev.omakey.app.keyboard.SuggestionKind,
     theme: OmakeyTheme,
     fontFamily: androidx.compose.ui.text.font.FontFamily?,
     onAccept: (String) -> Unit,
@@ -702,7 +758,13 @@ private fun SuggestionsTabContent(
         Modifier.fillMaxWidth().fillMaxHeight().padding(horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        items(suggestions) { suggestion ->
+        itemsIndexed(suggestions) { index, suggestion ->
+            // Quoted, same as Gboard/Fleksy's convention for "this slot is a typo fix," not just
+            // another word choice — lets the user tell at a glance that swiping/tapping it
+            // corrects a word rather than merely completing or predicting one. Both correction
+            // kinds (the word being typed right now, or the one just finished) render the same
+            // way here — the difference is only in which text gets edited when accepted.
+            val isCorrection = index == 0 && firstSuggestionKind != dev.omakey.app.keyboard.SuggestionKind.PLAIN
             Box(
                 Modifier
                     .padding(horizontal = 4.dp)
@@ -710,7 +772,12 @@ private fun SuggestionsTabContent(
                     .padding(horizontal = 10.dp, vertical = 6.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(text = suggestion, color = theme.keyTextColor.toComposeColor(), fontFamily = fontFamily, fontSize = 16.sp)
+                Text(
+                    text = if (isCorrection) "“$suggestion”" else suggestion,
+                    color = theme.keyTextColor.toComposeColor(),
+                    fontFamily = fontFamily,
+                    fontSize = 16.sp,
+                )
             }
         }
     }
@@ -777,7 +844,7 @@ private fun NumbersTabContent(
 }
 
 @Composable
-private fun ExtensionPanelSlot(viewModel: KeyboardViewModel, heightDp: Int) {
+private fun ExtensionPanelSlot(viewModel: KeyboardViewModel, heightDp: Int, showHeaderRow: Boolean = true) {
     val uiState by viewModel.uiState.collectAsState()
     val activeId = uiState.activeExtensionId ?: return
     // A misbehaving third-party-style extension must not be able to take down the whole IME
@@ -796,37 +863,39 @@ private fun ExtensionPanelSlot(viewModel: KeyboardViewModel, heightDp: Int) {
                 .height(heightDp.dp)
                 .background(uiState.theme.suggestionBarBackground.toComposeColor()),
         ) {
-            Row(Modifier.fillMaxWidth().height(36.dp)) {
-                allExtensions.forEach { ext ->
-                    val glyph = (ext.icon as? dev.omakey.extapi.ExtensionIcon.Emoji)?.glyph ?: "•"
+            if (showHeaderRow) {
+                Row(Modifier.fillMaxWidth().height(36.dp)) {
+                    allExtensions.forEach { ext ->
+                        val glyph = (ext.icon as? dev.omakey.extapi.ExtensionIcon.Emoji)?.glyph ?: "•"
+                        Box(
+                            modifier = Modifier
+                                .fillMaxHeight()
+                                .weight(1f)
+                                .clickable { viewModel.selectExtension(ext.id) }
+                                .background(
+                                    if (ext.id == activeId) {
+                                        uiState.theme.keySpecialBackground.toComposeColor()
+                                    } else {
+                                        Color.Transparent
+                                    },
+                                ),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(text = glyph, fontSize = 18.sp)
+                        }
+                    }
+                    // Returns to the normal keyboard — lives in the panel's own header row rather
+                    // than needing to double up with the ?123 key at the bottom, which used to be
+                    // the only way back and sat awkwardly close to the system nav area.
                     Box(
                         modifier = Modifier
                             .fillMaxHeight()
-                            .weight(1f)
-                            .clickable { viewModel.selectExtension(ext.id) }
-                            .background(
-                                if (ext.id == activeId) {
-                                    uiState.theme.keySpecialBackground.toComposeColor()
-                                } else {
-                                    Color.Transparent
-                                },
-                            ),
+                            .clickable { viewModel.extensionHost.close() }
+                            .padding(horizontal = 14.dp),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Text(text = glyph, fontSize = 18.sp)
+                        Text(text = "⌨", color = uiState.theme.keyTextColor.toComposeColor(), fontSize = 18.sp)
                     }
-                }
-                // Returns to the normal keyboard — lives in the panel's own header row rather than
-                // needing to double up with the ?123 key at the bottom, which used to be the only
-                // way back and sat awkwardly close to the system nav area.
-                Box(
-                    modifier = Modifier
-                        .fillMaxHeight()
-                        .clickable { viewModel.extensionHost.close() }
-                        .padding(horizontal = 14.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(text = "⌨", color = uiState.theme.keyTextColor.toComposeColor(), fontSize = 18.sp)
                 }
             }
             Box(Modifier.fillMaxWidth().weight(1f)) {

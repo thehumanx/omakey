@@ -3,6 +3,51 @@
 All notable changes to Omakey are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.1.0] — 2026-08-12
+
+A settings overhaul plus a much smarter autocorrect/prediction system, driven by real on-device
+typing feedback.
+
+### Added
+- **Settings reorganized into clear sections** (Setup, Appearance, Typing, Sound & Haptics,
+  Accessibility, About) instead of one long undifferentiated list.
+- **A floating "test your keyboard" button** in Settings opens a full-screen area to try typing
+  without leaving the app — warns and offers a one-tap switch if Omakey isn't your active
+  keyboard yet.
+- **Autocorrect toggle** in Settings.
+- **Live correction suggestions** — a typo like "corrcet" now shows "correct" right in the
+  suggestion strip while you're still mid-word, not just after you finish it.
+- **"Did you mean" corrections for real-word mistakes** — typing "thus" when you meant "this"
+  (both real words, just the wrong one) gets offered as a fix based on surrounding context,
+  shown after you finish the word (space, punctuation, or Enter) and never auto-applied.
+- **Correction now follows your cursor** — tap or navigate back into a word you already typed
+  and the suggestion strip still offers a fix for it.
+- **Missing-space correction** — "thisis" or "thisbis" gets split back into "this is"
+  automatically.
+- **Next-word prediction is now optional** (off by default) — a Settings toggle for the
+  bigram/history-based "what word comes next" guesses, independent of autocorrect.
+- **Suggestion strip shows up to 6 candidates**, not 3.
+- **A "Learned words" screen** in Settings — view, search, and remove words your own typing has
+  taught the keyboard, individually or all at once.
+- **The Enter key is now contextual** — becomes "Go," "Search," "Send," "Next," or "Done" when
+  the field asks for one of those instead of always inserting a line break.
+- **A second symbols page** (reachable via the `=\<` key) with additional special characters,
+  and a directly-tappable comma on the main symbols page.
+- **Choice of keypress click sounds**, with a tap-to-preview picker in Settings.
+- **Swipe left/right in the emoji panel** to move between categories.
+
+### Fixed
+- **A real bug where the bundled dictionary could get silently stuck** at a tiny fraction of its
+  full 60,000-word size if the keyboard process was killed mid-seed on first run (which the OS
+  does routinely to background IME services) — seeding now correctly resumes instead of
+  believing it already finished.
+- **Backspacing away an autocorrect fix no longer immediately re-triggers it** on the very next
+  word boundary — reverting a correction now actually sticks.
+- **Purple/violet accents in Settings replaced** with a neutral grey palette.
+- **The Settings title no longer sits under the status bar.**
+- **Emoji category tab icons that were invisible** (black-on-dark, every tab except the emoji
+  glyph itself) now render in the correct theme color.
+
 ## [1.0.0] — 2026-08-12
 
 The first proper release. Omakey went from a from-scratch prototype to a genuinely daily-driver-

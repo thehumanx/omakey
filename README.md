@@ -39,10 +39,14 @@ approach:
 ## Features
 
 ### Typing that keeps up with you
-- Full QWERTY layout with shift/caps, symbols, and long-press accent characters (à, é, ñ, and
-  more).
+- Full QWERTY layout with shift/caps, two full symbol pages, and long-press accent characters
+  (à, é, ñ, and more).
+- The Enter key adapts to what you're typing into — it becomes "Go," "Search," "Send," or
+  "Done" when the app asks for it, instead of always just adding a line break.
 - A tap-preview bubble on every key press, so you always know what you hit.
 - Tuned for fast typists — built to keep up even when your fingers overlap mid-word.
+- A floating button in Settings opens a full-screen test area so you can try the keyboard out
+  without leaving the app.
 
 ### Gestures that just work
 - **Swipe left** — delete the last word.
@@ -53,12 +57,24 @@ approach:
   around.
 
 ### Smart suggestions and autocorrect
-- Real autocorrect — typos are fixed automatically as you type, not just offered as a suggestion
-  you have to tap. Got corrected wrong? One tap of backspace undoes it.
-- Next-word prediction that's genuinely useful from the first sentence you type, not just after
-  weeks of use.
+- Real autocorrect — typos are fixed automatically as you finish a word, not just offered as a
+  suggestion you have to tap. Got corrected wrong? One tap of backspace undoes it, and it won't
+  immediately re-correct the same word right back.
+- See the fix *before* you finish typing — a typo like "corrcet" shows "correct" right in the
+  suggestion strip while you're still mid-word, swipe or tap to accept it early.
+- Catches "real-word" mistakes too — typing "thus" when you meant "this" (a real word, just the
+  wrong one) gets quietly offered as a fix based on the words around it, without ever auto-
+  applying something that risky on its own.
+- Tap or move the cursor back into a word you already typed and the strip still offers a fix for
+  it — corrections aren't limited to whatever you're actively typing right now.
+- Missing a space between two words ("thisis" or "thisbis") gets split back into "this is"
+  automatically.
+- Optional next-word prediction (off by default, one tap to turn on in Settings) — guesses what
+  word comes next based on common usage and your own typing history.
 - A swipeable strip above the keyboard — flick between suggestions, quick text tools (select
   all, copy, cut, paste, clipboard history), and a numbers row, all in the same space.
+- A "Learned words" screen in Settings — see every word your own typing has taught the keyboard,
+  and remove any that shouldn't have stuck around.
 
 ### A full, modern emoji picker
 - Thousands of emoji across every standard category — smileys, people, animals, food, travel,
@@ -67,7 +83,8 @@ approach:
 
 ### Feedback that feels right
 - Adjustable haptic feedback with a strength slider.
-- A satisfying keypress sound you can toggle on or off.
+- A satisfying keypress sound you can toggle on or off, with a choice of click sounds — pick
+  your favorite and preview it before committing.
 
 ### Make it feel like yours
 - Multiple built-in themes (light, dark, and more).
@@ -88,8 +105,8 @@ only on your device.
 
 ## Status
 
-Omakey just hit its first proper release, 1.0.0. Core typing, gestures, autocorrect, predictive
-text, themes, and extensions are all working today. New features are landing regularly — see
+Omakey is on release 1.1.0. Core typing, gestures, autocorrect, predictive text, themes, and
+extensions are all working today. New features are landing regularly — see
 [CHANGELOG.md](CHANGELOG.md) for what's new in each release.
 
 ## Getting started

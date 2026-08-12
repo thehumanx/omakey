@@ -5,12 +5,14 @@ import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,36 +20,54 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.omakey.app.R
+import dev.omakey.app.keyboard.SoundCatalog
 import dev.omakey.app.keyboard.VibratorKeyboardFeedback
 import dev.omakey.app.keyboard.ui.FontCatalog
+import dev.omakey.core.db.OmakeyDatabase
+import dev.omakey.core.db.WordDao
+import dev.omakey.core.db.WordEntity
 import dev.omakey.core.feedback.HapticSoundPreferences
 import dev.omakey.core.feedback.HapticSoundSettings
 import dev.omakey.core.gesture.GesturePreferences
@@ -55,6 +75,8 @@ import dev.omakey.core.gesture.GestureSettings
 import dev.omakey.core.layout.LayoutPreferences
 import dev.omakey.core.layout.LayoutSettings
 import dev.omakey.core.layout.Layouts
+import dev.omakey.core.predict.AutocorrectPreferences
+import dev.omakey.core.predict.PredictionPreferences
 import dev.omakey.core.theme.AccessibilityPreferences
 import dev.omakey.core.theme.FontChoices
 import dev.omakey.core.theme.FontPreferences
@@ -62,19 +84,27 @@ import dev.omakey.core.theme.OmakeyTheme
 import dev.omakey.core.theme.Presets
 import dev.omakey.core.theme.ThemeRepository
 import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
 
 class SettingsActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Draws edge-to-edge (content behind the status/nav bars) so we control inset padding
+        // ourselves via statusBarsPadding()/navigationBarsPadding() below — without this the
+        // system draws an opaque status bar and the title row underneath it visually blends in.
+        enableEdgeToEdge()
         val themeRepository = ThemeRepository(applicationContext)
         val accessibilityPreferences = AccessibilityPreferences(applicationContext)
         val layoutPreferences = LayoutPreferences(applicationContext)
         val fontPreferences = FontPreferences(applicationContext)
         val gesturePreferences = GesturePreferences(applicationContext)
         val hapticSoundPreferences = HapticSoundPreferences(applicationContext)
+        val autocorrectPreferences = AutocorrectPreferences(applicationContext)
+        val predictionPreferences = PredictionPreferences(applicationContext)
         val feedback = VibratorKeyboardFeedback(applicationContext, hapticSoundPreferences)
+        val wordDao = OmakeyDatabase.getInstance(applicationContext).wordDao()
         setContent {
-            MaterialTheme {
+            OmakeySettingsTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     SettingsScreen(
                         themeRepository = themeRepository,
@@ -83,6 +113,9 @@ class SettingsActivity : ComponentActivity() {
                         fontPreferences = fontPreferences,
                         gesturePreferences = gesturePreferences,
                         hapticSoundPreferences = hapticSoundPreferences,
+                        autocorrectPreferences = autocorrectPreferences,
+                        predictionPreferences = predictionPreferences,
+                        wordDao = wordDao,
                         feedback = feedback,
                         onOpenSystemSettings = {
                             startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS))
@@ -99,6 +132,49 @@ class SettingsActivity : ComponentActivity() {
     }
 }
 
+/** Neutral grey Material3 scheme — Compose's default `MaterialTheme { }` falls back to Material's
+ * stock purple/violet palette (Purple40 etc.) for every unset role, which is where the previous
+ * purple buttons/FAB/selection highlights actually came from (nothing in `OmakeyTheme`/`Presets`
+ * is purple — those are the *keyboard's* theme, entirely separate from this Settings UI's own
+ * Material theme). Overrides every role this screen actually paints with, rather than just
+ * `primary`, so containers (buttons, FAB, selected-row highlight) don't fall back to Material's
+ * purple-tinted defaults either. */
+@Composable
+private fun OmakeySettingsTheme(content: @Composable () -> Unit) {
+    val colorScheme = if (isSystemInDarkTheme()) {
+        darkColorScheme(
+            primary = Color(0xFFB0B4B9),
+            onPrimary = Color(0xFF1C1C1C),
+            primaryContainer = Color(0xFF3A3A3D),
+            onPrimaryContainer = Color(0xFFE8E8E8),
+            secondary = Color(0xFF9AA0A6),
+            onSecondary = Color(0xFF1C1C1C),
+            surface = Color(0xFF141414),
+            onSurface = Color(0xFFE8E8E8),
+            surfaceVariant = Color(0xFF232323),
+            onSurfaceVariant = Color(0xFFC8C8C8),
+            background = Color(0xFF0F0F0F),
+            onBackground = Color(0xFFE8E8E8),
+        )
+    } else {
+        lightColorScheme(
+            primary = Color(0xFF5F6368),
+            onPrimary = Color.White,
+            primaryContainer = Color(0xFFE1E3E5),
+            onPrimaryContainer = Color(0xFF1C1C1C),
+            secondary = Color(0xFF757575),
+            onSecondary = Color.White,
+            surface = Color(0xFFFDFDFD),
+            onSurface = Color(0xFF1C1C1C),
+            surfaceVariant = Color(0xFFF0F0F0),
+            onSurfaceVariant = Color(0xFF444444),
+            background = Color(0xFFFAFAFA),
+            onBackground = Color(0xFF1C1C1C),
+        )
+    }
+    MaterialTheme(colorScheme = colorScheme, content = content)
+}
+
 @Composable
 private fun SettingsScreen(
     themeRepository: ThemeRepository,
@@ -107,49 +183,321 @@ private fun SettingsScreen(
     fontPreferences: FontPreferences,
     gesturePreferences: GesturePreferences,
     hapticSoundPreferences: HapticSoundPreferences,
+    autocorrectPreferences: AutocorrectPreferences,
+    predictionPreferences: PredictionPreferences,
+    wordDao: WordDao,
     feedback: VibratorKeyboardFeedback,
     onOpenSystemSettings: () -> Unit,
     onSwitchKeyboard: () -> Unit,
 ) {
     val currentTheme by themeRepository.currentTheme.collectAsState()
     val currentFontId by fontPreferences.fontId.collectAsState()
-    LazyColumn(
-        modifier = Modifier.fillMaxSize().padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        item { Text(text = stringResource(R.string.settings_title), style = MaterialTheme.typography.headlineSmall) }
-        item {
-            Button(onClick = onOpenSystemSettings) {
-                Text(text = stringResource(R.string.settings_enable_keyboard))
+    var showTestOverlay by remember { mutableStateOf(false) }
+    var showLearnedWordsOverlay by remember { mutableStateOf(false) }
+
+    Box(Modifier.fillMaxSize()) {
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .padding(horizontal = 24.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp),
+        ) {
+            item { Text(text = stringResource(R.string.settings_title), style = MaterialTheme.typography.headlineSmall) }
+
+            item {
+                SettingsSection(title = "Setup") {
+                    Button(onClick = onOpenSystemSettings) {
+                        Text(text = stringResource(R.string.settings_enable_keyboard))
+                    }
+                    Button(onClick = onSwitchKeyboard) {
+                        Text(text = stringResource(R.string.settings_choose_keyboard))
+                    }
+                }
+            }
+
+            item {
+                SettingsSection(title = "Appearance") {
+                    Text(text = "Theme", style = MaterialTheme.typography.bodyLarge)
+                    ThemePicker(themeRepository)
+                    Text(text = "Font", style = MaterialTheme.typography.bodyLarge)
+                    FontPicker(fontPreferences, currentFontId)
+                }
+            }
+
+            item {
+                SettingsSection(title = "Typing") {
+                    AutocorrectToggle(autocorrectPreferences)
+                    NextWordPredictionToggle(predictionPreferences)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(text = "Learned words", style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                text = "Words your own typing has taught the keyboard — view, " +
+                                    "search, or remove any that shouldn't have been learned.",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                        TextButton(onClick = { showLearnedWordsOverlay = true }) { Text(text = "Manage") }
+                    }
+                    KeyboardHeightEditor(layoutPreferences, currentTheme, currentFontId)
+                    LayoutTogglesSection(layoutPreferences)
+                    GestureSettingsSection(gesturePreferences)
+                }
+            }
+
+            item {
+                SettingsSection(title = "Sound & Haptics") {
+                    FeedbackSettingsSection(hapticSoundPreferences, feedback)
+                }
+            }
+
+            item {
+                SettingsSection(title = "Accessibility") {
+                    AccessibleModeToggle(accessibilityPreferences)
+                }
+            }
+
+            item {
+                SettingsSection(title = "About") {
+                    Text(text = stringResource(R.string.privacy_notice), style = MaterialTheme.typography.bodyMedium)
+                }
             }
         }
-        item {
-            Button(onClick = onSwitchKeyboard) {
-                Text(text = stringResource(R.string.settings_choose_keyboard))
-            }
+
+        FloatingActionButton(
+            onClick = { showTestOverlay = true },
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .padding(24.dp),
+        ) {
+            Text(text = "⌨", fontSize = 22.sp)
         }
-
-        item { Text(text = "Theme", style = MaterialTheme.typography.titleMedium) }
-        item { ThemePicker(themeRepository) }
-
-        item { Text(text = "Font", style = MaterialTheme.typography.titleMedium) }
-        item { FontPicker(fontPreferences, currentFontId) }
-
-        item { Text(text = "Keyboard layout", style = MaterialTheme.typography.titleMedium) }
-        item { KeyboardHeightEditor(layoutPreferences, currentTheme, currentFontId) }
-        item { LayoutTogglesSection(layoutPreferences) }
-
-        item { Text(text = "Gestures", style = MaterialTheme.typography.titleMedium) }
-        item { GestureSettingsSection(gesturePreferences) }
-
-        item { Text(text = "Feedback", style = MaterialTheme.typography.titleMedium) }
-        item { FeedbackSettingsSection(hapticSoundPreferences, feedback) }
-
-        item { Text(text = "Accessibility", style = MaterialTheme.typography.titleMedium) }
-        item { AccessibleModeToggle(accessibilityPreferences) }
-
-        item { Text(text = stringResource(R.string.privacy_notice), style = MaterialTheme.typography.bodyMedium) }
     }
+
+    if (showTestOverlay) {
+        TestKeyboardOverlay(onClose = { showTestOverlay = false }, onSwitchKeyboard = onSwitchKeyboard)
+    }
+    if (showLearnedWordsOverlay) {
+        LearnedWordsOverlay(wordDao = wordDao, onClose = { showLearnedWordsOverlay = false })
+    }
+}
+
+/** Full-screen overlay listing every word the user's own typing has taught the dictionary
+ * (`WordEntity.isUserAdded`) — lets a mistakenly-learned typo (see [AutocorrectIndex.learn]: once
+ * a word is "known" it's never autocorrected away again, so a typo learned before the dictionary
+ * was properly seeded, or just typed too fast to catch, otherwise has no way back) be removed
+ * individually or all at once, with a live prefix search since the list can get long. Deleting
+ * here only touches Room — an already-running IME's in-memory `AutocorrectIndex` reloads fresh
+ * from Room at its own next startup rather than being live-notified, same load-once-at-startup
+ * design as the rest of the dictionary (see AGENTS.md §6). */
+@Composable
+private fun LearnedWordsOverlay(wordDao: WordDao, onClose: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    var query by remember { mutableStateOf("") }
+    var words by remember { mutableStateOf<List<WordEntity>>(emptyList()) }
+    var showDeleteAllConfirm by remember { mutableStateOf(false) }
+
+    suspend fun reload() {
+        words = wordDao.findUserAdded(query.trim().lowercase())
+    }
+    LaunchedEffect(query) { reload() }
+
+    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(text = "Learned words", style = MaterialTheme.typography.titleMedium)
+                TextButton(onClick = onClose) { Text(text = "Close") }
+            }
+
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text(text = "Search") },
+                singleLine = true,
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = if (words.isEmpty()) "No learned words" else "${words.size} word(s)",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                // Scoped to the *unfiltered* list only — with a search query active, "delete all"
+                // would ambiguously read as either "delete all matches" or "delete everything,
+                // ignoring what's on screen." Hiding it while filtering sidesteps the ambiguity
+                // rather than guessing which one the user means.
+                if (words.isNotEmpty() && query.isBlank()) {
+                    TextButton(onClick = { showDeleteAllConfirm = true }) { Text(text = "Delete all") }
+                }
+            }
+
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                items(words, key = { it.word }) { entry ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(text = entry.word, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                        TextButton(
+                            onClick = {
+                                scope.launch {
+                                    wordDao.delete(entry.word)
+                                    reload()
+                                }
+                            },
+                        ) { Text(text = "Remove") }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showDeleteAllConfirm) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showDeleteAllConfirm = false },
+            title = { Text(text = "Delete all learned words?") },
+            text = { Text(text = "This removes every word your typing has taught the keyboard. The bundled dictionary is not affected.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteAllConfirm = false
+                        scope.launch {
+                            wordDao.deleteAllUserAdded()
+                            reload()
+                        }
+                    },
+                ) { Text(text = "Delete all") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteAllConfirm = false }) { Text(text = "Cancel") }
+            },
+        )
+    }
+}
+
+/** Groups related settings into a labeled, visually distinct card instead of a flat list of raw
+ * text headers — the previous layout put every section at the same visual weight, which read as
+ * "everything is one long list" rather than a set of related groups. */
+@Composable
+private fun SettingsSection(title: String, content: @Composable () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(text = title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant,
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                content()
+            }
+        }
+    }
+}
+
+/** Full-screen overlay hosting a plain focused text field — focusing it brings up whichever IME
+ * is currently the system default, same as focusing any text field in any real app. Only actually
+ * exercises Omakey if it's the active keyboard, hence the banner below when it isn't. */
+@Composable
+private fun TestKeyboardOverlay(onClose: () -> Unit, onSwitchKeyboard: () -> Unit) {
+    val context = LocalContext.current
+    var text by remember { mutableStateOf("") }
+    val focusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val isOmakeyActive = remember { isOmakeyDefaultIme(context) }
+
+    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(text = "Test your keyboard", style = MaterialTheme.typography.titleMedium)
+                TextButton(onClick = onClose) { Text(text = "Close") }
+            }
+
+            if (!isOmakeyActive) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Text(
+                            text = "Omakey isn't your active keyboard — switch to it to test typing here.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Button(onClick = onSwitchKeyboard) { Text(text = "Switch") }
+                    }
+                }
+            }
+
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .focusRequester(focusRequester),
+                placeholder = { Text(text = "Tap here and start typing…") },
+            )
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
+        keyboardController?.show()
+    }
+}
+
+/** Best-effort check via the flattened default-IME component name in Settings.Secure — good
+ * enough to decide whether to show the "switch keyboard" nudge, not used for anything security
+ * sensitive. */
+private fun isOmakeyDefaultIme(context: android.content.Context): Boolean {
+    val current = Settings.Secure.getString(context.contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD)
+    return current?.contains(context.packageName) == true
 }
 
 @Composable
@@ -180,6 +528,32 @@ private fun FontPicker(fontPreferences: FontPreferences, currentFontId: String) 
             }
         }
     }
+}
+
+@Composable
+private fun AutocorrectToggle(autocorrectPreferences: AutocorrectPreferences) {
+    val settings by autocorrectPreferences.settings.collectAsState()
+    SettingToggle(
+        title = "Autocorrect",
+        description = "Automatically fixes likely typos when you finish a word. Backspacing " +
+            "right after a correction reverts to what you actually typed, and it won't " +
+            "immediately re-correct that word on the next space.",
+        checked = settings.autocorrectEnabled,
+        onCheckedChange = autocorrectPreferences::setAutocorrectEnabled,
+    )
+}
+
+@Composable
+private fun NextWordPredictionToggle(predictionPreferences: PredictionPreferences) {
+    val settings by predictionPreferences.settings.collectAsState()
+    SettingToggle(
+        title = "Next-word prediction",
+        description = "Guesses what word comes next based on common usage and your own typing " +
+            "history, shown in the suggestion strip once you finish a word. Turn off to only " +
+            "ever see a suggestion there when there's an actual correction to offer.",
+        checked = settings.nextWordPredictionEnabled,
+        onCheckedChange = predictionPreferences::setNextWordPredictionEnabled,
+    )
 }
 
 @Composable
@@ -344,10 +718,44 @@ private fun FeedbackSettingsSection(preferences: HapticSoundPreferences, feedbac
         }
         SettingToggle(
             title = "Key sounds",
-            description = "Plays the system keypress click sound while typing.",
+            description = "Plays a keypress click sound while typing.",
             checked = settings.soundEnabled,
             onCheckedChange = preferences::setSoundEnabled,
         )
+        if (settings.soundEnabled) {
+            Text(text = "Sound", style = MaterialTheme.typography.bodyLarge)
+            SoundChoicePicker(preferences, settings.soundChoice, feedback)
+        }
+    }
+}
+
+/** Tap a row to both select it and hear it — mirrors the haptic-strength slider's
+ * `onValueChangeFinished` preview-tick convention just above: a sound choice is meaningless to
+ * pick from a label alone, the user needs to actually hear it. */
+@Composable
+private fun SoundChoicePicker(preferences: HapticSoundPreferences, currentChoice: String, feedback: VibratorKeyboardFeedback) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        SoundCatalog.displayNames.forEach { (id, name) ->
+            val selected = id == currentChoice
+            val borderColor = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        preferences.setSoundChoice(id)
+                        feedback.onKeyPress()
+                    }
+                    .border(width = 2.dp, color = borderColor, shape = RoundedCornerShape(12.dp))
+                    .padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(text = name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                if (selected) {
+                    Text(text = "✓", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleMedium)
+                }
+            }
+        }
     }
 }
 

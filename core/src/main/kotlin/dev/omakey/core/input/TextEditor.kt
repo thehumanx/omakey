@@ -42,7 +42,7 @@ class TextEditor(private val connectionProvider: () -> InputConnection?) {
      * across third-party InputConnection implementations. */
     fun deleteWordBackward() {
         val connection = ic ?: return
-        val textBefore = connection.getTextBeforeCursor(MAX_LOOKBACK_CHARS, 0)?.toString() ?: return
+        val textBefore = connection.getTextBeforeCursor(MAX_CURSOR_CONTEXT_CHARS, 0)?.toString() ?: return
         if (textBefore.isEmpty()) return
 
         var end = textBefore.length
@@ -63,6 +63,35 @@ class TextEditor(private val connectionProvider: () -> InputConnection?) {
     fun deleteCharacterBackward() {
         ic?.deleteSurroundingText(1, 0)
     }
+
+    /** The contiguous run of letters touching the cursor on both sides, e.g. the cursor sitting
+     * anywhere inside/at the edges of "thys" — whether it landed there by typing, a tap, or arrow-
+     * key navigation — resolves to the whole word "thys", not just whichever half happens to be
+     * adjacent. Null if the cursor isn't touching a word at all (sitting in whitespace, at the
+     * very start/end of the field, etc). */
+    fun wordAtCursor(): WordAtCursor? {
+        val connection = ic ?: return null
+        val before = connection.getTextBeforeCursor(MAX_CURSOR_CONTEXT_CHARS, 0)?.toString() ?: ""
+        val after = connection.getTextAfterCursor(MAX_CURSOR_CONTEXT_CHARS, 0)?.toString() ?: ""
+        val beforePart = before.takeLastWhile { it.isLetter() }
+        val afterPart = after.takeWhile { it.isLetter() }
+        if (beforePart.isEmpty() && afterPart.isEmpty()) return null
+        return WordAtCursor(word = beforePart + afterPart, charsBeforeCursor = beforePart.length, charsAfterCursor = afterPart.length)
+    }
+
+    /** Replaces [word] (as previously returned by [wordAtCursor]) with [replacement], regardless
+     * of where within the word the cursor was sitting — deletes both the before- and after-cursor
+     * portions in one batched edit and leaves the cursor right after the replacement, matching how
+     * tapping a correction for a word you've navigated into behaves on mainstream keyboards. */
+    fun replaceWordAtCursor(word: WordAtCursor, replacement: String) {
+        val connection = ic ?: return
+        connection.beginBatchEdit()
+        connection.deleteSurroundingText(word.charsBeforeCursor, word.charsAfterCursor)
+        connection.commitText(replacement, 1)
+        connection.endBatchEdit()
+    }
+
+    data class WordAtCursor(val word: String, val charsBeforeCursor: Int, val charsAfterCursor: Int)
 
     fun toggleCaps(currentlyCaps: Boolean): Boolean = !currentlyCaps
 
@@ -92,6 +121,6 @@ class TextEditor(private val connectionProvider: () -> InputConnection?) {
     }
 
     companion object {
-        private const val MAX_LOOKBACK_CHARS = 128
+        private const val MAX_CURSOR_CONTEXT_CHARS = 128
     }
 }

@@ -2,6 +2,7 @@ package dev.omakey.ext
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -25,6 +26,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.omakey.core.theme.LocalOmakeyTheme
@@ -53,17 +55,43 @@ class EmojiPanelExtension : OmakeyExtension {
 
     @Composable
     override fun PanelContent(host: ExtensionHost) {
-        var category by remember { mutableStateOf(EmojiCategories.all.first()) }
+        var categoryIndex by remember { mutableStateOf(0) }
+        val category = EmojiCategories.all[categoryIndex]
         // Text() with no explicit color falls back to LocalContentColor, which defaults to black
         // outside of a Material theming ancestor — invisible against the dark keyboard background.
         // ExtensionPanelSlot provides LocalOmakeyTheme around every extension's content, so this
         // is always available here.
         val textColor = LocalOmakeyTheme.current.keyTextColor.toComposeColor()
+        var dragAccumX by remember { mutableStateOf(0f) }
 
         Column(Modifier.fillMaxSize()) {
             LazyVerticalGrid(
                 columns = GridCells.Fixed(8),
-                modifier = Modifier.fillMaxWidth().weight(1f).padding(8.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .padding(8.dp)
+                    // Left/right swipe on the grid itself steps to the previous/next category —
+                    // same left="back"/right="forward" convention as the rest of the app's
+                    // gesture surface (see GestureStateMachine). LazyVerticalGrid only scrolls
+                    // vertically, so a horizontal drag detector here doesn't fight its own
+                    // scrolling.
+                    .pointerInput(Unit) {
+                        detectHorizontalDragGestures(
+                            onDragStart = { dragAccumX = 0f },
+                            onDragEnd = {
+                                if (dragAccumX <= -SWIPE_THRESHOLD_PX) {
+                                    categoryIndex = (categoryIndex + 1).coerceAtMost(EmojiCategories.all.lastIndex)
+                                } else if (dragAccumX >= SWIPE_THRESHOLD_PX) {
+                                    categoryIndex = (categoryIndex - 1).coerceAtLeast(0)
+                                }
+                                dragAccumX = 0f
+                            },
+                        ) { change, dragAmount ->
+                            change.consume()
+                            dragAccumX += dragAmount
+                        }
+                    },
             ) {
                 items(category.emoji) { emoji ->
                     Text(
@@ -97,15 +125,18 @@ class EmojiPanelExtension : OmakeyExtension {
                 // down to illegibility on a phone-width keyboard.
                 LazyRow(Modifier.weight(1f).fillMaxHeight()) {
                     lazyRowItems(EmojiCategories.all) { cat ->
+                        val isSelected = cat == category
                         Box(
                             modifier = Modifier
                                 .fillMaxHeight()
                                 .width(36.dp)
-                                .clickable { category = cat }
-                                .background(if (cat == category) Color.White.copy(alpha = 0.12f) else Color.Transparent),
+                                .clickable { categoryIndex = EmojiCategories.all.indexOf(cat) }
+                                .background(if (isSelected) Color.White.copy(alpha = 0.12f) else Color.Transparent),
                             contentAlignment = Alignment.Center,
                         ) {
-                            Text(text = cat.icon, fontSize = 18.sp)
+                            // Missing color here made every tab icon (not just "#") default to
+                            // black-on-dark and effectively disappear against the panel background.
+                            Text(text = cat.icon, color = textColor, fontSize = 18.sp)
                         }
                     }
                 }
@@ -120,6 +151,10 @@ class EmojiPanelExtension : OmakeyExtension {
                 }
             }
         }
+    }
+
+    private companion object {
+        const val SWIPE_THRESHOLD_PX = 80f
     }
 }
 
