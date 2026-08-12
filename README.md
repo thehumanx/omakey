@@ -105,7 +105,7 @@ only on your device.
 
 ## Status
 
-Omakey is on release 1.1.0. Core typing, gestures, autocorrect, predictive text, themes, and
+Omakey is on release 1.1.1. Core typing, gestures, autocorrect, predictive text, themes, and
 extensions are all working today. New features are landing regularly — see
 [CHANGELOG.md](CHANGELOG.md) for what's new in each release.
 

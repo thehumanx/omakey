@@ -535,9 +535,10 @@ private fun AutocorrectToggle(autocorrectPreferences: AutocorrectPreferences) {
     val settings by autocorrectPreferences.settings.collectAsState()
     SettingToggle(
         title = "Autocorrect",
-        description = "Automatically fixes likely typos when you finish a word. Backspacing " +
-            "right after a correction reverts to what you actually typed, and it won't " +
-            "immediately re-correct that word on the next space.",
+        description = "Automatically fixes likely typos the moment you finish a word, without " +
+            "asking. Backspacing right after reverts to what you actually typed. Turning this " +
+            "off only disables the silent auto-fix — correction suggestions in the strip " +
+            "(swipe or tap to accept) stay available either way.",
         checked = settings.autocorrectEnabled,
         onCheckedChange = autocorrectPreferences::setAutocorrectEnabled,
     )

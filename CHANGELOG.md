@@ -3,6 +3,25 @@
 All notable changes to Omakey are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.1.1] — 2026-08-12
+
+A round of fixes from real daily-driver feedback on 1.1.0.
+
+### Fixed
+- **The keyboard no longer silently learns every word you type.** Previously, finishing any word
+  (even a typo that wasn't caught) permanently marked it "known" and immune to correction — the
+  only way to teach the dictionary a new word is now the explicit swipe-up "save word" gesture.
+- **Correction suggestions no longer disappear when the Autocorrect toggle is off.** That toggle
+  now only controls the silent, automatic fix-as-you-type behavior — the suggestion-strip
+  corrections you swipe or tap to accept (live mid-word, after a space/punctuation/Enter, and
+  cursor-following) are available regardless of the toggle, as they always should have been.
+- **A word that would've been auto-corrected but wasn't (toggle off) now still gets offered as a
+  fix after the fact** — e.g. typing "hwllo " with autocorrect off now shows "hello" in the strip
+  instead of nothing.
+- **"Deep" and "Soft" keypress sounds were completely silent.** A bug in how the audio clips were
+  trimmed caused the fade-out to zero out the entire clip before it ever played. Re-trimmed and
+  verified both actually produce sound.
+
 ## [1.1.0] — 2026-08-12
 
 A settings overhaul plus a much smarter autocorrect/prediction system, driven by real on-device

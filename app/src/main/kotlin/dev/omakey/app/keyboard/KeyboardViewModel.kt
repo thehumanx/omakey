@@ -281,10 +281,11 @@ class KeyboardViewModel(
         scope.launch { predictionEngine.saveWord(word) }
     }
 
-    /** Replaces whatever partial word is currently buffered/committed with the accepted suggestion,
-     * then finishes it (adds a trailing space, learns it, records the bigram) — tapping means "I'm
-     * done with this word," unlike swipe-accepting via [applySuggestion], which leaves the word
-     * open for further editing. */
+    /** Replaces whatever partial word is currently buffered/committed with the accepted
+     * suggestion, then finishes it (adds a trailing space) — tapping means "I'm done with this
+     * word," unlike swipe-accepting via [applySuggestion], which leaves the word open for further
+     * editing. Does not learn/record anything (see [flushWordBuffer]'s doc) — the word came from
+     * the suggestion strip, so it was already a known word or an already-vetted correction. */
     fun onSuggestionAccepted(word: String) {
         lastAutocorrect = null
         revertedWord = null
@@ -306,13 +307,9 @@ class KeyboardViewModel(
         textEditor.commitCharacter(' ')
         currentWordBuffer.clear()
         // Read *after* commitCorrection — for a two-word split it already advanced
-        // lastCommittedWord to the split's first word, so the bigram recorded here correctly
-        // pairs the second word with the first, not with whatever preceded both of them.
-        val previous = lastCommittedWord
-        previousToLastCommittedWord = previous
+        // lastCommittedWord to the split's first word.
+        previousToLastCommittedWord = lastCommittedWord
         lastCommittedWord = finished.lowercase()
-        autocorrectIndex.learn(finished)
-        scope.launch { predictionEngine.recordAcceptedWord(finished, previous) }
         refreshSuggestions()
     }
 
@@ -342,12 +339,12 @@ class KeyboardViewModel(
 
         val firstWord = replacement.substring(0, spaceIndex)
         val secondWord = replacement.substring(spaceIndex + 1)
-        val previous = lastCommittedWord
         firstWord.forEach { textEditor.commitCharacter(it) }
         textEditor.commitCharacter(' ')
-        autocorrectIndex.learn(firstWord)
-        scope.launch { predictionEngine.recordAcceptedWord(firstWord, previous) }
-        previousToLastCommittedWord = previous
+        // No learn()/recordAcceptedWord() here either — see flushWordBuffer's doc. firstWord came
+        // from AutocorrectIndex.correct()'s split logic, so it's already a known dictionary word;
+        // nothing new to teach regardless.
+        previousToLastCommittedWord = lastCommittedWord
         lastCommittedWord = firstWord.lowercase()
         secondWord.forEach { textEditor.commitCharacter(it) }
         currentWordBuffer.append(secondWord)
@@ -367,8 +364,9 @@ class KeyboardViewModel(
         repeat(target.length + separator.length) { textEditor.deleteCharacterBackward() }
         replacement.forEach { textEditor.commitCharacter(it) }
         separator.forEach { textEditor.commitCharacter(it) }
-        autocorrectIndex.learn(replacement)
-        scope.launch { predictionEngine.recordAcceptedWord(replacement, previousToLastCommittedWord) }
+        // No learn()/recordAcceptedWord() — see flushWordBuffer's doc; replacement is already a
+        // known dictionary word by construction (it came from AutocorrectIndex.correct() or
+        // realWordNeighbors()), so there's nothing new to teach.
         lastCommittedWord = replacement.lowercase()
         refreshSuggestions()
     }
@@ -396,7 +394,10 @@ class KeyboardViewModel(
             }
             return
         }
-        if (!autocorrectPreferences.settings.value.autocorrectEnabled) return
+        // Deliberately NOT gated on autocorrectEnabled — that toggle controls only the silent,
+        // automatic correction in maybeAutocorrectBufferedWord(). Every suggestion-strip
+        // correction (this one included) is manually swipe/tap-accepted, so it stays available
+        // regardless of whether auto-apply is on.
         val correctedLower = autocorrectIndex.correct(wordAtCursor.word)
         if (correctedLower == null) {
             if (cursorCorrectionTarget != null) {
@@ -423,7 +424,7 @@ class KeyboardViewModel(
     private fun applyCursorCorrection(replacement: String) {
         val target = cursorCorrectionTarget ?: return
         textEditor.replaceWordAtCursor(target, replacement)
-        autocorrectIndex.learn(replacement)
+        // No learn() — see flushWordBuffer's doc; replacement is already a known word.
         cursorCorrectionTarget = null
         refreshSuggestions()
     }
@@ -547,16 +548,21 @@ class KeyboardViewModel(
         refreshSuggestions()
     }
 
+    // Deliberately does NOT call autocorrectIndex.learn()/predictionEngine.recordAcceptedWord()
+    // for ordinary typing — only the explicit swipe-up "save word" gesture
+    // (saveCurrentWordToDictionary) teaches the dictionary a new word. Every word boundary used to
+    // silently learn whatever was just typed, including typos that weren't caught (e.g. because
+    // autocorrect was off, or the typo wasn't a recognized one-edit neighbor of anything) — those
+    // got permanently marked "known" the moment they were finished, immune to correction forever
+    // after. Bigram/frequency data from the seeded corpus still drives prediction and completion;
+    // it just no longer grows from casual typing.
     private fun flushWordBuffer() {
         suggestionCycleIndex = -1
         val word = currentWordBuffer.toString()
         if (word.isNotEmpty()) {
-            val previous = lastCommittedWord
-            previousToLastCommittedWord = previous
+            previousToLastCommittedWord = lastCommittedWord
             lastCommittedWord = word.lowercase()
             currentWordBuffer.clear()
-            autocorrectIndex.learn(word)
-            scope.launch { predictionEngine.recordAcceptedWord(word, previous) }
         }
     }
 
@@ -621,8 +627,16 @@ class KeyboardViewModel(
             }
             var kind = if (correction != null) SuggestionKind.LIVE_CORRECTION else SuggestionKind.PLAIN
 
-            if (kind == SuggestionKind.PLAIN && contextualTarget != null && contextualContext != null) {
-                val altWord = contextualCorrection(contextualContext, contextualTarget)
+            if (kind == SuggestionKind.PLAIN && contextualTarget != null) {
+                // Try a plain typo fix on the just-committed word first — this is what covers a
+                // word that *would* have been auto-corrected but wasn't, because autocorrect is
+                // toggled off (maybeAutocorrectBufferedWord respects that toggle; this suggestion
+                // does not, see correctionCandidate's doc). Only falls back to the bigram-based
+                // real-word-error check when the word is already a valid dictionary entry on its
+                // own (correct() refuses to touch those), which is the case correct() alone can't
+                // resolve regardless of the toggle.
+                val altWord = autocorrectIndex.correct(contextualTarget)?.let { matchCase(contextualTarget, it) }
+                    ?: contextualContext?.let { contextualCorrection(it, contextualTarget) }
                 if (altWord != null) {
                     suggestions = (listOf(altWord) + suggestions.filterNot { it.equals(altWord, ignoreCase = true) })
                         .take(SUGGESTION_LIMIT)
@@ -639,11 +653,12 @@ class KeyboardViewModel(
      * typed — lets swipe/tap accept the fix immediately instead of waiting for space/punctuation
      * to trigger the automatic version. Respects the same "just rejected via backspace" one-shot
      * suppression via [revertedWord] so a manually reverted correction doesn't immediately
-     * reappear as a suggestion either. */
+     * reappear as a suggestion either. Deliberately NOT gated on the autocorrect toggle — that
+     * setting controls only the silent, automatic correction in [maybeAutocorrectBufferedWord];
+     * a manually swipe/tap-accepted suggestion here stays available regardless. */
     private fun correctionCandidate(typed: String): String? {
         if (typed.isEmpty()) return null
         if (typed == revertedWord) return null
-        if (!autocorrectPreferences.settings.value.autocorrectEnabled) return null
         val correctedLower = autocorrectIndex.correct(typed) ?: return null
         return matchCase(typed, correctedLower)
     }
@@ -657,7 +672,6 @@ class KeyboardViewModel(
      * (it's a judgment call about which of two *valid* words was meant), so silently rewriting
      * text on this signal alone would be too easy to get wrong. */
     private suspend fun contextualCorrection(context: String, target: String): String? {
-        if (!autocorrectPreferences.settings.value.autocorrectEnabled) return null
         val neighbors = autocorrectIndex.realWordNeighbors(target)
         if (neighbors.isEmpty()) return null
         val targetRank = predictionEngine.bigramRank(context, target)
