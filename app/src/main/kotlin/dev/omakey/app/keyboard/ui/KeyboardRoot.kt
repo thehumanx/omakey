@@ -384,18 +384,50 @@ private fun KeyGrid(
     onPressedKeyChange: (Int?) -> Unit,
 ) {
     val gestureSettings = uiState.gestureSettings
-    // Bumped on every swipe-left word delete — [KeyRowView] watches this on the home row to
-    // replay the right-to-left shimmer border animation (see its own doc). A plain counter
+    // Bumped on every swipe-left word delete — drives [shimmerProgress] below. A plain counter
     // rather than a boolean so repeated deletes in quick succession each restart the animation
     // (a `LaunchedEffect` keyed on an unchanging `true` wouldn't refire).
     var deleteShimmerTrigger by remember { mutableStateOf(0) }
     val onSwipeDeleteTriggeredStable = remember { { deleteShimmerTrigger += 1 } }
+    // Owned here (not inside KeyRowView) specifically so it survives a layout switch — KeyGrid
+    // itself never leaves composition when the layout swaps between ABC/Symbols (only the row
+    // contents underneath change), unlike the old per-row `if (isHomeRow) LaunchedEffect(...)`
+    // this replaced, which got torn down and remounted whenever `isHomeRow` flipped, causing the
+    // shimmer to misfire on every trip back to ABC (real bug, see [KeyRowView]'s own doc on the
+    // `shimmerProgress` param for the full explanation).
+    val shimmerProgress = remember { androidx.compose.animation.core.Animatable(0f) }
+    androidx.compose.runtime.LaunchedEffect(deleteShimmerTrigger) {
+        if (deleteShimmerTrigger == 0) return@LaunchedEffect
+        shimmerProgress.snapTo(1f)
+        shimmerProgress.animateTo(
+            0f,
+            animationSpec = androidx.compose.animation.core.tween(
+                durationMillis = 225,
+                easing = androidx.compose.animation.core.LinearEasing,
+            ),
+        )
+    }
     // Long-press-and-drag special-character popup (see AccentDragState's own doc) — this whole
     // touch's "held key" and which of its options is currently under the finger, or null when no
     // long-press-with-popup-chars is in progress. Local to KeyGrid (not hoisted to KeyboardRoot)
     // since it's scoped to a single continuous touch that starts and ends inside this composable's
     // own pointerInput loop.
     var accentDragState by remember { mutableStateOf<AccentDragState?>(null) }
+    // Symbol-mode fade (replaces the old floating popup/tooltip): a long-press-with-popupChars
+    // now fades the whole key grid from ABC into a full-width symbol strip instead of popping a
+    // small box above the held key, and fades back to ABC on release — see [SymbolModeOverlay].
+    // [lastAccentDragState] retains the final state through the fade-*out* half of that animation,
+    // since [accentDragState] itself already goes back to null the instant the finger lifts (see
+    // the UP branch below) but the overlay still needs something to render while animating away.
+    var lastAccentDragState by remember { mutableStateOf<AccentDragState?>(null) }
+    if (accentDragState != null) lastAccentDragState = accentDragState
+    val symbolModeAlpha = remember { androidx.compose.animation.core.Animatable(0f) }
+    androidx.compose.runtime.LaunchedEffect(accentDragState != null) {
+        symbolModeAlpha.animateTo(
+            if (accentDragState != null) 1f else 0f,
+            animationSpec = androidx.compose.animation.core.tween(160),
+        )
+    }
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -556,35 +588,38 @@ private fun KeyGrid(
                                         cursorDragAnchorX = change.position.x
                                     }
                                 } else if (dragState != null) {
-                                    val keyBounds = keyBoundsState.value.values
-                                        .firstOrNull { (key, _) -> key.code == dragState.key.code }
-                                        ?.second
-                                    if (keyBounds != null) {
-                                        val cellWidthPx = keyBounds.width.coerceAtLeast(1f)
-                                        val centerX = (keyBounds.left + keyBounds.right) / 2f
-                                        // Signed count of key-widths the finger has moved right of
-                                        // the held key's own center — index 0 sits at the key
-                                        // itself, each further cell steps to the next popup option.
-                                        // Dragging left of the key just clamps back to index 0
-                                        // (the base letter), same as never having dragged at all.
-                                        val wantIndex = ((change.position.x - centerX) / cellWidthPx).toInt().coerceAtLeast(0)
-                                        var options = dragState.options
-                                        if (wantIndex >= options.size) {
-                                            // Dragged past the last popup character — "keep
-                                            // dragging" reveals more special characters beyond the
-                                            // curated per-key set, the same idea as Fleksy's drag-
-                                            // into-symbols-mode, scoped here to extending this same
-                                            // popup rather than swapping the whole keyboard layout
-                                            // underneath the finger.
-                                            val extra = EXTENDED_POPUP_SYMBOLS
-                                                .filterNot { it in options }
-                                                .take(wantIndex - options.size + 1)
-                                            options = options + extra
-                                        }
-                                        val clampedIndex = wantIndex.coerceIn(0, options.size - 1)
-                                        if (options !== dragState.options || clampedIndex != dragState.highlightedIndex) {
-                                            accentDragState = dragState.copy(options = options, highlightedIndex = clampedIndex)
-                                        }
+                                    // Distance from the touch's *down* position (not the held
+                                    // key's own on-screen bounds/center), and unsigned — either
+                                    // direction advances the index equally. Real bug, fixed: this
+                                    // used to be signed distance rightward from the held key's own
+                                    // center, which meant a key sitting near the right edge of the
+                                    // row (P, L, M) had nowhere on-screen to drag *into* — there
+                                    // was no room to the right, and dragging left just clamped back
+                                    // to index 0. Since the popup itself no longer visually anchors
+                                    // to the held key either (see SymbolModeOverlay, a full-width
+                                    // fade over the whole grid), there's no reason the selection
+                                    // math still has to — any key can now be reached by dragging in
+                                    // whichever direction actually has screen room, symmetric cell
+                                    // width for the whole keyboard's key spacing.
+                                    val cellWidthPx = 40.dp.toPx()
+                                    val distancePx = kotlin.math.abs(change.position.x - down.position.x)
+                                    val wantIndex = (distancePx / cellWidthPx).toInt()
+                                    var options = dragState.options
+                                    if (wantIndex >= options.size) {
+                                        // Dragged past the last popup character — "keep
+                                        // dragging" reveals more special characters beyond the
+                                        // curated per-key set, the same idea as Fleksy's drag-
+                                        // into-symbols-mode, scoped here to extending this same
+                                        // popup rather than swapping the whole keyboard layout
+                                        // underneath the finger.
+                                        val extra = EXTENDED_POPUP_SYMBOLS
+                                            .filterNot { it in options }
+                                            .take(wantIndex - options.size + 1)
+                                        options = options + extra
+                                    }
+                                    val clampedIndex = wantIndex.coerceIn(0, options.size - 1)
+                                    if (options !== dragState.options || clampedIndex != dragState.highlightedIndex) {
+                                        accentDragState = dragState.copy(options = options, highlightedIndex = clampedIndex)
                                     }
                                 } else {
                                     val gestureEvent = machine.onTouch(
@@ -603,7 +638,16 @@ private fun KeyGrid(
                 }
             },
     ) {
-        Column(Modifier.fillMaxWidth().padding(PaddingValues(horizontal = 4.dp))) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(PaddingValues(horizontal = 4.dp))
+                // Fades out as symbol mode fades in (see symbolModeAlpha above) — alpha only, not
+                // removed from composition, so keyBoundsState (needed by the drag-select math in
+                // the pointer loop above, which reads the held key's own bounds throughout) keeps
+                // updating underneath the overlay the whole time.
+                .alpha(1f - symbolModeAlpha.value),
+        ) {
             effectiveRows.forEachIndexed { rowIndex, row ->
                 val onBoundsMeasuredStable = remember(rowIndex) {
                     { keyIndex: Int, key: KeyDefinition, rect: Rect ->
@@ -625,7 +669,7 @@ private fun KeyGrid(
                     pressedKeyCode = pressedKeyCode,
                     capsLockOn = uiState.capsLockOn,
                     enterAction = uiState.enterAction,
-                    deleteShimmerTrigger = deleteShimmerTrigger,
+                    shimmerProgress = shimmerProgress.value,
                     alwaysShowUppercaseLetters = layoutSettings.alwaysShowUppercaseLetters,
                 )
             }
@@ -657,89 +701,98 @@ private fun KeyGrid(
             }
         }
 
-        if (accentDragState != null) {
-            AccentDragPopup(
-                state = accentDragState!!,
-                keyBounds = keyBoundsState.value.values.firstOrNull { (key, _) -> key.code == accentDragState!!.key.code }?.second,
-                parentWidthPx = ancestorCoordinatesStable()?.size?.width?.toFloat(),
-                theme = theme,
-                fontFamily = fontFamily,
-            )
+        if (symbolModeAlpha.value > 0f) {
+            lastAccentDragState?.let { state ->
+                SymbolModeOverlay(
+                    state = state,
+                    alpha = symbolModeAlpha.value,
+                    theme = theme,
+                    fontFamily = fontFamily,
+                    gridHeightDp = gridHeightDp,
+                )
+            }
         }
     }
 }
 
-/** Floating popup for [AccentDragState] — a horizontal row of the key's accent/punctuation
- * variants (plus its own base letter as option 0), positioned directly above the held key rather
- * than in the suggestion strip, so it visually points at what's actually being held (unlike the
- * old strip-replacing picker this superseded). Purely a rendering of [state]; all the actual
- * drag-to-select tracking lives in KeyGrid's own gesture loop, which is what keeps [state] updated
- * as the finger moves. */
+/** Full-width symbol-mode overlay for [AccentDragState] — supersedes the old small floating
+ * popup/tooltip (real user feedback: "instead of a popup or tooltip, fade into symbol mode").
+ * Rendered over the *entire* key grid (not anchored above the held key) and cross-fades against
+ * the ABC keys underneath via [alpha], driven by KeyGrid's `symbolModeAlpha` — 0 at rest (this
+ * composable isn't even called), fades to 1 across the whole gesture's long-press-triggers-it
+ * moment, and back to 0 as the finger lifts, at which point KeyGrid stops calling this entirely.
+ * Purely a rendering of [state]; all the actual drag-to-select tracking (which option is under the
+ * finger) still lives in KeyGrid's own gesture loop, unchanged — only the visual presentation
+ * moved from "small popup pointing at the key" to "the whole keyboard turns into symbol mode." */
 @Composable
-private fun AccentDragPopup(
+private fun SymbolModeOverlay(
     state: AccentDragState,
-    keyBounds: Rect?,
-    parentWidthPx: Float?,
+    alpha: Float,
     theme: OmakeyTheme,
     fontFamily: androidx.compose.ui.text.font.FontFamily?,
+    gridHeightDp: Int,
 ) {
-    if (keyBounds == null) return
-    val density = androidx.compose.ui.platform.LocalDensity.current
-    val cellWidthPx = with(density) { 40.dp.toPx() }
-    val cellHeightPx = with(density) { 48.dp.toPx() }
-    val gapPx = with(density) { 6.dp.toPx() }
-    val popupWidthPx = cellWidthPx * state.options.size
-    val availableWidthPx = parentWidthPx ?: (keyBounds.right + popupWidthPx)
-    // Left-anchored at the held key (option 0 sits where the key itself is, options extend to
-    // the right — matching the rightward-only drag direction KeyGrid tracks), clamped so the
-    // popup never runs off the right edge on a key near the end of a row.
-    val x = ((keyBounds.left + keyBounds.right) / 2f - cellWidthPx / 2f)
-        .coerceIn(0f, (availableWidthPx - popupWidthPx).coerceAtLeast(0f))
-    val y = (keyBounds.top - cellHeightPx - gapPx).coerceAtLeast(0f)
-    Row(
+    Box(
         modifier = Modifier
-            .offset { androidx.compose.ui.unit.IntOffset(x.toInt(), y.toInt()) }
-            .size(with(density) { popupWidthPx.toDp() }, with(density) { cellHeightPx.toDp() })
-            .background(theme.keySpecialBackground.toComposeColor(), androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
-            .padding(3.dp),
+            .fillMaxWidth()
+            .height(gridHeightDp.dp)
+            .alpha(alpha)
+            .background(theme.keyboardBackground.toComposeColor()),
+        contentAlignment = Alignment.Center,
     ) {
-        state.options.forEachIndexed { index, option ->
-            val isHighlighted = index == state.highlightedIndex
-            // Cells beyond the key's own curated popupChars (the EXTENDED_POPUP_SYMBOLS overflow
-            // tier, reached only by dragging past the curated set) fade in the first time they're
-            // composed instead of appearing instantly — a subtle "this is a different tier now"
-            // cue for the mode shift, rather than a jump cut. Cells within the curated set (index
-            // < baseOptionCount, present from the moment the popup opens) skip the animation
-            // entirely — nothing to fade in from, they're there from frame one.
-            val alpha = if (index >= state.baseOptionCount) {
-                val animatable = remember(option, index) { androidx.compose.animation.core.Animatable(0f) }
-                androidx.compose.runtime.LaunchedEffect(animatable) {
-                    animatable.animateTo(1f, animationSpec = androidx.compose.animation.core.tween(200))
-                }
-                animatable.value
-            } else {
-                1f
-            }
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .alpha(alpha)
-                    .let {
-                        if (isHighlighted) {
-                            it.background(theme.keyBackgroundPressed.toComposeColor(), androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
-                        } else {
-                            it
-                        }
-                    },
-                contentAlignment = Alignment.Center,
+        androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
+            val density = androidx.compose.ui.platform.LocalDensity.current
+            val availableWidthPx = with(density) { maxWidth.toPx() }
+            // Shrinks cells to fit as more options accumulate (the EXTENDED_POPUP_SYMBOLS overflow
+            // tier can push option count well past what a fixed cell width would fit on one row),
+            // clamped so cells never get too cramped or absurdly wide with only 2-3 options.
+            val cellWidthDp = with(density) {
+                (availableWidthPx / state.options.size.coerceAtLeast(1)).toDp()
+            }.coerceIn(36.dp, 56.dp)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
             ) {
-                Text(
-                    text = option,
-                    color = theme.keyTextColor.toComposeColor(),
-                    fontFamily = fontFamily,
-                    fontSize = 18.sp,
-                )
+                state.options.forEachIndexed { index, option ->
+                    val isHighlighted = index == state.highlightedIndex
+                    // Cells beyond the key's own curated popupChars (the EXTENDED_POPUP_SYMBOLS
+                    // overflow tier, reached only by dragging past the curated set) fade in the
+                    // first time they're composed instead of appearing instantly — a subtle "this
+                    // is a different tier now" cue for the mode shift, rather than a jump cut.
+                    // Cells within the curated set (index < baseOptionCount, present from the
+                    // moment symbol mode opens) skip the animation entirely.
+                    val optionAlpha = if (index >= state.baseOptionCount) {
+                        val animatable = remember(option, index) { androidx.compose.animation.core.Animatable(0f) }
+                        androidx.compose.runtime.LaunchedEffect(animatable) {
+                            animatable.animateTo(1f, animationSpec = androidx.compose.animation.core.tween(200))
+                        }
+                        animatable.value
+                    } else {
+                        1f
+                    }
+                    Box(
+                        modifier = Modifier
+                            .width(cellWidthDp)
+                            .height(56.dp)
+                            .padding(3.dp)
+                            .alpha(optionAlpha)
+                            .let {
+                                if (isHighlighted) {
+                                    it.background(theme.keyBackgroundPressed.toComposeColor(), androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
+                                } else {
+                                    it.background(theme.keySpecialBackground.toComposeColor(), androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
+                                }
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = option,
+                            color = theme.keyTextColor.toComposeColor(),
+                            fontFamily = fontFamily,
+                            fontSize = 20.sp,
+                        )
+                    }
+                }
             }
         }
     }
@@ -884,42 +937,33 @@ internal fun KeyRowView(
     pressedKeyCode: Int? = null,
     capsLockOn: Boolean = false,
     enterAction: Int = android.view.inputmethod.EditorInfo.IME_ACTION_NONE,
-    // Bumped by KeyGrid on every swipe-left word delete — see the shimmer draw below. Ignored
-    // (and never animated) on any row where isHomeRow is false, so non-home rows pay nothing for
-    // this parameter beyond the identity comparison.
-    deleteShimmerTrigger: Int = 0,
+    // Right-to-left gradient shimmer along the home row's top/bottom borders — a quick, purely
+    // decorative "something got swept away" cue timed with swipe-left's delete-word gesture (see
+    // feedback.onSwipeDelete's matching swoosh sound). 1f = just-triggered (band at the right
+    // edge), animates down to 0f (band swept off the left edge); 0 also means "not currently
+    // shimmering." Owned and animated by [KeyGrid] (see its own `shimmerProgress`), just drawn
+    // here — it used to be owned locally in this composable via its own `remember`d `Animatable`
+    // + `LaunchedEffect(deleteShimmerTrigger)`, gated behind `if (isHomeRow)`. That was a real bug
+    // (fixed): switching to the Symbols layout makes `isHomeRow` false for every row (no row is
+    // "home" there), which unmounted that conditional `LaunchedEffect` entirely; switching back to
+    // ABC remounted it fresh, and a `LaunchedEffect` keyed on an already-nonzero trigger value
+    // fires immediately just from *entering* composition — so the shimmer visibly replayed on
+    // every trip back to ABC, even with no delete in between. Hoisting the animation up to
+    // KeyGrid (which never unmounts across a layout switch) keeps its `LaunchedEffect` alive the
+    // whole time, so it only ever restarts on a real new trigger.
     // True (default, matches omakey's original look) keeps letter keycaps uppercase no matter
     // what; false switches to the conventional mobile-keyboard behavior — keycaps track actual
     // case (shiftOn/capsLockOn), same as what's about to be typed. See LayoutSettings's doc.
     alwaysShowUppercaseLetters: Boolean = true,
+    shimmerProgress: Float = 0f,
 ) {
-    // Right-to-left gradient shimmer along the home row's top/bottom borders, replayed each time
-    // [deleteShimmerTrigger] changes — a quick, purely decorative "something got swept away" cue
-    // timed with swipe-left's delete-word gesture (see feedback.onSwipeDelete's matching swoosh
-    // sound). 1f = just-triggered (band at the right edge), animates down to 0f (band swept off
-    // the left edge); progress 0 also means "not currently shimmering" so the overlay can be
-    // skipped entirely on every other row without allocating an Animatable for them.
-    val shimmerProgress = remember { androidx.compose.animation.core.Animatable(0f) }
-    if (isHomeRow) {
-        androidx.compose.runtime.LaunchedEffect(deleteShimmerTrigger) {
-            if (deleteShimmerTrigger == 0) return@LaunchedEffect
-            shimmerProgress.snapTo(1f)
-            shimmerProgress.animateTo(
-                0f,
-                animationSpec = androidx.compose.animation.core.tween(
-                    durationMillis = 450,
-                    easing = androidx.compose.animation.core.LinearEasing,
-                ),
-            )
-        }
-    }
     Box(
         Modifier
             .fillMaxWidth()
             .height(rowHeightDp.dp)
             .let { m -> if (isHomeRow) m.background(theme.middleRowStripeColor.toComposeColor()) else m }
             .let { m ->
-                if (isHomeRow && shimmerProgress.value > 0f) {
+                if (isHomeRow && shimmerProgress > 0f) {
                     m.then(
                         Modifier.drawWithContent {
                             drawContent()
@@ -929,8 +973,21 @@ internal fun KeyRowView(
                             // fraction = 1 - progress puts the bright band at the right edge when
                             // progress is 1 (just triggered) and sweeps it to the left edge as
                             // progress falls to 0.
-                            val bandFraction = 1f - shimmerProgress.value
-                            val shimmerColor = theme.spacebarAccentColor.toComposeColor()
+                            val bandFraction = 1f - shimmerProgress
+                            // spacebarAccentColor is deliberately neutral (same as keyBackground)
+                            // on most dark themes/presets unless the user opts into a system
+                            // accent color (see OmakeyTheme's own doc on the field) — great for the
+                            // spacebar itself, but it made this decorative shimmer nearly invisible
+                            // against an equally dark row background (real bug report). Lightened
+                            // toward white on dark themes only, so the shimmer stays visible without
+                            // touching the spacebar's own neutral-by-default look.
+                            val shimmerColor = theme.spacebarAccentColor.toComposeColor().let { base ->
+                                if (theme.isDark) {
+                                    androidx.compose.ui.graphics.lerp(base, Color.White, 0.55f)
+                                } else {
+                                    base
+                                }
+                            }
                             val brush = androidx.compose.ui.graphics.Brush.linearGradient(
                                 colorStops = arrayOf(
                                     (bandFraction - bandWidth).coerceIn(0f, 1f) to Color.Transparent,
@@ -986,8 +1043,14 @@ internal fun KeyRowView(
                     isSpace -> theme.spacebarAccentColor.toComposeColor()
                     // Caps lock gets its own persistent highlight, same visual language as a
                     // physical caps-lock LED — distinguishes "locked on" from a plain momentary
-                    // press, which only brightens the icon (see isPressed below).
-                    isCapsLockKey -> theme.keySpecialBackground.toComposeColor()
+                    // press, which only brightens the icon (see isPressed below). Uses
+                    // keyBackgroundPressed (the same accent-ish color isActiveShift's icon tint
+                    // and the accent-drag popup's highlighted cell already use), not
+                    // keySpecialBackground — on a custom theme, keySpecialBackground is only a
+                    // small nudge off the base key color (see buildCustomTheme's smallNudge),
+                    // which read as flat, barely-distinguishable "weird grey" instead of a clear
+                    // locked-on indicator (real bug report).
+                    isCapsLockKey -> theme.keyBackgroundPressed.toComposeColor()
                     !showKeyBackgrounds -> Color.Transparent
                     key.keyType == dev.omakey.core.layout.KeyType.SPECIAL -> theme.keySpecialBackground.toComposeColor()
                     else -> theme.keyBackground.toComposeColor()

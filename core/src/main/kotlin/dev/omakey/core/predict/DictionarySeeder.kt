@@ -23,7 +23,8 @@ import java.io.InputStreamReader
  * Ngrams via Peter Norvig's public frequency lists, filtered to clean alphabetic pairs) gives
  * every install working next-word prediction from the first keystroke.
  *
- * **Resumability**: completion is tracked with a dedicated SharedPreferences flag, not
+ * **Resumability**: completion is tracked in SharedPreferences as the bundled asset's line count
+ * at the time seeding last fully finished, not with a plain boolean and not with
  * `wordDao.count() > 0` — the table being non-empty doesn't mean seeding *finished*. An
  * `InputMethodService` can be torn down by the OS mid-seed (it's a lightweight, frequently
  * killed/recreated component, not a foreground Activity), which used to leave the table with only
@@ -33,21 +34,29 @@ import java.io.InputStreamReader
  * `OnConflictStrategy.IGNORE` against each table's primary key, so re-running the full seed loop
  * on top of leftover partial data is safe and idempotent — already-present rows are silently
  * skipped, missing ones get filled in — which is what makes "just retry from the top until the
- * completion flag actually gets set" a correct resume strategy rather than needing real
- * checkpointing.
+ * stored count actually reaches the bundled total" a correct resume strategy rather than needing
+ * real checkpointing. Storing the count rather than a boolean also means an app update that grows
+ * the bundled wordlist/bigram file (new words added) reseeds automatically on already-installed
+ * devices instead of staying frozen at whatever shipped on first install.
  */
 class DictionarySeeder(private val wordDao: WordDao, private val bigramDao: BigramDao) {
 
     suspend fun seedIfNeeded(context: Context, assetFileName: String = "wordlist_en_us.txt") {
         withContext(Dispatchers.IO) {
             val prefs = seedStatePrefs(context)
-            if (prefs.getBoolean(KEY_WORDS_SEEDED, false)) return@withContext
-
             val lines = context.assets.open(assetFileName).use { stream ->
                 BufferedReader(InputStreamReader(stream)).readLines()
             }
-            val now = System.currentTimeMillis()
             val total = lines.size
+            // Gated on the bundled list's line count, not a plain boolean: an app update that
+            // adds new words to wordlist_en_us.txt (e.g. "autocorrect", "emoji") needs already-
+            // seeded installs to pick them up too, not just fresh installs. Safe to just rerun the
+            // whole loop when the count grows — insertSeedBatch's OnConflictStrategy.IGNORE means
+            // already-present words (and any frequency/rank drift among them) are left untouched,
+            // only genuinely new words get inserted.
+            if (prefs.getInt(KEY_WORDS_SEEDED_COUNT, 0) >= total) return@withContext
+
+            val now = System.currentTimeMillis()
 
             lines.chunked(BATCH_SIZE).forEachIndexed { batchIndex, batch ->
                 val entities = batch.mapIndexed { indexInBatch, word ->
@@ -64,19 +73,18 @@ class DictionarySeeder(private val wordDao: WordDao, private val bigramDao: Bigr
             // Only recorded once every batch above has actually committed — if the process dies
             // partway through the loop, this line never runs, so the next launch retries the
             // whole thing (safely, per the class doc) instead of being stuck at a partial table.
-            prefs.edit().putBoolean(KEY_WORDS_SEEDED, true).apply()
+            prefs.edit().putInt(KEY_WORDS_SEEDED_COUNT, total).apply()
         }
     }
 
     suspend fun seedBigramsIfNeeded(context: Context, assetFileName: String = "bigrams_en_us.txt") {
         withContext(Dispatchers.IO) {
             val prefs = seedStatePrefs(context)
-            if (prefs.getBoolean(KEY_BIGRAMS_SEEDED, false)) return@withContext
-
             val lines = context.assets.open(assetFileName).use { stream ->
                 BufferedReader(InputStreamReader(stream)).readLines()
             }
             val total = lines.size
+            if (prefs.getInt(KEY_BIGRAMS_SEEDED_COUNT, 0) >= total) return@withContext
 
             // Frequency counts from the source corpus range into the billions for common pairs
             // ("of the") — far past Int range for BigramEntity.count. Only relative order matters
@@ -95,7 +103,7 @@ class DictionarySeeder(private val wordDao: WordDao, private val bigramDao: Bigr
                 }
                 bigramDao.insertSeedBatch(entities)
             }
-            prefs.edit().putBoolean(KEY_BIGRAMS_SEEDED, true).apply()
+            prefs.edit().putInt(KEY_BIGRAMS_SEEDED_COUNT, total).apply()
         }
     }
 
@@ -105,7 +113,7 @@ class DictionarySeeder(private val wordDao: WordDao, private val bigramDao: Bigr
     companion object {
         private const val BATCH_SIZE = 500
         private const val PREFS_NAME = "omakey_seed_state"
-        private const val KEY_WORDS_SEEDED = "words_seeded"
-        private const val KEY_BIGRAMS_SEEDED = "bigrams_seeded"
+        private const val KEY_WORDS_SEEDED_COUNT = "words_seeded_count"
+        private const val KEY_BIGRAMS_SEEDED_COUNT = "bigrams_seeded_count"
     }
 }

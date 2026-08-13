@@ -43,6 +43,8 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.material3.Button
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
@@ -66,17 +68,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.omakey.app.R
 import dev.omakey.app.keyboard.SoundCatalog
 import dev.omakey.app.keyboard.VibratorKeyboardFeedback
 import dev.omakey.app.keyboard.ui.FontCatalog
+import dev.omakey.core.icons.PhosphorCopy
 import dev.omakey.core.db.OmakeyDatabase
 import dev.omakey.core.db.WordDao
 import dev.omakey.core.db.WordEntity
@@ -1261,14 +1266,22 @@ private fun ThemeEditorOverlay(initialTheme: OmakeyTheme?, onSave: (OmakeyTheme)
         )
     }
 
+    // The 4 edit fields, one page each — see [ThemeEditCarousel]'s own doc for why this replaced
+    // the old vertically-stacked list of 4 always-expanded pickers.
+    val editPages = listOf(
+        ThemeEditField("Background", background) { background = it },
+        ThemeEditField("Key color", keyColor) { keyColor = it },
+        ThemeEditField("Home-row stripe", stripeColor) { stripeColor = it },
+        ThemeEditField("Spacebar", spacebarColor) { spacebarColor = it },
+    )
+
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
                 .navigationBarsPadding()
-                .padding(16.dp)
-                .verticalScroll(rememberScrollState()),
+                .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Row(
@@ -1291,13 +1304,17 @@ private fun ThemeEditorOverlay(initialTheme: OmakeyTheme?, onSave: (OmakeyTheme)
                 singleLine = true,
             )
 
+            // Sticky, full-keyboard preview — deliberately outside any scroll container so it
+            // stays on screen the whole time the carousel below is being swiped/edited, instead of
+            // scrolling away with the rest of the form (real user feedback: "so we know how it
+            // looks as we edit"). Fixed height, everything below shares the remaining space.
             Text(text = "Preview", style = MaterialTheme.typography.bodyLarge)
             ThemePreviewMock(previewTheme)
 
-            ColorPickerField(label = "Background", color = background, onColorChange = { background = it })
-            ColorPickerField(label = "Key color", color = keyColor, onColorChange = { keyColor = it })
-            ColorPickerField(label = "Home-row stripe", color = stripeColor, onColorChange = { stripeColor = it })
-            ColorPickerField(label = "Spacebar", color = spacebarColor, onColorChange = { spacebarColor = it })
+            ThemeEditCarousel(
+                pages = editPages,
+                modifier = Modifier.weight(1f),
+            )
 
             Button(onClick = { onSave(previewTheme) }, modifier = Modifier.fillMaxWidth()) {
                 Text(text = "Save theme")
@@ -1306,58 +1323,114 @@ private fun ThemeEditorOverlay(initialTheme: OmakeyTheme?, onSave: (OmakeyTheme)
     }
 }
 
-/** A real `KeyRowView` row (same composable the actual keyboard renders, reused rather than a
- * bespoke mock — same trick as `KeyboardSizePositionOverlay`) so the editor's preview is
- * pixel-accurate to what typing will actually look like. */
+/** A real, full `KeyboardLayout` rendered row-by-row via `KeyRowView` (same composable the actual
+ * keyboard renders, reused rather than a bespoke mock — same trick as
+ * `KeyboardSizePositionOverlay`) — shows every row, not just one, so the editor's sticky preview
+ * is pixel-accurate to what typing will actually look like, including the spacebar/bottom row
+ * (where [OmakeyTheme.spacebarAccentColor] actually shows up) and the home-row stripe. */
 @Composable
 private fun ThemePreviewMock(theme: OmakeyTheme) {
     val noOpAncestor: () -> androidx.compose.ui.layout.LayoutCoordinates? = remember { { null } }
-    Box(
+    val rowHeightDp = 52
+    Column(
         Modifier
             .fillMaxWidth()
-            .height(56.dp)
             .background(theme.keyboardBackground.toComposeColor(), RoundedCornerShape(8.dp))
-            .padding(horizontal = 4.dp),
+            .padding(horizontal = 4.dp, vertical = 6.dp),
     ) {
-        dev.omakey.app.keyboard.ui.KeyRowView(
-            rowKeys = Layouts.QwertyEnUS.rows[3].keys,
-            rowHeightDp = 56,
-            shiftOn = false,
-            theme = theme,
-            accessibleMode = false,
-            showKeyBackgrounds = false,
-            isHomeRow = false,
-            onKeyTap = {},
-            ancestorCoordinates = noOpAncestor,
-            onBoundsMeasured = { _, _, _ -> },
-        )
+        Layouts.QwertyEnUS.rows.forEachIndexed { rowIndex, row ->
+            dev.omakey.app.keyboard.ui.KeyRowView(
+                rowKeys = row.keys,
+                rowHeightDp = rowHeightDp,
+                shiftOn = false,
+                theme = theme,
+                accessibleMode = false,
+                showKeyBackgrounds = false,
+                // Matches KeyGrid's own homeRowIndex for QwertyEnUS (see KeyboardRoot.kt) — the
+                // ASDFGHJKL row (index 1), not the ZXCVBNM/shift row (real bug, fixed: this
+                // preview had it one row too low).
+                isHomeRow = rowIndex == 1,
+                onKeyTap = {},
+                ancestorCoordinates = noOpAncestor,
+                onBoundsMeasured = { _, _, _ -> },
+            )
+        }
     }
 }
 
-/** A labeled swatch that expands an [HsvColorPicker] inline when tapped — collapsed by default so
- * 4 pickers don't all fight for screen space at once. */
+/** One page of [ThemeEditCarousel] — a single color field being edited. */
+private data class ThemeEditField(val label: String, val color: Color, val onColorChange: (Color) -> Unit)
+
+/** Swipeable, one-field-at-a-time carousel for the theme editor's 4 color pickers (real user
+ * feedback: the old always-expanded vertical stack of 4 pickers competed for space and pushed the
+ * preview off-screen while editing). Page dots + Prev/Next buttons supplement the swipe gesture
+ * for discoverability — nothing here hints a carousel exists otherwise. */
 @Composable
-private fun ColorPickerField(label: String, color: Color, onColorChange: (Color) -> Unit) {
-    var expanded by remember { mutableStateOf(false) }
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+private fun ThemeEditCarousel(pages: List<ThemeEditField>, modifier: Modifier = Modifier) {
+    val fields = pages
+    val pagerState = androidx.compose.foundation.pager.rememberPagerState(pageCount = { fields.size })
+    val scope = rememberCoroutineScope()
+
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { expanded = !expanded },
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Box(
-                Modifier
-                    .size(32.dp)
-                    .background(color, RoundedCornerShape(6.dp))
-                    .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(6.dp)),
-            )
-            Text(text = label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-            Text(text = if (expanded) "▲" else "▼", style = MaterialTheme.typography.bodySmall)
+            fields.indices.forEach { index ->
+                Box(
+                    Modifier
+                        .padding(horizontal = 4.dp)
+                        .size(if (index == pagerState.currentPage) 10.dp else 8.dp)
+                        .background(
+                            if (index == pagerState.currentPage) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                            CircleShape,
+                        ),
+                )
+            }
         }
-        if (expanded) {
-            HsvColorPicker(color = color, onColorChange = onColorChange)
+
+        androidx.compose.foundation.pager.HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+        ) { page ->
+            val field = fields[page]
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                // Centers both the label row and the HSV picker as a block — previously left-
+                // aligned, which stranded the picker in a strip down the left edge with a lot of
+                // dead space to its right (real user feedback, screenshot-confirmed).
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Box(
+                        Modifier
+                            .size(32.dp)
+                            .background(field.color, RoundedCornerShape(6.dp))
+                            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(6.dp)),
+                    )
+                    Text(text = field.label, style = MaterialTheme.typography.titleSmall)
+                }
+                HsvColorPicker(color = field.color, onColorChange = field.onColorChange)
+            }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            TextButton(
+                onClick = { scope.launch { pagerState.animateScrollToPage((pagerState.currentPage - 1).coerceAtLeast(0)) } },
+                enabled = pagerState.currentPage > 0,
+            ) { Text(text = "◀ Prev") }
+            TextButton(
+                onClick = { scope.launch { pagerState.animateScrollToPage((pagerState.currentPage + 1).coerceAtMost(fields.size - 1)) } },
+                enabled = pagerState.currentPage < fields.size - 1,
+            ) { Text(text = "Next ▶") }
         }
     }
 }
@@ -1375,68 +1448,108 @@ private fun HsvColorPicker(color: Color, onColorChange: (Color) -> Unit) {
     var hue by remember { mutableFloatStateOf(initialHsv[0]) }
     var saturation by remember { mutableFloatStateOf(initialHsv[1]) }
     var value by remember { mutableFloatStateOf(initialHsv[2]) }
+    // Free-typed text, not derived straight from hue/saturation/value on every recomposition —
+    // that would fight the user mid-keystroke (e.g. re-normalizing "#12" to "#000012" before
+    // they've finished typing the other 4 digits). Instead this is only ever written to
+    // programmatically from [emit] (square/strip drag) or [applyHex] (a hex string that actually
+    // parsed) — user keystrokes that don't yet form a valid 6-digit hex just sit here untouched,
+    // not reverted or rejected, until they either complete a valid color or navigate away.
+    var hexText by remember { mutableStateOf(colorToHexString(color)) }
 
     fun emit() {
-        onColorChange(Color(android.graphics.Color.HSVToColor(floatArrayOf(hue, saturation, value))))
+        val newColor = Color(android.graphics.Color.HSVToColor(floatArrayOf(hue, saturation, value)))
+        hexText = colorToHexString(newColor)
+        onColorChange(newColor)
+    }
+
+    fun applyHex(input: String) {
+        hexText = input
+        val hex = input.removePrefix("#").trim()
+        if (hex.length != 6 || hex.any { it.lowercaseChar() !in "0123456789abcdef" }) return
+        val parsed = Color(android.graphics.Color.parseColor("#$hex"))
+        val out = FloatArray(3)
+        android.graphics.Color.colorToHSV(parsed.toArgb(), out)
+        hue = out[0]
+        saturation = out[1]
+        value = out[2]
+        onColorChange(parsed)
     }
 
     val hueColor = Color(android.graphics.Color.HSVToColor(floatArrayOf(hue, 1f, 1f)))
+    val clipboardManager = LocalClipboardManager.current
 
-    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        BoxWithConstraints(
-            modifier = Modifier
-                .size(160.dp)
-                .background(hueColor)
-                .background(Brush.horizontalGradient(listOf(Color.White, Color.Transparent)))
-                .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black)))
-                .pointerInput(Unit) {
-                    detectTapGestures { offset ->
-                        saturation = (offset.x / size.width).coerceIn(0f, 1f)
-                        value = 1f - (offset.y / size.height).coerceIn(0f, 1f)
-                        emit()
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            BoxWithConstraints(
+                modifier = Modifier
+                    .size(160.dp)
+                    .background(hueColor)
+                    .background(Brush.horizontalGradient(listOf(Color.White, Color.Transparent)))
+                    .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black)))
+                    .pointerInput(Unit) {
+                        detectTapGestures { offset ->
+                            saturation = (offset.x / size.width).coerceIn(0f, 1f)
+                            value = 1f - (offset.y / size.height).coerceIn(0f, 1f)
+                            emit()
+                        }
                     }
-                }
-                .pointerInput(Unit) {
-                    detectDragGestures { change, _ ->
-                        change.consume()
-                        saturation = (change.position.x / size.width).coerceIn(0f, 1f)
-                        value = 1f - (change.position.y / size.height).coerceIn(0f, 1f)
-                        emit()
-                    }
-                },
-        ) {
+                    .pointerInput(Unit) {
+                        detectDragGestures { change, _ ->
+                            change.consume()
+                            saturation = (change.position.x / size.width).coerceIn(0f, 1f)
+                            value = 1f - (change.position.y / size.height).coerceIn(0f, 1f)
+                            emit()
+                        }
+                    },
+            ) {
+                Box(
+                    modifier = Modifier
+                        .offset(x = maxWidth * saturation - 6.dp, y = maxHeight * (1f - value) - 6.dp)
+                        .size(12.dp)
+                        .border(2.dp, Color.White, CircleShape),
+                )
+            }
             Box(
                 modifier = Modifier
-                    .offset(x = maxWidth * saturation - 6.dp, y = maxHeight * (1f - value) - 6.dp)
-                    .size(12.dp)
-                    .border(2.dp, Color.White, CircleShape),
+                    .width(28.dp)
+                    .height(160.dp)
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color.Red, Color.Yellow, Color.Green, Color.Cyan, Color.Blue, Color.Magenta, Color.Red),
+                        ),
+                    )
+                    .pointerInput(Unit) {
+                        detectTapGestures { offset ->
+                            hue = (offset.y / size.height).coerceIn(0f, 1f) * 360f
+                            emit()
+                        }
+                    }
+                    .pointerInput(Unit) {
+                        detectDragGestures { change, _ ->
+                            change.consume()
+                            hue = (change.position.y / size.height).coerceIn(0f, 1f) * 360f
+                            emit()
+                        }
+                    },
             )
         }
-        Box(
-            modifier = Modifier
-                .width(28.dp)
-                .height(160.dp)
-                .background(
-                    Brush.verticalGradient(
-                        listOf(Color.Red, Color.Yellow, Color.Green, Color.Cyan, Color.Blue, Color.Magenta, Color.Red),
-                    ),
-                )
-                .pointerInput(Unit) {
-                    detectTapGestures { offset ->
-                        hue = (offset.y / size.height).coerceIn(0f, 1f) * 360f
-                        emit()
-                    }
-                }
-                .pointerInput(Unit) {
-                    detectDragGestures { change, _ ->
-                        change.consume()
-                        hue = (change.position.y / size.height).coerceIn(0f, 1f) * 360f
-                        emit()
-                    }
-                },
-        )
+
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+                value = hexText,
+                onValueChange = { applyHex(it) },
+                label = { Text(text = "Hex") },
+                singleLine = true,
+                modifier = Modifier.weight(1f),
+            )
+            IconButton(onClick = { clipboardManager.setText(AnnotatedString(hexText)) }) {
+                Icon(imageVector = PhosphorCopy, contentDescription = "Copy hex code")
+            }
+        }
     }
 }
+
+private fun colorToHexString(color: Color): String = "#%06X".format(0xFFFFFF and color.toArgb())
 
 /** Derives a complete [OmakeyTheme] from just the 4 colors the editor exposes — text color picks
  * black/white by the key color's relative luminance (light key → dark text, and vice versa);

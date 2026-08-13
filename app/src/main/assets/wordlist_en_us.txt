@@ -3572,6 +3572,13 @@ visiting
 performing
 downtown
 keyboard
+autocorrect
+emoji
+selfie
+hashtag
+youtube
+whatsapp
+instagram
 contest
 collected
 nw

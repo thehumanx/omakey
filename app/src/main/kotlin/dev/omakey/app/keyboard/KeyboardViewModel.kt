@@ -22,9 +22,11 @@ import dev.omakey.core.theme.ThemeRepository
 import dev.omakey.extapi.ExtensionHost
 import dev.omakey.extapi.ExtensionRegistry
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -994,7 +996,9 @@ class KeyboardViewModel(
         val prefix = currentWordBuffer.toString()
 
         if (prefix.isNotEmpty()) {
-            val alternatives = wordAlternatives(prefix)
+            // activeCorrection is set synchronously (cheap — just bookkeeping) so cycling/revert
+            // logic has it available immediately; the expensive Damerau-Levenshtein scan itself
+            // (wordAlternatives) runs off the main thread below so it never blocks the next tap.
             activeCorrection = ActiveCorrection(
                 mode = CorrectionApplyMode.LIVE_BUFFER,
                 originalWord = prefix,
@@ -1003,6 +1007,7 @@ class KeyboardViewModel(
                 separator = "",
             )
             refreshJob = scope.launch {
+                val alternatives = withContext(Dispatchers.Default) { wordAlternatives(prefix) }
                 val predicted = predictionEngine.suggestNext(lastCommittedWord, prefix, limit = SUGGESTION_LIMIT)
                 val suggestions = (alternatives + predicted.filterNot { p -> alternatives.any { it.equals(p, ignoreCase = true) } })
                     .take(SUGGESTION_LIMIT)
@@ -1018,26 +1023,32 @@ class KeyboardViewModel(
 
         val target = lastCommittedWord.takeIf { checkContextualCorrection }
         if (target != null) {
-            val rawAlternatives = wordAlternatives(target)
-            if (rawAlternatives.isNotEmpty()) {
-                activeCorrection = ActiveCorrection(
-                    mode = CorrectionApplyMode.RETROACTIVE,
-                    originalWord = target,
-                    occupiedBefore = target.length,
-                    occupiedAfter = 0,
-                    separator = lastWordBoundarySeparator,
-                )
-                val context = previousToLastCommittedWord
-                refreshJob = scope.launch {
+            val context = previousToLastCommittedWord
+            refreshJob = scope.launch {
+                val rawAlternatives = withContext(Dispatchers.Default) { wordAlternatives(target) }
+                if (rawAlternatives.isNotEmpty()) {
+                    activeCorrection = ActiveCorrection(
+                        mode = CorrectionApplyMode.RETROACTIVE,
+                        originalWord = target,
+                        occupiedBefore = target.length,
+                        occupiedAfter = 0,
+                        separator = lastWordBoundarySeparator,
+                    )
                     val ranked = reorderByContext(context, rawAlternatives)
                     _uiState.update { it.copy(suggestions = ranked, firstSuggestionKind = SuggestionKind.CORRECTION) }
+                } else {
+                    refreshPlainPrediction()
                 }
-                return
             }
+            return
         }
 
-        // Nothing to correct/vary — plain next-word prediction if enabled, no active correction
-        // (accepting one of these types a fresh word, doesn't replace anything).
+        refreshPlainPrediction()
+    }
+
+    /** Nothing to correct/vary — plain next-word prediction if enabled, no active correction
+     * (accepting one of these types a fresh word, doesn't replace anything). */
+    private fun refreshPlainPrediction() {
         activeCorrection = null
         if (!predictionPreferences.settings.value.nextWordPredictionEnabled) {
             _uiState.update { it.copy(suggestions = emptyList(), firstSuggestionKind = SuggestionKind.PLAIN) }
