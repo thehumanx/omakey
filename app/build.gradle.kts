@@ -58,6 +58,18 @@ android {
         compose = true
         buildConfig = true
     }
+
+    // Renames every built APK from the default "app-<buildType>.apk" to
+    // "omakey-<versionName>.apk" (e.g. "omakey-2.1.0.apk") — debug and release land in separate
+    // output directories (outputs/apk/debug/, outputs/apk/release/) so an identical filename
+    // across build types never collides. Tracks versionName automatically, so bumping it above is
+    // the only thing needed to keep this pattern going release to release.
+    applicationVariants.all {
+        outputs.all {
+            val output = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
+            output.outputFileName = "omakey-${versionName}.apk"
+        }
+    }
 }
 
 dependencies {
