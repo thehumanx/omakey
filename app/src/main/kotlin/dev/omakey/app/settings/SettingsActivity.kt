@@ -1307,8 +1307,8 @@ private fun ThemeEditorOverlay(initialTheme: OmakeyTheme?, onSave: (OmakeyTheme)
             // Sticky, full-keyboard preview — deliberately outside any scroll container so it
             // stays on screen the whole time the carousel below is being swiped/edited, instead of
             // scrolling away with the rest of the form (real user feedback: "so we know how it
-            // looks as we edit"). Fixed height, everything below shares the remaining space.
-            Text(text = "Preview", style = MaterialTheme.typography.bodyLarge)
+            // looks as we edit"). Fixed height, everything below shares the remaining space. No
+            // "Preview" label above it (removed, real user feedback) — self-evident from context.
             ThemePreviewMock(previewTheme)
 
             ThemeEditCarousel(
@@ -1363,33 +1363,17 @@ private data class ThemeEditField(val label: String, val color: Color, val onCol
 
 /** Swipeable, one-field-at-a-time carousel for the theme editor's 4 color pickers (real user
  * feedback: the old always-expanded vertical stack of 4 pickers competed for space and pushed the
- * preview off-screen while editing). Page dots + Prev/Next buttons supplement the swipe gesture
- * for discoverability — nothing here hints a carousel exists otherwise. */
+ * preview off-screen while editing). Page dots sit *below* the pager, right under the hex/copy
+ * row — real user feedback: dots above the pager (this composable's first version) read as "the
+ * keyboard preview itself is swipable," not "these 4 fields are." No separate Prev/Next buttons
+ * (removed, real user feedback) — the dots alone already communicate "there are 4 pages here,"
+ * and swipe is the only way to move between them now. */
 @Composable
 private fun ThemeEditCarousel(pages: List<ThemeEditField>, modifier: Modifier = Modifier) {
     val fields = pages
     val pagerState = androidx.compose.foundation.pager.rememberPagerState(pageCount = { fields.size })
-    val scope = rememberCoroutineScope()
 
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            fields.indices.forEach { index ->
-                Box(
-                    Modifier
-                        .padding(horizontal = 4.dp)
-                        .size(if (index == pagerState.currentPage) 10.dp else 8.dp)
-                        .background(
-                            if (index == pagerState.currentPage) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
-                            CircleShape,
-                        ),
-                )
-            }
-        }
-
         androidx.compose.foundation.pager.HorizontalPager(
             state = pagerState,
             modifier = Modifier.weight(1f).fillMaxWidth(),
@@ -1421,16 +1405,20 @@ private fun ThemeEditCarousel(pages: List<ThemeEditField>, modifier: Modifier = 
 
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            TextButton(
-                onClick = { scope.launch { pagerState.animateScrollToPage((pagerState.currentPage - 1).coerceAtLeast(0)) } },
-                enabled = pagerState.currentPage > 0,
-            ) { Text(text = "◀ Prev") }
-            TextButton(
-                onClick = { scope.launch { pagerState.animateScrollToPage((pagerState.currentPage + 1).coerceAtMost(fields.size - 1)) } },
-                enabled = pagerState.currentPage < fields.size - 1,
-            ) { Text(text = "Next ▶") }
+            fields.indices.forEach { index ->
+                Box(
+                    Modifier
+                        .padding(horizontal = 4.dp)
+                        .size(if (index == pagerState.currentPage) 10.dp else 8.dp)
+                        .background(
+                            if (index == pagerState.currentPage) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                            CircleShape,
+                        ),
+                )
+            }
         }
     }
 }
@@ -1478,7 +1466,24 @@ private fun HsvColorPicker(color: Color, onColorChange: (Color) -> Unit) {
     val hueColor = Color(android.graphics.Color.HSVToColor(floatArrayOf(hue, 1f, 1f)))
     val clipboardManager = LocalClipboardManager.current
 
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    // fillMaxWidth + centered here (real bug, fixed — screenshot report: picker rendered
+    // hugging the left edge, hex field's text invisible and its box visibly squeezed short).
+    // Root cause: this Column previously had no fillMaxWidth, so it sized itself to *wrap
+    // content* — which means measuring each child's own "intrinsic" preferred width. A Row
+    // containing a `weight()` child (the hex row below) has no well-defined intrinsic width
+    // (weight-based sizing only resolves once real bounded layout constraints are known), so the
+    // wrap-content pass effectively ignored the text field's actual space needs, undersizing the
+    // whole Column and squeezing the hex row into whatever tiny width was left over — which also
+    // explains why centering the *block* (in the caller, ThemeEditCarousel) looked like it wasn't
+    // taking effect: the block itself had been measured far narrower than intended. fillMaxWidth
+    // here sidesteps intrinsic measurement entirely (no guessing, just "take what's offered"),
+    // and the picker Row (still not fillMaxWidth, still its own fixed ~200dp content width) is
+    // then genuinely centered *within* this Column by horizontalAlignment.
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             BoxWithConstraints(
                 modifier = Modifier
@@ -1534,7 +1539,11 @@ private fun HsvColorPicker(color: Color, onColorChange: (Color) -> Unit) {
             )
         }
 
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
             OutlinedTextField(
                 value = hexText,
                 onValueChange = { applyHex(it) },

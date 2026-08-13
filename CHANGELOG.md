@@ -3,6 +3,42 @@
 All notable changes to omakey are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.1.2] — 2026-08-13
+
+### Fixed
+- **Fast typing dropping or scrambling letters** (e.g. "this" registering as "thsi", or a space
+  landing before the last letter of a word) — a per-keystroke spelling-correction scan was
+  running on the main thread, competing with the touch input pipeline under fast typing. It now
+  runs in the background, off the typing hot path.
+- **Autocorrect missing obvious fixes** like "autocorrecr" → "autocorrect" — a handful of common
+  words (autocorrect, emoji, selfie, hashtag, youtube, whatsapp, instagram) weren't in the
+  dictionary at all. Added, and existing installs now actually pick up dictionary updates like
+  this one instead of staying frozen at whatever shipped on first install.
+- **Caps lock's highlight color looked like plain grey on custom themes** — now uses the same
+  accent color already used for other "active" key states, so it reads clearly regardless of
+  theme.
+- **The delete-word shimmer animation could replay itself when switching between the letter and
+  symbol keyboards**, even with no delete in between.
+- **Typing an emoji then hitting backspace showed a "?" instead of deleting it** — most emoji are
+  encoded as a pair of characters internally; backspace was only removing half of the pair.
+- **Long-pressing a key near the right edge of the keyboard (P, L, M) couldn't reach every accent/
+  symbol option** — there was no physical screen room to drag further right. Dragging now works
+  in either direction from any key.
+- Theme editor: the color picker wasn't actually centered (a real layout bug, not just a style
+  miss), and its hex code field could render with invisible text and a squeezed-looking box.
+
+### Changed
+- **The delete-word shimmer animation is faster** and now noticeably brighter on dark themes,
+  where it used to be nearly invisible.
+- **Long-press special-character picker redesigned**: instead of a small popup above the held
+  key, the whole keyboard now fades into a full-width symbol-picking mode — drag anywhere to
+  browse, release to select, and it fades back to the letter keyboard automatically.
+- **Theme editor overhauled**: the live keyboard preview now shows the full keyboard (not just
+  one row) and stays on screen the whole time you're editing, instead of scrolling away. The 4
+  color pickers moved from a stacked list into a swipeable, one-at-a-time carousel with a page-dot
+  indicator. The color picker also gained a hex code field (type a color code directly, or copy
+  the current one) alongside the visual picker.
+
 ## [2.1.0] — 2026-08-13
 
 ### Fixed

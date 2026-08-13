@@ -80,7 +80,7 @@ no menus required:
 | **Swipe up/down repeatedly** | Genuinely cycles through every alternative, back and forth, as many times as you want — whether the word is still being typed, just finished, or you've tapped the cursor back into something you wrote a minute ago. |
 | **Tap and hold Shift** | Locks in all-caps typing (caps lock). A quick tap instead capitalizes just the next letter, then releases — the standard mobile-keyboard convention, done properly. |
 | **Long-press and drag the spacebar** | Moves the text cursor left or right without needing to tap precisely inside your text — great for fixing a typo three words back without losing your place. |
-| **Long-press a letter key** with accent variants | Pops up alternate characters (à, á, â, ä, etc.) right above the key — keep holding and drag over to the one you want, then lift to type it. Drag past the last one for a few extra everyday symbols too. |
+| **Long-press a letter key** with accent variants | The keyboard fades into a full-width symbol-picking mode showing that key's alternate characters (à, á, â, ä, etc.) — keep holding and drag anywhere left or right to browse, then lift to select. Drag further for a few extra everyday symbols, and it fades right back to letters the moment you release. |
 | **Swipe left/right in the emoji panel** | Switches between emoji categories with a smooth directional slide. |
 | Adjustable swipe sensitivity | A Settings slider tunes how far a swipe needs to travel before it's recognized — shorter for snappier gesture response, longer if taps are getting misread as swipes. |
 
@@ -138,8 +138,10 @@ Swipe to the Tools tab in the suggestion strip and you get, grouped clearly:
   keep a clean, neutral spacebar by default; turn on "Pick accent color from system" if you want
   the spacebar (and press states) to pull color from your device's own wallpaper-based palette
   instead.
-- A full custom theme builder with an HSV color picker — pick your own background, key, and
-  accent colors and omakey derives the rest.
+- A full custom theme builder with an HSV color picker (plus a hex code field you can type a
+  color into directly, or copy the current one from) — pick your own background, key, and accent
+  colors and omakey derives the rest. A live, full-size keyboard preview stays on screen the
+  whole time you're editing.
 - Adjustable font for the keys.
 - A home-row highlight to help you find your place by feel, without looking.
 - A consistent icon set for Shift, Backspace, and every Enter state — dimmed by default, lighting
@@ -169,7 +171,7 @@ setting live in local storage only.
 
 ## Status
 
-omakey is on release 2.1.0. Core typing, gestures, autocorrect, predictive text, themes, the
+omakey is on release 2.1.2. Core typing, gestures, autocorrect, predictive text, themes, the
 clipboard manager, and the emoji panel are all working today and getting refined constantly — see
 [CHANGELOG.md](CHANGELOG.md) for the full history of what's shipped in each release.
 
