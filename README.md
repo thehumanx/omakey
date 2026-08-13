@@ -8,6 +8,9 @@
 
 Fast. Gesture-driven. Fully offline. Nothing you type ever leaves your phone.
 
+[![Latest release](https://img.shields.io/github/v/release/thehumanx/omakey?label=latest%20release)](https://github.com/thehumanx/omakey/releases/latest)
+[![Download APK](https://img.shields.io/badge/download-latest%20APK-blue)](https://github.com/thehumanx/omakey/releases/latest)
+
 </div>
 
 ---
@@ -179,7 +182,8 @@ clipboard manager, and the emoji panel are all working today and getting refined
 
 omakey isn't on the Play Store yet. In the meantime:
 
-1. Grab the latest APK from the [Releases page](https://github.com/thehumanx/omakey/releases), or
+1. Grab the latest APK from the **[latest release](https://github.com/thehumanx/omakey/releases/latest)**
+   (that link always points to the newest build, no need to hunt through version numbers), or
    build it yourself from source with Gradle.
 2. Sideload the APK (you'll need to allow installs from your file manager or browser the first
    time).
