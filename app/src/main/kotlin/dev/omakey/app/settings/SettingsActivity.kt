@@ -478,6 +478,7 @@ private fun KeyboardSizePositionOverlay(
                             ancestorCoordinates = noOpAncestor,
                             onBoundsMeasured = { _, _, _ -> },
                             fontFamily = fontFamily,
+                            alwaysShowUppercaseLetters = settings.alwaysShowUppercaseLetters,
                         )
                     }
                 }
@@ -691,7 +692,7 @@ private fun SettingsSection(title: String, content: @Composable () -> Unit) {
 
 /** Full-screen overlay hosting a plain focused text field — focusing it brings up whichever IME
  * is currently the system default, same as focusing any text field in any real app. Only actually
- * exercises Omakey if it's the active keyboard, hence the banner below when it isn't. */
+ * exercises omakey if it's the active keyboard, hence the banner below when it isn't. */
 @Composable
 private fun TestKeyboardOverlay(onClose: () -> Unit, onSwitchKeyboard: () -> Unit) {
     BackHandler(onBack = onClose)
@@ -731,7 +732,7 @@ private fun TestKeyboardOverlay(onClose: () -> Unit, onSwitchKeyboard: () -> Uni
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
                         Text(
-                            text = "Omakey isn't your active keyboard — switch to it to test typing here.",
+                            text = "omakey isn't your active keyboard — switch to it to test typing here.",
                             style = MaterialTheme.typography.bodyMedium,
                             modifier = Modifier.weight(1f),
                         )
@@ -766,7 +767,7 @@ private fun isOmakeyDefaultIme(context: android.content.Context): Boolean {
     return current?.contains(context.packageName) == true
 }
 
-/** Whether Omakey is enabled at all as an available input method — distinct from
+/** Whether omakey is enabled at all as an available input method — distinct from
  * [isOmakeyDefaultIme] (enabled but not necessarily the one currently selected). Same
  * best-effort-only caveat. */
 private fun isOmakeyEnabled(context: android.content.Context): Boolean {
@@ -893,6 +894,14 @@ private fun LayoutTogglesSection(layoutPreferences: LayoutPreferences) {
             description = "A light stripe behind the ASDF row to help find it by feel.",
             checked = settings.showMiddleRowStripe,
             onCheckedChange = layoutPreferences::setShowMiddleRowStripe,
+        )
+        SettingToggle(
+            title = "Always show capital letters",
+            description = "Keycaps always show uppercase letters, regardless of shift state " +
+                "(omakey's default look). Turn off for the usual keyboard behavior — lowercase " +
+                "keycaps that switch to uppercase only while shift is on.",
+            checked = settings.alwaysShowUppercaseLetters,
+            onCheckedChange = layoutPreferences::setAlwaysShowUppercaseLetters,
         )
     }
 }

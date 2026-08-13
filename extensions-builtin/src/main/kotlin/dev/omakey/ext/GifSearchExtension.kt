@@ -30,7 +30,7 @@ class GifSearchExtension : OmakeyExtension {
     override fun PanelContent(host: ExtensionHost) {
         Column(Modifier.fillMaxWidth().padding(16.dp)) {
             Text("GIF search coming soon")
-            Text("Omakey is offline by default — this needs a network connection to work.")
+            Text("omakey is offline by default — this needs a network connection to work.")
         }
     }
 }

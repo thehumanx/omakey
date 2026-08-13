@@ -16,6 +16,13 @@ data class LayoutSettings(
      * push the keyboard's top edge above screen center — this field just stores whatever that UI
      * already validated. */
     val bottomOffsetDp: Int = 0,
+    /** True (the shipped default, matching omakey's original look): letter keycaps always show
+     * uppercase glyphs regardless of shift state — only [KeyboardUiState.shiftOn]/`capsLockOn`
+     * change what's actually *typed*. False switches to the conventional mobile-keyboard
+     * behavior instead: keycaps show lowercase normally and switch to uppercase only while shift
+     * is engaged (one-shot or locked), matching what almost every other keyboard does and what
+     * users coming from one expect. */
+    val alwaysShowUppercaseLetters: Boolean = true,
 ) {
     companion object {
         const val DEFAULT_HEIGHT_DP = 260
@@ -54,6 +61,7 @@ class LayoutPreferences(context: Context) {
 
     fun setShowKeyBackgrounds(show: Boolean) = update { it.copy(showKeyBackgrounds = show) }
     fun setShowMiddleRowStripe(show: Boolean) = update { it.copy(showMiddleRowStripe = show) }
+    fun setAlwaysShowUppercaseLetters(show: Boolean) = update { it.copy(alwaysShowUppercaseLetters = show) }
 
     /** [offsetDp] is expected to already be clamped by the caller (the placement-mode drag UI,
      * which knows the live screen height) — only a non-negative floor is enforced here. */
@@ -66,6 +74,7 @@ class LayoutPreferences(context: Context) {
             .putBoolean(KEY_KEY_BACKGROUNDS, next.showKeyBackgrounds)
             .putBoolean(KEY_MIDDLE_STRIPE, next.showMiddleRowStripe)
             .putInt(KEY_BOTTOM_OFFSET, next.bottomOffsetDp)
+            .putBoolean(KEY_ALWAYS_UPPERCASE, next.alwaysShowUppercaseLetters)
             .apply()
         _settings.value = next
     }
@@ -75,6 +84,7 @@ class LayoutPreferences(context: Context) {
         showKeyBackgrounds = prefs.getBoolean(KEY_KEY_BACKGROUNDS, false),
         showMiddleRowStripe = prefs.getBoolean(KEY_MIDDLE_STRIPE, true),
         bottomOffsetDp = prefs.getInt(KEY_BOTTOM_OFFSET, 0),
+        alwaysShowUppercaseLetters = prefs.getBoolean(KEY_ALWAYS_UPPERCASE, true),
     )
 
     private companion object {
@@ -83,5 +93,6 @@ class LayoutPreferences(context: Context) {
         const val KEY_KEY_BACKGROUNDS = "show_key_backgrounds"
         const val KEY_MIDDLE_STRIPE = "show_middle_row_stripe"
         const val KEY_BOTTOM_OFFSET = "keyboard_bottom_offset_dp"
+        const val KEY_ALWAYS_UPPERCASE = "always_show_uppercase_letters"
     }
 }

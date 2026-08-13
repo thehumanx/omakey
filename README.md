@@ -1,6 +1,8 @@
 <div align="center">
 
-# Omakey
+![omakey](docs/omakey.jpg)
+
+# omakey
 
 **The keyboard for people who type like they mean it.**
 
@@ -12,12 +14,12 @@ Fast. Gesture-driven. Fully offline. Nothing you type ever leaves your phone.
 
 ## The pitch
 
-Remember Fleksy — the keyboard that made typing feel like a sport instead of a chore? Omakey
+Remember Fleksy — the keyboard that made typing feel like a sport instead of a chore? omakey
 picks up where it left off. Every gesture is a shortcut, every correction is instant, and every
 byte of what you type stays on your device, permanently.
 
 Most keyboards today ship with an ad SDK, a cloud sync service, an analytics pipeline, and a
-"smart" prediction engine that quietly phones home. Omakey ships with none of that. It doesn't
+"smart" prediction engine that quietly phones home. omakey ships with none of that. It doesn't
 ask for internet access — it can't send your keystrokes anywhere even if it wanted to, because
 the permission to do so was never requested. What you get instead is a keyboard that's
 obsessively tuned for one thing: getting words out of your head and onto the screen as fast as
@@ -31,14 +33,14 @@ your thumbs can move.
   physically has no way to.
 - One-handed and thumb typists who want the keyboard to come to them, not the other way around.
 
-## What Omakey is not
+## What omakey is not
 
 Being upfront about scope matters more than a longer feature list:
 
-- **Not a glide/swipe-to-type keyboard.** Omakey's gestures are *action* shortcuts (delete a
+- **Not a glide/swipe-to-type keyboard.** omakey's gestures are *action* shortcuts (delete a
   word, insert a space, cycle a suggestion) — you still tap out each letter. If you're looking
   for trace-the-word gesture typing across the whole layout, that's not what this is.
-  All of Omakey's gestures are documented below so you know exactly what they *do* cover.
+  All of omakey's gestures are documented below so you know exactly what they *do* cover.
 - **English (US QWERTY) only, for now.** No other layouts or languages are bundled yet.
 - **Not on the Play Store yet.** You'll need to sideload it or build from source (instructions
   below) — see [Status](#status) for what that means in practice.
@@ -46,9 +48,9 @@ Being upfront about scope matters more than a longer feature list:
   live only on the one device you're using — by design, not as a missing feature. There's
   nothing to sync because there's no server to sync to.
 - **No GIF search.** The extension slot exists in the code for a future GIF picker, but it's not
-  wired up yet — it would need internet access, which Omakey deliberately doesn't request today.
+  wired up yet — it would need internet access, which omakey deliberately doesn't request today.
 
-## Everything Omakey actually does
+## Everything omakey actually does
 
 ### Typing that keeps up with you
 
@@ -71,14 +73,14 @@ no menus required:
 
 | Gesture | What it does |
 |---|---|
-| **Swipe left** on any key | Deletes the entire last word, not just one character. |
+| **Swipe left** on any key | Deletes the entire last word, not just one character — with its own distinct "swoosh" sound and a shimmer across the home row so it's unmistakably different from a normal tap. |
 | **Swipe right** on any key | Inserts a space (optional — off by default, one tap to enable in Settings). |
 | **Swipe up** on the suggestion strip | Accepts the current suggestion, or — if you swipe up on a word you typed yourself — saves it to your personal dictionary so it's never flagged as a typo again. Swipe up a second time on an already-learned word to un-learn it. Either way you'll see a quick confirmation flash in the strip. |
 | **Swipe down** on the suggestion strip | Cycles backward through alternatives, the mirror of swipe up. |
 | **Swipe up/down repeatedly** | Genuinely cycles through every alternative, back and forth, as many times as you want — whether the word is still being typed, just finished, or you've tapped the cursor back into something you wrote a minute ago. |
 | **Tap and hold Shift** | Locks in all-caps typing (caps lock). A quick tap instead capitalizes just the next letter, then releases — the standard mobile-keyboard convention, done properly. |
 | **Long-press and drag the spacebar** | Moves the text cursor left or right without needing to tap precisely inside your text — great for fixing a typo three words back without losing your place. |
-| **Long-press a letter key** with accent variants | Pops up alternate characters (à, á, â, ä, etc.) to pick from. |
+| **Long-press a letter key** with accent variants | Pops up alternate characters (à, á, â, ä, etc.) right above the key — keep holding and drag over to the one you want, then lift to type it. Drag past the last one for a few extra everyday symbols too. |
 | **Swipe left/right in the emoji panel** | Switches between emoji categories with a smooth directional slide. |
 | Adjustable swipe sensitivity | A Settings slider tunes how far a swipe needs to travel before it's recognized — shorter for snappier gesture response, longer if taps are getting misread as swipes. |
 
@@ -137,11 +139,13 @@ Swipe to the Tools tab in the suggestion strip and you get, grouped clearly:
   the spacebar (and press states) to pull color from your device's own wallpaper-based palette
   instead.
 - A full custom theme builder with an HSV color picker — pick your own background, key, and
-  accent colors and Omakey derives the rest.
+  accent colors and omakey derives the rest.
 - Adjustable font for the keys.
 - A home-row highlight to help you find your place by feel, without looking.
 - A consistent icon set for Shift, Backspace, and every Enter state — dimmed by default, lighting
   up the moment you press it.
+- Choose whether letter keys always show capital letters (the default) or switch to the more
+  familiar lowercase-until-Shift look.
 
 ### Feedback that feels right
 
@@ -151,13 +155,13 @@ Swipe to the Tools tab in the suggestion strip and you get, grouped clearly:
 
 ### Accessible by default
 
-- Automatic fallback for TalkBack users — when screen-reader touch exploration is on, Omakey
+- Automatic fallback for TalkBack users — when screen-reader touch exploration is on, omakey
   switches to standard tap-to-type instead of gesture capture, so nothing gets in the way of
   accessibility tools.
 
 ## Privacy, for real
 
-Omakey's manifest does not request the `INTERNET` permission. This isn't a settings toggle or a
+omakey's manifest does not request the `INTERNET` permission. This isn't a settings toggle or a
 promise in a privacy policy — the app literally has no code path capable of sending a network
 request. Nothing you type, copy, or teach the keyboard can leave your device, because there's no
 mechanism for it to travel anywhere. Your personal dictionary, clipboard history, and every
@@ -165,20 +169,20 @@ setting live in local storage only.
 
 ## Status
 
-Omakey is on release 2.0.0. Core typing, gestures, autocorrect, predictive text, themes, the
+omakey is on release 2.1.0. Core typing, gestures, autocorrect, predictive text, themes, the
 clipboard manager, and the emoji panel are all working today and getting refined constantly — see
 [CHANGELOG.md](CHANGELOG.md) for the full history of what's shipped in each release.
 
 ## Getting started
 
-Omakey isn't on the Play Store yet. In the meantime:
+omakey isn't on the Play Store yet. In the meantime:
 
 1. Grab the latest APK from the [Releases page](https://github.com/thehumanx/omakey/releases), or
    build it yourself from source with Gradle.
 2. Sideload the APK (you'll need to allow installs from your file manager or browser the first
    time).
 3. Open your phone's **Settings → System → Languages & input → On-screen keyboard**, and enable
-   Omakey.
+   omakey.
 4. Switch to it from the keyboard-switcher icon on your current keyboard, or from that same
    Settings screen.
 

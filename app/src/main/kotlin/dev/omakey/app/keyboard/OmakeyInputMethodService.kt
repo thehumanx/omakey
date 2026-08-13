@@ -88,9 +88,9 @@ class OmakeyInputMethodService :
     private lateinit var clipboardManager: ClipboardManager
     private var lastCapturedClipText: String? = null
     private var lastCapturedClipUri: String? = null
-    // Set right before Omakey's own Copy/Cut buttons trigger a system clipboard change (see
+    // Set right before omakey's own Copy/Cut buttons trigger a system clipboard change (see
     // onClipboardCopy below). Reading ClipboardManager.primaryClip is what triggers Android 12+'s
-    // "app read your clipboard" toast — skipping that read entirely for a change Omakey itself
+    // "app read your clipboard" toast — skipping that read entirely for a change omakey itself
     // just caused (the text is already known, no read needed) is what avoids firing a second,
     // redundant toast on top of the OS's own unavoidable "Copied to clipboard" one.
     private var suppressNextClipboardRead = false
@@ -193,7 +193,7 @@ class OmakeyInputMethodService :
         // NOT registered here — see onStartInputView()/onFinishInputView() below. Registering for
         // the whole service lifetime meant this listener (and the Android 12+ "app read your
         // clipboard" toast it triggers) fired every time *any* app on the device copied anything,
-        // even while Omakey wasn't visible — surprising and needlessly clipboard-hungry for a
+        // even while omakey wasn't visible — surprising and needlessly clipboard-hungry for a
         // keyboard that isn't currently in front of the user.
         clipboardManager = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     }

@@ -8,6 +8,7 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import android.util.Log
+import dev.omakey.app.R
 import dev.omakey.core.feedback.HapticSoundPreferences
 
 /** Decouples KeyboardViewModel/KeyboardRoot from raw Vibrator/SoundPool calls — those live here,
@@ -16,6 +17,11 @@ import dev.omakey.core.feedback.HapticSoundPreferences
 interface KeyboardFeedback {
     fun onKeyPress()
     fun onSwipe()
+
+    /** Swipe-left-to-delete-word specifically — a distinct "swoosh" sample rather than
+     * [onSwipe]'s plain click, so a word actually vanishing reads differently than an ordinary
+     * swipe (cycling suggestions, inserting a space). */
+    fun onSwipeDelete()
 }
 
 /**
@@ -60,6 +66,11 @@ class VibratorKeyboardFeedback(context: Context, private val preferences: Haptic
         loadedSoundIds[soundChoice] = soundPool.load(appContext, SoundCatalog.resolve(soundChoice), 1)
     }
 
+    // Always this one fixed sample regardless of the user's tap-click sound choice — a "swoosh"
+    // reads as "something got deleted" independent of whichever click the rest of the keyboard
+    // is using, the same way most keyboards use a single dedicated delete sound.
+    private val swooshSoundId: Int by lazy { soundPool.load(appContext, R.raw.swipe_swoosh, 1) }
+
     override fun onKeyPress() {
         val settings = preferences.settings.value
         if (settings.hapticEnabled) {
@@ -84,6 +95,23 @@ class VibratorKeyboardFeedback(context: Context, private val preferences: Haptic
             )
         }
         if (settings.soundEnabled) playClick(settings.soundChoice, volume = 0.8f * settings.soundVolume)
+    }
+
+    override fun onSwipeDelete() {
+        val settings = preferences.settings.value
+        if (settings.hapticEnabled) {
+            vibrate(
+                durationMs = 35 + (settings.hapticStrength * 30).toLong(),
+                amplitudeFraction = (settings.hapticStrength * 1.2f).coerceAtMost(1f),
+            )
+        }
+        // Same multiplier as onKeyPress's tap click (not onSwipe's louder 0.8f) — the swoosh
+        // should track the user's tap-volume slider directly, not sit at its own fixed level
+        // relative to it.
+        if (settings.soundEnabled) {
+            val volume = 0.5f * settings.soundVolume
+            soundPool.play(swooshSoundId, volume, volume, 1, 0, 1f)
+        }
     }
 
     private fun playClick(soundChoice: String, volume: Float) {
@@ -112,4 +140,5 @@ class VibratorKeyboardFeedback(context: Context, private val preferences: Haptic
 object NoOpKeyboardFeedback : KeyboardFeedback {
     override fun onKeyPress() = Unit
     override fun onSwipe() = Unit
+    override fun onSwipeDelete() = Unit
 }

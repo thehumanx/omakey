@@ -145,20 +145,36 @@ class KeyboardViewModel(
      * same word right back to the version the user just explicitly rejected. */
     private var revertedWord: String? = null
 
-    /** Word-level undo/redo (Tools tab "Undo"/"Redo") — deliberately scoped to the two clearest,
-     * most common actions: a word finishing (space/punctuation/Enter) and a word being deleted
-     * (swipe-left). Autocorrect/suggestion corrections already have their own dedicated, more
-     * precise revert gestures (backspace-reverts-the-swap, swipe up/down cycling) — folding those
-     * into this same generic stack would fight with that existing, better-suited machinery rather
-     * than complement it. Android's `InputConnection` has no standardized cross-app undo API
-     * (`performContextMenuAction(android.R.id.undo)` isn't reliably implemented by host apps), so
-     * this is necessarily Omakey's own app-level history, not a passthrough to the host app's. */
+    /** Word/character-level undo/redo (Tools tab "Undo"/"Redo", also wired to Ctrl+Z/Ctrl+Shift+Z-
+     * equivalent gestures) — scoped to raw text mutation: a word finishing (space/punctuation/
+     * Enter), a word being deleted (swipe-left), and plain character-by-character backspacing
+     * through already-committed text. Autocorrect/suggestion corrections already have their own
+     * dedicated, more precise revert gestures (backspace-reverts-the-swap, swipe up/down cycling)
+     * — folding those into this same generic stack would fight with that existing, better-suited
+     * machinery rather than complement it. Android's `InputConnection` has no standardized
+     * cross-app undo API (`performContextMenuAction(android.R.id.undo)` isn't reliably
+     * implemented by host apps), so this is necessarily omakey's own app-level history, not a
+     * passthrough to the host app's.
+     *
+     * Both variants store the *exact* text involved — [Inserted.text] is the finished word plus
+     * whatever real separator followed it (space, punctuation, or newline; never assumed to be a
+     * plain space, which used to silently corrupt/drop it on undo — a real bug), and
+     * [Deleted.text] is exactly what [TextEditor.deleteWordBackward] removed (word plus whatever
+     * whitespace it actually consumed) or a single backspaced character. Undo/redo just
+     * delete-back/retype that literal string, so nothing is inferred or reconstructed wrong. */
     private sealed class UndoEvent {
-        data class Inserted(val word: String) : UndoEvent()
-        data class Deleted(val word: String) : UndoEvent()
+        data class Inserted(val text: String) : UndoEvent()
+        data class Deleted(val text: String) : UndoEvent()
     }
     private val undoStack = ArrayDeque<UndoEvent>()
     private val redoStack = ArrayDeque<UndoEvent>()
+
+    /** True while the most recent action was a single plain backspace into already-committed
+     * text (see the last branch of [onDeleteCharacter]) — lets [recordPlainCharDelete] merge a
+     * whole backspace run into one undo step, matching how a run of backspaces reads as "one
+     * edit" in every mainstream text editor rather than needing one Ctrl+Z per character. Reset
+     * to false by every other action that mutates text or moves the cursor. */
+    private var deleteCoalesceActive = false
 
     /** How to apply whichever `suggestions[index]` the user swipes/taps to, for a word currently
      * "in focus" for the strip — unifying the three different ways a word gets there so cycling
@@ -316,6 +332,7 @@ class KeyboardViewModel(
         flushWordBuffer()
         textEditor.sendKeyEvent(if (forward) android.view.KeyEvent.KEYCODE_DPAD_RIGHT else android.view.KeyEvent.KEYCODE_DPAD_LEFT)
         suggestionCycleIndex = -1
+        deleteCoalesceActive = false
     }
 
     /** Cycles left through the frozen suggestions snapshot (does not re-query, so the candidate
@@ -347,6 +364,7 @@ class KeyboardViewModel(
         val word = _uiState.value.suggestions.getOrNull(index) ?: return
         lastAutocorrect = null
         revertedWord = null
+        deleteCoalesceActive = false
         if (activeCorrection != null) {
             applyActiveCorrection(word)
             suggestionCycleIndex = index
@@ -382,6 +400,7 @@ class KeyboardViewModel(
         if (original.isBlank()) return
         if (active != null) applyActiveCorrection(original)
         suggestionCycleIndex = -1
+        deleteCoalesceActive = false
         when {
             autocorrectIndex.isUserAdded(original) -> {
                 autocorrectIndex.unlearn(original)
@@ -422,6 +441,7 @@ class KeyboardViewModel(
     fun onSuggestionAccepted(word: String) {
         lastAutocorrect = null
         revertedWord = null
+        deleteCoalesceActive = false
         val active = activeCorrection
         if (active != null) {
             applyActiveCorrection(word)
@@ -588,6 +608,7 @@ class KeyboardViewModel(
 
     private fun commitTypedChar(rawChar: Char) {
         suggestionCycleIndex = -1
+        deleteCoalesceActive = false
         var char = rawChar
         if (_uiState.value.shiftOn) char = char.uppercaseChar()
         // Punctuation typed directly after a word (no space) is a word boundary too — correct
@@ -600,7 +621,7 @@ class KeyboardViewModel(
             currentWordBuffer.append(char)
             refreshSuggestions()
         } else {
-            flushWordBuffer()
+            flushWordBuffer(separator = char.toString())
             lastWordBoundarySeparator = char.toString()
             refreshSuggestions(checkContextualCorrection = true)
             if (char == '=') maybeShowCalculatorResult()
@@ -637,7 +658,7 @@ class KeyboardViewModel(
 
     private fun onSpace() {
         maybeAutocorrectBufferedWord()
-        flushWordBuffer()
+        flushWordBuffer(separator = " ")
         textEditor.insertSpace()
         lastWordBoundarySeparator = " "
         refreshSuggestions(checkContextualCorrection = true)
@@ -656,9 +677,12 @@ class KeyboardViewModel(
 
     private fun onEnter() {
         maybeAutocorrectBufferedWord()
-        flushWordBuffer()
         val action = _uiState.value.enterAction
-        if (action == EditorInfo.IME_ACTION_NONE || action == EditorInfo.IME_ACTION_UNSPECIFIED) {
+        val willInsertNewline = action == EditorInfo.IME_ACTION_NONE || action == EditorInfo.IME_ACTION_UNSPECIFIED
+        // A real editor action (Go/Search/Send/...) doesn't insert anything of its own after the
+        // word — nothing to record as a trailing separator for undo in that case.
+        flushWordBuffer(separator = if (willInsertNewline) "\n" else "")
+        if (willInsertNewline) {
             textEditor.insertNewline()
             lastWordBoundarySeparator = "\n"
             refreshSuggestions(checkContextualCorrection = true)
@@ -669,6 +693,7 @@ class KeyboardViewModel(
             // sensible to retroactively correct. Not calling refreshSuggestions here at all
             // (rather than calling it without the contextual check) also avoids a pointless
             // query racing whatever the action itself triggers.
+            textEditor.sendEditorAction(action)
         }
     }
 
@@ -716,6 +741,7 @@ class KeyboardViewModel(
             lastAutocorrect = null
             revertedWord = null
             suggestionCycleIndex = -1
+            deleteCoalesceActive = false
             currentWordBuffer.clear()
             textEditor.deleteSelection()
             refreshSuggestions()
@@ -730,6 +756,7 @@ class KeyboardViewModel(
             // committed right after the corrected word by whichever boundary triggered this.
             lastAutocorrect = null
             revertedWord = record.original
+            deleteCoalesceActive = false
             repeat(record.corrected.length + 1) { textEditor.deleteCharacterBackward() }
             record.original.forEach { textEditor.commitCharacter(it) }
             currentWordBuffer.clear()
@@ -740,15 +767,50 @@ class KeyboardViewModel(
         lastAutocorrect = null
         revertedWord = null
         suggestionCycleIndex = -1
-        if (currentWordBuffer.isNotEmpty()) currentWordBuffer.deleteCharAt(currentWordBuffer.length - 1)
+        if (currentWordBuffer.isNotEmpty()) {
+            // Backspacing within a word still open for editing — absorbed into whichever
+            // Inserted undo step that word eventually becomes on its own word boundary; not
+            // independently undoable mid-word, same as before.
+            currentWordBuffer.deleteCharAt(currentWordBuffer.length - 1)
+            deleteCoalesceActive = false
+            textEditor.deleteCharacterBackward()
+            refreshSuggestionsAfterDeletion()
+            return
+        }
+        // Buffer already empty — this backspace removes a character from already-committed
+        // text (the single most common backspace usage: erasing the end of a finished
+        // sentence), previously untracked by undo entirely. Read the character before deleting
+        // it, then record (and coalesce with any immediately preceding run of the same kind —
+        // see [deleteCoalesceActive]) so Ctrl+Z-style undo can restore it.
+        val deletedChar = textEditor.textBeforeCursor(1).lastOrNull()
         textEditor.deleteCharacterBackward()
-        refreshSuggestions()
+        if (deletedChar != null) recordPlainCharDelete(deletedChar)
+        refreshSuggestionsAfterDeletion()
+    }
+
+    /** Merges a run of consecutive plain single-character backspaces into already-committed text (the
+     * final branch of [onDeleteCharacter]) into one [UndoEvent.Deleted] undo step, rather than
+     * pushing a separate one-character step per keystroke — matches how a backspace run reads as
+     * "one edit" in mainstream text editors. [deleteCoalesceActive] is reset to false by every
+     * other action that mutates text or moves the cursor, so the merge only continues across an
+     * unbroken run of exactly this kind of backspace. */
+    private fun recordPlainCharDelete(char: Char) {
+        val top = undoStack.lastOrNull()
+        if (deleteCoalesceActive && top is UndoEvent.Deleted) {
+            undoStack[undoStack.lastIndex] = UndoEvent.Deleted(char + top.text)
+            redoStack.clear()
+            _uiState.update { it.copy(canUndo = true, canRedo = false) }
+        } else {
+            pushUndo(UndoEvent.Deleted(char.toString()))
+        }
+        deleteCoalesceActive = true
     }
 
     private fun onDeleteWord() {
         lastAutocorrect = null
         revertedWord = null
         suggestionCycleIndex = -1
+        deleteCoalesceActive = false
         currentWordBuffer.clear()
         // Same selection-takes-priority rule as onDeleteCharacter() — swipe-left with everything
         // selected should clear the selection, not just delete one word next to the cursor.
@@ -758,56 +820,100 @@ class KeyboardViewModel(
             return
         }
         // Read before deleting — deleteWordBackward() doesn't report what it removed, and undo
-        // needs the exact (case-preserved) text back to retype it.
-        val deletedWord = textEditor.wordAtCursor()?.word
+        // needs the *exact* text back (including whatever whitespace deleteWordBackward's own
+        // scan consumes with it — a plain wordAtCursor().word would silently drop that on undo,
+        // a real bug) to retype it precisely.
+        val deletedText = textEditor.wordBackwardDeletionPreview()
         textEditor.deleteWordBackward()
-        if (!deletedWord.isNullOrBlank()) pushUndo(UndoEvent.Deleted(deletedWord))
-        refreshSuggestions()
+        if (!deletedText.isNullOrEmpty()) pushUndo(UndoEvent.Deleted(deletedText))
+        refreshSuggestionsAfterDeletion()
+    }
+
+    /** Deleting a word/character can leave the cursor sitting right after a *previously*
+     * committed word instead of at an empty/ordinary typing position — e.g. "okay i wont do "
+     * with "do" deleted leaves "okay i wont " with nothing in [currentWordBuffer]. Plain
+     * [refreshSuggestions] only reacts to [lastCommittedWord] (typing-order bookkeeping that a
+     * deletion doesn't update) or the still-open buffer, so it would otherwise show nothing for
+     * "wont" here — this instead derives the word actually sitting before the cursor straight
+     * from the live text (via [TextEditor.wordBeforeCursor], same "don't trust typing-order
+     * bookkeeping" approach [onCursorMoved] uses for the analogous tap-into-a-word case) and
+     * offers alternatives for it in [CorrectionApplyMode.RETROACTIVE] mode, so swipe-down/up
+     * cycling works immediately after a delete, not just after normal typing. */
+    private fun refreshSuggestionsAfterDeletion() {
+        if (currentWordBuffer.isNotEmpty()) {
+            refreshSuggestions()
+            return
+        }
+        val wordBeforeCursor = textEditor.wordBeforeCursor()
+        if (wordBeforeCursor == null) {
+            refreshSuggestions()
+            return
+        }
+        val alternatives = wordAlternatives(wordBeforeCursor.word)
+        if (alternatives.isEmpty()) {
+            refreshSuggestions()
+            return
+        }
+        activeCorrection = ActiveCorrection(
+            mode = CorrectionApplyMode.RETROACTIVE,
+            originalWord = wordBeforeCursor.word,
+            occupiedBefore = wordBeforeCursor.word.length,
+            occupiedAfter = 0,
+            separator = wordBeforeCursor.separator,
+        )
+        lastCommittedWord = wordBeforeCursor.word.lowercase()
+        suggestionCycleIndex = -1
+        _uiState.update { it.copy(suggestions = alternatives, firstSuggestionKind = SuggestionKind.CORRECTION) }
     }
 
     private fun pushUndo(event: UndoEvent) {
         undoStack.addLast(event)
         if (undoStack.size > UNDO_STACK_LIMIT) undoStack.removeFirst()
         redoStack.clear()
+        // Every caller except recordPlainCharDelete's "start a new run" branch wants this off;
+        // that one immediately sets it back to true right after calling pushUndo, so it's safe
+        // to unconditionally clear it here rather than repeat this at every call site.
+        deleteCoalesceActive = false
         _uiState.update { it.copy(canUndo = true, canRedo = false) }
     }
 
-    /** Reverses the most recent word commit or word deletion — see [UndoEvent]'s doc for exactly
-     * what's covered. Deliberately mirrors the same primitives already used elsewhere
-     * (`deleteWordBackward`/`commitCharacter`) rather than inventing a new text-editing path. */
+    /** Reverses the most recent tracked text edit — see [UndoEvent]'s doc for exactly what's
+     * covered. Deletes/retypes the *exact* recorded text ([UndoEvent.Inserted.text]/
+     * [UndoEvent.Deleted.text] already include the real separator/whitespace involved), so
+     * undo/redo round-trip losslessly instead of the old scheme's hardcoded-space assumption. */
     fun undo() {
         val event = undoStack.removeLastOrNull() ?: return
         when (event) {
-            is UndoEvent.Inserted -> textEditor.deleteWordBackward()
-            is UndoEvent.Deleted -> {
-                event.word.forEach { textEditor.commitCharacter(it) }
-                textEditor.commitCharacter(' ')
-            }
+            is UndoEvent.Inserted -> repeat(event.text.length) { textEditor.deleteCharacterBackward() }
+            is UndoEvent.Deleted -> textEditor.insertText(event.text)
         }
         redoStack.addLast(event)
         if (redoStack.size > UNDO_STACK_LIMIT) redoStack.removeFirst()
         currentWordBuffer.clear()
         suggestionCycleIndex = -1
         activeCorrection = null
+        lastAutocorrect = null
+        revertedWord = null
+        deleteCoalesceActive = false
         _uiState.update { it.copy(canUndo = undoStack.isNotEmpty(), canRedo = true) }
-        refreshSuggestions()
+        refreshSuggestionsAfterDeletion()
     }
 
     fun redo() {
         val event = redoStack.removeLastOrNull() ?: return
         when (event) {
-            is UndoEvent.Inserted -> {
-                event.word.forEach { textEditor.commitCharacter(it) }
-                textEditor.commitCharacter(' ')
-            }
-            is UndoEvent.Deleted -> textEditor.deleteWordBackward()
+            is UndoEvent.Inserted -> textEditor.insertText(event.text)
+            is UndoEvent.Deleted -> repeat(event.text.length) { textEditor.deleteCharacterBackward() }
         }
         undoStack.addLast(event)
         currentWordBuffer.clear()
         suggestionCycleIndex = -1
         activeCorrection = null
+        lastAutocorrect = null
+        revertedWord = null
+        deleteCoalesceActive = false
         _uiState.update { it.copy(canUndo = true, canRedo = redoStack.isNotEmpty()) }
-        refreshSuggestions()
+        refreshSuggestionsAfterDeletion()
     }
 
     // Deliberately does NOT call autocorrectIndex.learn()/predictionEngine.recordAcceptedWord()
@@ -818,14 +924,14 @@ class KeyboardViewModel(
     // got permanently marked "known" the moment they were finished, immune to correction forever
     // after. Bigram/frequency data from the seeded corpus still drives prediction and completion;
     // it just no longer grows from casual typing.
-    private fun flushWordBuffer() {
+    private fun flushWordBuffer(separator: String = "") {
         suggestionCycleIndex = -1
         val word = currentWordBuffer.toString()
         if (word.isNotEmpty()) {
             previousToLastCommittedWord = lastCommittedWord
             lastCommittedWord = word.lowercase()
             currentWordBuffer.clear()
-            pushUndo(UndoEvent.Inserted(word))
+            pushUndo(UndoEvent.Inserted(word + separator))
         }
     }
 

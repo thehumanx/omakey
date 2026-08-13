@@ -32,6 +32,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
@@ -124,7 +126,6 @@ fun KeyboardRoot(
         }
     }
 
-    var accentPopupKey by remember { mutableStateOf<KeyDefinition?>(null) }
     // Which key (if any) is currently held down — special keys (shift, backspace, ?123, emoji,
     // enter) render dimmed by default and "light up" to full brightness while pressed, matching
     // the Fleksy reference the theme is modeled on. Separate from `previewKey`'s enlarged bubble
@@ -135,8 +136,8 @@ fun KeyboardRoot(
     }
 
     // Per-key tap preview: a brief enlarged-character bubble above the pressed key, distinct from
-    // the long-press accent picker above (AccentPickerBar) — this fires on every ordinary tap, not
-    // just held punctuation/vowel keys. Only character keys get one; control keys (shift, space,
+    // the long-press accent-drag popup (AccentDragPopup, inside KeyGrid) — this fires on every
+    // ordinary tap, not just held punctuation/vowel keys. Only character keys get one; control keys (shift, space,
     // backspace, etc.) already show their own icon at full size, so a preview adds nothing there.
     var previewKey by remember { mutableStateOf<Pair<KeyDefinition, Rect>?>(null) }
     var previewToken by remember { mutableStateOf(0) }
@@ -188,7 +189,6 @@ fun KeyboardRoot(
             // underneath or flush against the system nav area.
             .navigationBarsPadding(),
     ) {
-        val popupKey = accentPopupKey
         // Which of the 3 "TopStrip is visible" bottom-content modes is active — used only to
         // drive the Crossfade below, not the branching itself (that's still the same explicit
         // if/else it always was). Keeping this a plain nullable key (not the bottom content
@@ -197,14 +197,18 @@ fun KeyboardRoot(
         // KeyGrid and ExtensionPanelSlot each own entirely separate gesture/state — unlike
         // animating *within* KeyGrid across a layout change, which would risk two conflicting
         // sets of key-bounds being written into the same shared hit-testing map mid-transition.
+        //
+        // The long-press accent picker (`AccentDragPopup`, drawn inside KeyGrid itself) no longer
+        // needs a slot here — it floats directly above the held key instead of replacing the
+        // strip, and it's only ever visible for the same single continuous touch that opened it
+        // (see KeyGrid's own doc), so there's no persistent "popup open" state to branch on here.
         val bottomContentMode = when {
-            popupKey != null -> null // accent popup replaces the strip entirely; no crossfade
             uiState.activeExtensionId == EMOJI_EXTENSION_ID -> "emoji"
             uiState.activeExtensionId == CLIPBOARD_EXTENSION_ID -> "clipboard"
             uiState.activeExtensionId == null -> "keys"
             else -> null // any other extension takes over the whole strip+grid area; see below
         }
-        if (uiState.activeExtensionId != null && popupKey == null && bottomContentMode == null) {
+        if (uiState.activeExtensionId != null && bottomContentMode == null) {
             // Replaces the suggestion strip AND the key grid entirely — matches how the
             // clipboard/GIF pickers behave on every mainstream keyboard, instead of stacking
             // above the keys and making the keyboard taller.
@@ -298,7 +302,6 @@ fun KeyboardRoot(
                         onKeyTapStable = onKeyTapStable,
                         ancestorCoordinatesStable = ancestorCoordinatesStable,
                         onKeysAreaPositioned = { keysAreaCoordinates = it },
-                        onShowAccentPopup = { accentPopupKey = it },
                         onPreviewKey = onPreviewKeyStable,
                         previewKey = previewKey,
                         onOpenSettings = onOpenSettings,
@@ -310,43 +313,6 @@ fun KeyboardRoot(
                 }
                 }
             }
-        } else if (popupKey != null) {
-            AccentPickerBar(
-                key = popupKey,
-                theme = theme,
-                onSelect = { char ->
-                    viewModel.onAccentSelected(char)
-                    accentPopupKey = null
-                },
-                onDismiss = { accentPopupKey = null },
-            )
-            KeyGrid(
-                viewModel = viewModel,
-                uiState = uiState,
-                theme = theme,
-                layoutSettings = layoutSettings,
-                effectiveRows = effectiveRows,
-                rowHeightDp = rowHeightDp,
-                gridHeightDp = gridHeightDp,
-                homeRowIndex = homeRowIndex,
-                accessibleMode = accessibleMode,
-                touchSlopPx = touchSlopPx,
-                hitTester = hitTester,
-                keyLookupByCode = keyLookupByCode,
-                keyBoundsState = keyBoundsState,
-                scope = scope,
-                onKeyTapStable = onKeyTapStable,
-                ancestorCoordinatesStable = ancestorCoordinatesStable,
-                onKeysAreaPositioned = { keysAreaCoordinates = it },
-                onShowAccentPopup = { accentPopupKey = it },
-                onPreviewKey = onPreviewKeyStable,
-                previewKey = previewKey,
-                onOpenSettings = onOpenSettings,
-                feedback = feedback,
-                fontFamily = fontFamily,
-                pressedKeyCode = pressedKeyCode,
-                onPressedKeyChange = { pressedKeyCode = it },
-            )
         }
 
         // User-adjustable breathing room below the spacebar row, set via the drag-to-position
@@ -363,6 +329,32 @@ fun KeyboardRoot(
         }
     }
 }
+
+/** Tracks a single continuous long-press-and-drag on a key with `popupChars` (accents/punctuation
+ * variants) — see KeyGrid's long-press-timer branch for how this is entered and the MOVE/UP
+ * handling right below it for how it's driven and resolved. [options] is `[key.label] +
+ * key.popupChars`, extended in place with entries from [EXTENDED_POPUP_SYMBOLS] once the drag
+ * goes past the curated set (Fleksy-style "keep dragging for more special characters").
+ * [highlightedIndex] is whichever option currently sits under the finger — committed via
+ * [dev.omakey.app.keyboard.KeyboardViewModel.onAccentSelected] on release. [baseOptionCount] is
+ * `options.size` at creation time (before any extension) — options at/past that index are the
+ * extended overflow tier, which `AccentDragPopup` fades in rather than popping in abruptly, so
+ * dragging into "more symbols" territory reads as a subtle mode shift, not a jump cut. */
+private data class AccentDragState(
+    val key: KeyDefinition,
+    val options: List<String>,
+    val highlightedIndex: Int,
+    val baseOptionCount: Int = options.size,
+)
+
+/** Curated overflow tier reached only by dragging past a key's own `popupChars` — not shown until
+ * then, so the popup starts small (matching the key's actual accent/punctuation variants) and only
+ * grows for someone deliberately dragging further, rather than opening every key's popup at this
+ * same wide size. Pulled from the same everyday symbol set as [dev.omakey.core.layout.Layouts.Symbols1]'s
+ * top rows. */
+private val EXTENDED_POPUP_SYMBOLS = listOf(
+    "@", "#", "$", "_", "&", "-", "+", "(", ")", "/", "*", "\"", ":", ";", "!", "?",
+)
 
 @Composable
 private fun KeyGrid(
@@ -383,7 +375,6 @@ private fun KeyGrid(
     onKeyTapStable: (Int) -> Unit,
     ancestorCoordinatesStable: () -> androidx.compose.ui.layout.LayoutCoordinates?,
     onKeysAreaPositioned: (androidx.compose.ui.layout.LayoutCoordinates) -> Unit,
-    onShowAccentPopup: (KeyDefinition?) -> Unit,
     onPreviewKey: (Int) -> Unit,
     previewKey: Pair<KeyDefinition, Rect>?,
     onOpenSettings: () -> Unit,
@@ -393,6 +384,18 @@ private fun KeyGrid(
     onPressedKeyChange: (Int?) -> Unit,
 ) {
     val gestureSettings = uiState.gestureSettings
+    // Bumped on every swipe-left word delete — [KeyRowView] watches this on the home row to
+    // replay the right-to-left shimmer border animation (see its own doc). A plain counter
+    // rather than a boolean so repeated deletes in quick succession each restart the animation
+    // (a `LaunchedEffect` keyed on an unchanging `true` wouldn't refire).
+    var deleteShimmerTrigger by remember { mutableStateOf(0) }
+    val onSwipeDeleteTriggeredStable = remember { { deleteShimmerTrigger += 1 } }
+    // Long-press-and-drag special-character popup (see AccentDragState's own doc) — this whole
+    // touch's "held key" and which of its options is currently under the finger, or null when no
+    // long-press-with-popup-chars is in progress. Local to KeyGrid (not hoisted to KeyboardRoot)
+    // since it's scoped to a single continuous touch that starts and ends inside this composable's
+    // own pointerInput loop.
+    var accentDragState by remember { mutableStateOf<AccentDragState?>(null) }
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -463,10 +466,22 @@ private fun KeyGrid(
                                         feedback.onKeyPress()
                                         cursorDragActive = true
                                         cursorDragAnchorX = down.position.x
+                                    } else if (gestureSettings.showKeyPopup && heldKey != null && heldKey.popupChars.isNotEmpty()) {
+                                        // Enters accent-drag mode instead of the generic
+                                        // KeyLongPress fallback below — see AccentDragState's doc
+                                        // and the MOVE/UP handling further down for how the rest
+                                        // of this same touch drives it.
+                                        feedback.onKeyPress()
+                                        accentDragState = AccentDragState(
+                                            key = heldKey,
+                                            options = listOf(heldKey.label) + heldKey.popupChars,
+                                            highlightedIndex = 0,
+                                        )
                                     } else {
                                         handleGestureEvent(
-                                            event, viewModel, keyLookupByCode, gestureSettings.showKeyPopup, gestureSettings.swipeRightForSpace,
-                                            onShowAccentPopup, onPreviewKey, onOpenSettings, feedback,
+                                            event, viewModel, keyLookupByCode, gestureSettings.swipeRightForSpace,
+                                            onPreviewKey, onOpenSettings, feedback,
+                                            onSwipeDeleteTriggered = onSwipeDeleteTriggeredStable,
                                         )
                                     }
                                 }
@@ -486,7 +501,7 @@ private fun KeyGrid(
                                 // immediately as a plain tap — simultaneous secondary fingers during
                                 // typing are never meant as swipes, so no need to route them through
                                 // the swipe/long-press machine.
-                                if (!cursorDragActive) {
+                                if (!cursorDragActive && accentDragState == null) {
                                     event.changes.forEach { other ->
                                         if (other.id != down.id && other.changedToDownIgnoreConsumed()) {
                                             val code = hitTester.keyCodeAt(other.position.x, other.position.y)
@@ -501,18 +516,31 @@ private fun KeyGrid(
 
                                 val change = event.changes.firstOrNull { it.id == down.id } ?: continue
                                 val now = System.currentTimeMillis()
+                                val dragState = accentDragState
                                 if (!change.pressed) {
                                     longPressJob.cancel()
                                     onPressedKeyChange(null)
                                     if (cursorDragActive) {
+                                        settled = true
+                                    } else if (dragState != null) {
+                                        // Commits whichever option the finger is currently over —
+                                        // index 0 (the base letter) if the finger never left the
+                                        // key, exactly like a plain long-press-then-release with no
+                                        // popup would type the base character.
+                                        dragState.options.getOrNull(dragState.highlightedIndex)
+                                            ?.firstOrNull()
+                                            ?.let { viewModel.onAccentSelected(it) }
+                                        accentDragState = null
+                                        machine.onTouch(TouchSample(change.position.x, change.position.y, now, TouchAction.UP))
                                         settled = true
                                     } else {
                                         val gestureEvent = machine.onTouch(
                                             TouchSample(change.position.x, change.position.y, now, TouchAction.UP),
                                         )
                                         handleGestureEvent(
-                                            gestureEvent, viewModel, keyLookupByCode, gestureSettings.showKeyPopup, gestureSettings.swipeRightForSpace,
-                                            onShowAccentPopup, onPreviewKey, onOpenSettings, feedback,
+                                            gestureEvent, viewModel, keyLookupByCode, gestureSettings.swipeRightForSpace,
+                                            onPreviewKey, onOpenSettings, feedback,
+                                            onSwipeDeleteTriggered = onSwipeDeleteTriggeredStable,
                                         )
                                         settled = true
                                     }
@@ -527,14 +555,46 @@ private fun KeyGrid(
                                         viewModel.moveCursor(forward = false)
                                         cursorDragAnchorX = change.position.x
                                     }
+                                } else if (dragState != null) {
+                                    val keyBounds = keyBoundsState.value.values
+                                        .firstOrNull { (key, _) -> key.code == dragState.key.code }
+                                        ?.second
+                                    if (keyBounds != null) {
+                                        val cellWidthPx = keyBounds.width.coerceAtLeast(1f)
+                                        val centerX = (keyBounds.left + keyBounds.right) / 2f
+                                        // Signed count of key-widths the finger has moved right of
+                                        // the held key's own center — index 0 sits at the key
+                                        // itself, each further cell steps to the next popup option.
+                                        // Dragging left of the key just clamps back to index 0
+                                        // (the base letter), same as never having dragged at all.
+                                        val wantIndex = ((change.position.x - centerX) / cellWidthPx).toInt().coerceAtLeast(0)
+                                        var options = dragState.options
+                                        if (wantIndex >= options.size) {
+                                            // Dragged past the last popup character — "keep
+                                            // dragging" reveals more special characters beyond the
+                                            // curated per-key set, the same idea as Fleksy's drag-
+                                            // into-symbols-mode, scoped here to extending this same
+                                            // popup rather than swapping the whole keyboard layout
+                                            // underneath the finger.
+                                            val extra = EXTENDED_POPUP_SYMBOLS
+                                                .filterNot { it in options }
+                                                .take(wantIndex - options.size + 1)
+                                            options = options + extra
+                                        }
+                                        val clampedIndex = wantIndex.coerceIn(0, options.size - 1)
+                                        if (options !== dragState.options || clampedIndex != dragState.highlightedIndex) {
+                                            accentDragState = dragState.copy(options = options, highlightedIndex = clampedIndex)
+                                        }
+                                    }
                                 } else {
                                     val gestureEvent = machine.onTouch(
                                         TouchSample(change.position.x, change.position.y, now, TouchAction.MOVE),
                                     )
                                     if (gestureEvent != null) longPressJob.cancel()
                                     handleGestureEvent(
-                                        gestureEvent, viewModel, keyLookupByCode, gestureSettings.showKeyPopup, gestureSettings.swipeRightForSpace,
-                                        onShowAccentPopup, onPreviewKey, onOpenSettings, feedback,
+                                        gestureEvent, viewModel, keyLookupByCode, gestureSettings.swipeRightForSpace,
+                                        onPreviewKey, onOpenSettings, feedback,
+                                        onSwipeDeleteTriggered = onSwipeDeleteTriggeredStable,
                                     )
                                 }
                             }
@@ -565,6 +625,8 @@ private fun KeyGrid(
                     pressedKeyCode = pressedKeyCode,
                     capsLockOn = uiState.capsLockOn,
                     enterAction = uiState.enterAction,
+                    deleteShimmerTrigger = deleteShimmerTrigger,
+                    alwaysShowUppercaseLetters = layoutSettings.alwaysShowUppercaseLetters,
                 )
             }
         }
@@ -591,6 +653,92 @@ private fun KeyGrid(
                     color = theme.keyTextColor.toComposeColor(),
                     fontFamily = fontFamily,
                     fontSize = 26.sp,
+                )
+            }
+        }
+
+        if (accentDragState != null) {
+            AccentDragPopup(
+                state = accentDragState!!,
+                keyBounds = keyBoundsState.value.values.firstOrNull { (key, _) -> key.code == accentDragState!!.key.code }?.second,
+                parentWidthPx = ancestorCoordinatesStable()?.size?.width?.toFloat(),
+                theme = theme,
+                fontFamily = fontFamily,
+            )
+        }
+    }
+}
+
+/** Floating popup for [AccentDragState] — a horizontal row of the key's accent/punctuation
+ * variants (plus its own base letter as option 0), positioned directly above the held key rather
+ * than in the suggestion strip, so it visually points at what's actually being held (unlike the
+ * old strip-replacing picker this superseded). Purely a rendering of [state]; all the actual
+ * drag-to-select tracking lives in KeyGrid's own gesture loop, which is what keeps [state] updated
+ * as the finger moves. */
+@Composable
+private fun AccentDragPopup(
+    state: AccentDragState,
+    keyBounds: Rect?,
+    parentWidthPx: Float?,
+    theme: OmakeyTheme,
+    fontFamily: androidx.compose.ui.text.font.FontFamily?,
+) {
+    if (keyBounds == null) return
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val cellWidthPx = with(density) { 40.dp.toPx() }
+    val cellHeightPx = with(density) { 48.dp.toPx() }
+    val gapPx = with(density) { 6.dp.toPx() }
+    val popupWidthPx = cellWidthPx * state.options.size
+    val availableWidthPx = parentWidthPx ?: (keyBounds.right + popupWidthPx)
+    // Left-anchored at the held key (option 0 sits where the key itself is, options extend to
+    // the right — matching the rightward-only drag direction KeyGrid tracks), clamped so the
+    // popup never runs off the right edge on a key near the end of a row.
+    val x = ((keyBounds.left + keyBounds.right) / 2f - cellWidthPx / 2f)
+        .coerceIn(0f, (availableWidthPx - popupWidthPx).coerceAtLeast(0f))
+    val y = (keyBounds.top - cellHeightPx - gapPx).coerceAtLeast(0f)
+    Row(
+        modifier = Modifier
+            .offset { androidx.compose.ui.unit.IntOffset(x.toInt(), y.toInt()) }
+            .size(with(density) { popupWidthPx.toDp() }, with(density) { cellHeightPx.toDp() })
+            .background(theme.keySpecialBackground.toComposeColor(), androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+            .padding(3.dp),
+    ) {
+        state.options.forEachIndexed { index, option ->
+            val isHighlighted = index == state.highlightedIndex
+            // Cells beyond the key's own curated popupChars (the EXTENDED_POPUP_SYMBOLS overflow
+            // tier, reached only by dragging past the curated set) fade in the first time they're
+            // composed instead of appearing instantly — a subtle "this is a different tier now"
+            // cue for the mode shift, rather than a jump cut. Cells within the curated set (index
+            // < baseOptionCount, present from the moment the popup opens) skip the animation
+            // entirely — nothing to fade in from, they're there from frame one.
+            val alpha = if (index >= state.baseOptionCount) {
+                val animatable = remember(option, index) { androidx.compose.animation.core.Animatable(0f) }
+                androidx.compose.runtime.LaunchedEffect(animatable) {
+                    animatable.animateTo(1f, animationSpec = androidx.compose.animation.core.tween(200))
+                }
+                animatable.value
+            } else {
+                1f
+            }
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .alpha(alpha)
+                    .let {
+                        if (isHighlighted) {
+                            it.background(theme.keyBackgroundPressed.toComposeColor(), androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
+                        } else {
+                            it
+                        }
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = option,
+                    color = theme.keyTextColor.toComposeColor(),
+                    fontFamily = fontFamily,
+                    fontSize = 18.sp,
                 )
             }
         }
@@ -649,16 +797,14 @@ private fun handleGestureEvent(
     event: GestureEvent?,
     viewModel: KeyboardViewModel,
     keyLookupByCode: (Int) -> KeyDefinition?,
-    showKeyPopup: Boolean,
     swipeRightForSpace: Boolean,
-    onShowAccentPopup: (KeyDefinition?) -> Unit,
     onPreviewKey: (Int) -> Unit,
     onOpenSettings: () -> Unit,
     feedback: KeyboardFeedback,
+    onSwipeDeleteTriggered: () -> Unit = {},
 ) {
     when (event) {
         is GestureEvent.KeyTap -> {
-            onShowAccentPopup(null)
             if (event.keyCode != 0) {
                 feedback.onKeyPress()
                 if (event.keyCode == SpecialKeyCode.SETTINGS) {
@@ -683,8 +829,12 @@ private fun handleGestureEvent(
             // fast left-drag on the spacebar could win the race and delete a word before the
             // 400ms long-press timer had a chance to engage cursor-drag mode instead.
             if (event.direction == SwipeDirection.LEFT && event.downKeyCode == SpecialKeyCode.SPACE) return
-            onShowAccentPopup(null)
-            feedback.onSwipe()
+            if (event.direction == SwipeDirection.LEFT) {
+                feedback.onSwipeDelete()
+                onSwipeDeleteTriggered()
+            } else {
+                feedback.onSwipe()
+            }
             when (event.direction) {
                 SwipeDirection.LEFT -> viewModel.onSwipeLeft()
                 SwipeDirection.RIGHT -> viewModel.onSwipeRight()
@@ -696,7 +846,10 @@ private fun handleGestureEvent(
             val key = keyLookupByCode(event.keyCode)
             when {
                 key?.code == SpecialKeyCode.EXTENSIONS -> onOpenSettings()
-                showKeyPopup && key != null && key.popupChars.isNotEmpty() -> onShowAccentPopup(key)
+                // A key with popupChars is intercepted earlier, in KeyGrid's own long-press-timer
+                // handling, which enters accent-drag mode directly instead of ever emitting this
+                // KeyLongPress event for it — so by the time one reaches here, it's guaranteed to
+                // be a key with nothing to pop up (or popups disabled in Settings).
                 event.keyCode != 0 -> {
                     // No accent variants (or popups disabled in Settings): a held key still types
                     // its base character rather than silently doing nothing once the tap-resolution
@@ -731,12 +884,78 @@ internal fun KeyRowView(
     pressedKeyCode: Int? = null,
     capsLockOn: Boolean = false,
     enterAction: Int = android.view.inputmethod.EditorInfo.IME_ACTION_NONE,
+    // Bumped by KeyGrid on every swipe-left word delete — see the shimmer draw below. Ignored
+    // (and never animated) on any row where isHomeRow is false, so non-home rows pay nothing for
+    // this parameter beyond the identity comparison.
+    deleteShimmerTrigger: Int = 0,
+    // True (default, matches omakey's original look) keeps letter keycaps uppercase no matter
+    // what; false switches to the conventional mobile-keyboard behavior — keycaps track actual
+    // case (shiftOn/capsLockOn), same as what's about to be typed. See LayoutSettings's doc.
+    alwaysShowUppercaseLetters: Boolean = true,
 ) {
+    // Right-to-left gradient shimmer along the home row's top/bottom borders, replayed each time
+    // [deleteShimmerTrigger] changes — a quick, purely decorative "something got swept away" cue
+    // timed with swipe-left's delete-word gesture (see feedback.onSwipeDelete's matching swoosh
+    // sound). 1f = just-triggered (band at the right edge), animates down to 0f (band swept off
+    // the left edge); progress 0 also means "not currently shimmering" so the overlay can be
+    // skipped entirely on every other row without allocating an Animatable for them.
+    val shimmerProgress = remember { androidx.compose.animation.core.Animatable(0f) }
+    if (isHomeRow) {
+        androidx.compose.runtime.LaunchedEffect(deleteShimmerTrigger) {
+            if (deleteShimmerTrigger == 0) return@LaunchedEffect
+            shimmerProgress.snapTo(1f)
+            shimmerProgress.animateTo(
+                0f,
+                animationSpec = androidx.compose.animation.core.tween(
+                    durationMillis = 450,
+                    easing = androidx.compose.animation.core.LinearEasing,
+                ),
+            )
+        }
+    }
     Box(
         Modifier
             .fillMaxWidth()
             .height(rowHeightDp.dp)
             .let { m -> if (isHomeRow) m.background(theme.middleRowStripeColor.toComposeColor()) else m }
+            .let { m ->
+                if (isHomeRow && shimmerProgress.value > 0f) {
+                    m.then(
+                        Modifier.drawWithContent {
+                            drawContent()
+                            val barHeightPx = 2.dp.toPx()
+                            val bandWidth = 0.28f
+                            // Gradient's fraction axis runs start(right)->end(left) below, so
+                            // fraction = 1 - progress puts the bright band at the right edge when
+                            // progress is 1 (just triggered) and sweeps it to the left edge as
+                            // progress falls to 0.
+                            val bandFraction = 1f - shimmerProgress.value
+                            val shimmerColor = theme.spacebarAccentColor.toComposeColor()
+                            val brush = androidx.compose.ui.graphics.Brush.linearGradient(
+                                colorStops = arrayOf(
+                                    (bandFraction - bandWidth).coerceIn(0f, 1f) to Color.Transparent,
+                                    bandFraction.coerceIn(0f, 1f) to shimmerColor,
+                                    (bandFraction + bandWidth).coerceIn(0f, 1f) to Color.Transparent,
+                                ),
+                                start = Offset(size.width, 0f),
+                                end = Offset(0f, 0f),
+                            )
+                            drawRect(
+                                brush = brush,
+                                topLeft = Offset(0f, 0f),
+                                size = androidx.compose.ui.geometry.Size(size.width, barHeightPx),
+                            )
+                            drawRect(
+                                brush = brush,
+                                topLeft = Offset(0f, size.height - barHeightPx),
+                                size = androidx.compose.ui.geometry.Size(size.width, barHeightPx),
+                            )
+                        },
+                    )
+                } else {
+                    m
+                }
+            }
             .onGloballyPositioned { coordinates ->
                 val ancestor = ancestorCoordinates() ?: return@onGloballyPositioned
                 val originInAncestor = ancestor.localPositionOf(coordinates, Offset.Zero)
@@ -756,7 +975,10 @@ internal fun KeyRowView(
         // color regardless of this setting, so it stays visually distinguishable either way.
         Row(Modifier.fillMaxWidth().fillMaxHeight(), verticalAlignment = Alignment.CenterVertically) {
             rowKeys.forEach { key ->
-                val label = key.label.let { if (it.length == 1) it.uppercase() else it }
+                val label = key.label.let {
+                    if (it.length != 1) return@let it
+                    if (alwaysShowUppercaseLetters || shiftOn || capsLockOn) it.uppercase() else it.lowercase()
+                }
                 val fontSize = if (key.label.length == 1) 24.sp else 15.sp
                 val isSpace = key.code == SpecialKeyCode.SPACE
                 val isCapsLockKey = key.code == SpecialKeyCode.SHIFT && capsLockOn
@@ -813,45 +1035,6 @@ internal fun KeyRowView(
                     }
                 }
             }
-        }
-    }
-}
-
-/**
- * Long-press accent picker. Renders in the strip above the keys (replacing the suggestion strip
- * while active) rather than as a floating popup anchored to the key — simpler to position
- * correctly and avoids Compose Popup offset math relative to a non-window-root coordinate space,
- * at the cost of not visually pointing at the held key. Documented v1 simplification.
- */
-@Composable
-private fun AccentPickerBar(key: KeyDefinition, theme: OmakeyTheme, onSelect: (Char) -> Unit, onDismiss: () -> Unit) {
-    val options = listOf(key.label) + key.popupChars
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .height(44.dp)
-            .background(theme.suggestionBarBackground.toComposeColor()),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        options.forEach { option ->
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .clickable { option.firstOrNull()?.let(onSelect) },
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(text = option, color = theme.keyTextColor.toComposeColor(), fontSize = 18.sp)
-            }
-        }
-        Box(
-            modifier = Modifier
-                .fillMaxHeight()
-                .clickable(onClick = onDismiss)
-                .padding(horizontal = 12.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(text = "✕", color = theme.keyTextColor.toComposeColor(), fontSize = 16.sp)
         }
     }
 }

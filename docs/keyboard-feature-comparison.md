@@ -1,12 +1,12 @@
 # Keyboard feature comparison
 
 A survey of what mainstream and open-source Android keyboards offer, done to spot gaps in
-Omakey. Non-technical, user-facing feature comparison — implementation notes for anything
+omakey. Non-technical, user-facing feature comparison — implementation notes for anything
 picked up from here belong in `AGENTS.md`, not this file.
 
 ## Comparison table
 
-| Feature | Gboard | SwiftKey | AnySoftKeyboard | OpenBoard | FlorisBoard | Fleksy (legacy) | **Omakey** |
+| Feature | Gboard | SwiftKey | AnySoftKeyboard | OpenBoard | FlorisBoard | Fleksy (legacy) | **omakey** |
 |---|---|---|---|---|---|---|---|
 | Glide/swipe-to-type | Yes | Yes | Yes | No | In progress (rebuilding) | No (gesture shortcuts instead) | No |
 | Fleksy-style surface-wide gesture shortcuts (delete word, space, cycle suggestions) | No | No | No | No | No | Yes | **Yes** |
@@ -33,7 +33,7 @@ picked up from here belong in `AGENTS.md`, not this file.
 
 Sources: [MakeUseOf — open-source Gboard alternatives tested](https://www.makeuseof.com/best-open-source-gboard-alternatives-tested/), [How-To Geek — open-source Android keyboards that rival Gboard](https://www.howtogeek.com/open-source-android-keyboards-that-rival-gboard/), [FlorisBoard GitHub discussions](https://github.com/florisboard/florisboard/discussions/1190), [AnySoftKeyboard vs. OpenBoard — SourceForge](https://sourceforge.net/software/compare/AnySoftKeyboard-vs-OpenBoard-Keyboard/), plus general product knowledge of Gboard/SwiftKey's current shipping feature sets.
 
-## Gap list for Omakey, prioritized
+## Gap list for omakey, prioritized
 
 Cross-referenced against `AGENTS.md` §16 (Open work) so this doesn't duplicate what's already
 tracked there as a known gap.
@@ -47,12 +47,12 @@ tracked there as a known gap.
 3. **Cursor-control gesture (spacebar drag)** — Gboard/SwiftKey's long-press-and-drag-the-spacebar-to-move-cursor. Fits naturally into the existing `GestureStateMachine` as a new gesture type scoped to the space key.
 
 **Medium value, more work:**
-4. **Multilingual / multi-layout switching** — Omakey is English-QWERTY-only today; even a second
+4. **Multilingual / multi-layout switching** — omakey is English-QWERTY-only today; even a second
    bundled layout (e.g. Spanish) plus a layout-switch key would close a real gap versus every
    competitor. Layout system (`Layouts.kt`) is already data-driven for exactly this.
 5. **Text expansion / snippets** — user-defined short-string-to-long-string replacements, offline,
    no privacy tradeoff. Natural fit for the existing extension system as a new built-in.
-6. **Voice input entry point** — Omakey doesn't need to implement speech recognition itself; a
+6. **Voice input entry point** — omakey doesn't need to implement speech recognition itself; a
    mic key that hands off to the system's `RecognizerIntent`/voice IME (same pattern FlorisBoard's
    Smartbar uses) would be low-effort and high-visibility.
 
@@ -60,7 +60,7 @@ tracked there as a known gap.
 7. **Glide/swipe-to-type** — explicitly deferred per `AGENTS.md` §1.3 (needs a neural decoder);
    still the single largest feature gap versus Gboard/SwiftKey/AnySoftKeyboard, but a multi-week
    investment, not a quick win.
-8. **Split keyboard for tablets** — only Gboard/SwiftKey have this; low priority unless Omakey
+8. **Split keyboard for tablets** — only Gboard/SwiftKey have this; low priority unless omakey
    targets tablet users specifically.
 9. **Per-app spacebar language/app indicator** — cosmetic, low priority.
 10. **On-device ML prediction** — already tracked as punted in `AGENTS.md` §6/§16, not

@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Omakey</string>
+    <string name="app_name">omakey</string>
     <string name="subtype_en_us">English (US)</string>
-    <string name="settings_title">Omakey Settings</string>
-    <string name="settings_enable_keyboard">Enable Omakey in system settings</string>
-    <string name="settings_choose_keyboard">Switch to Omakey</string>
+    <string name="settings_title">omakey Settings</string>
+    <string name="settings_enable_keyboard">Enable omakey in system settings</string>
+    <string name="settings_choose_keyboard">Switch to omakey</string>
     <string name="privacy_notice">
-        Omakey works entirely offline. It has no internet permission, sends no typed text
+        omakey works entirely offline. It has no internet permission, sends no typed text
         anywhere, and includes no analytics or ad SDKs. Your personal dictionary, clipboard
         history, and theme choices are stored only on this device.
     </string>

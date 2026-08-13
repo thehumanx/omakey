@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Enables and switches to Omakey on a connected device/emulator without navigating
+# Enables and switches to omakey on a connected device/emulator without navigating
 # system settings by hand. Requires an already-installed debug build.
 set -euo pipefail
 

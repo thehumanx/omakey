@@ -1,7 +1,43 @@
 # Changelog
 
-All notable changes to Omakey are documented here. Format loosely follows
+All notable changes to omakey are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
+
+## [2.1.0] — 2026-08-13
+
+### Fixed
+- **The Enter key's contextual action (Go/Search/Send/etc.) actually fires now** — e.g. tapping
+  the arrow in a browser's URL bar, or the search icon after typing a query, previously did
+  nothing at all even though the key's icon correctly showed what it should do.
+- **Suggestions for the word before your cursor now show up right after a delete** — e.g. typing
+  "okay i wont do", deleting "do", and swiping down to fix "wont" now works immediately, instead
+  of the suggestion strip staying empty until you typed something else.
+- **Undo/redo is more reliable** — fixed cases where undoing could drop punctuation or insert an
+  extra space, and single backspaces (not just whole-word swipe-deletes) are now undoable too.
+- **Long-press popups now work on every letter, not just vowels** — holding a consonant like "z"
+  previously did nothing at all.
+- **The swipe-left delete sound now follows your tap-volume setting** — it used to sit at its own
+  fixed volume, out of step with the slider.
+
+### Added
+- **A distinct "swoosh" sound** for swipe-left word deletion, instead of reusing the ordinary key
+  tap sound.
+- **A shimmer animation** along the home row's top and bottom edges when you swipe left to delete
+  a word.
+- **A "Always show capital letters" setting** (on by default, matching omakey's existing look) —
+  turn it off for the more familiar keyboard behavior where keys show lowercase letters until you
+  press Shift.
+- **Long-press a key to drag-select accents and punctuation** — holding a key now pops up its
+  accent/punctuation variants right above it; without lifting your finger, drag over to the one
+  you want and let go to type it. Every letter key now has something to pop up, not just the
+  vowels — mirrored from the symbols keyboard's own layout (e.g. holding "z" shows "*", the same
+  position it sits at on the symbols page). Dragging past a key's own popup reveals a few extra
+  everyday symbols, fading in as a subtle cue that you've moved into a different tier.
+- **A new app icon.**
+
+### Changed
+- **Brand name is now styled all-lowercase ("omakey")** everywhere it's shown — app name, Settings
+  screens, and this changelog/README included.
 
 ## [2.0.0] — 2026-08-13
 
@@ -100,7 +136,7 @@ call this the 2.0 release.
   instead of only removing one word/character next to the cursor and leaving the rest selected.
 - **The clipboard-history listener no longer runs for the keyboard's entire lifetime** — it's now
   only active while the keyboard is actually visible, so it doesn't read (and trigger Android's
-  "app read your clipboard" notification for) clipboard changes made in other apps while Omakey
+  "app read your clipboard" notification for) clipboard changes made in other apps while omakey
   isn't on screen.
 - **The suggestion strip now remembers which page (Suggestions/Numbers/Tools) you last had open**,
   across app restarts, instead of always resetting to Suggestions.
@@ -129,7 +165,7 @@ call this the 2.0 release.
 - **"Pick accent color from system" no longer overrides your own custom themes** — it only ever
   applies to Light, Dark, Follow system, and Accent.
 - **The Setup section now shows a checkmark or exclamation mark** next to each step, so you can
-  tell at a glance whether Omakey is enabled and set as your active keyboard.
+  tell at a glance whether omakey is enabled and set as your active keyboard.
 - **Learned words can now be edited**, not just removed.
 - **The Keyboard height drag handle now sits above the preview and is clearly visible**, instead
   of a barely-visible bar pushed down near the bottom of the screen — and dragging it up now
@@ -150,7 +186,7 @@ call this the 2.0 release.
 - **Switching between the keyboard and the emoji/clipboard panel now slides up/down**, and
   swiping between emoji categories now slides left/right, instead of a directionless cross-fade.
 - **Copying/cutting text no longer shows a second "read your clipboard" toast** on top of the
-  system's own "Copied to clipboard" one — Omakey already knows what it just copied, so it no
+  system's own "Copied to clipboard" one — omakey already knows what it just copied, so it no
   longer needs to read the clipboard back to record it in history. (Fixed for real this time — the
   first attempt suppressed the read but missed that the underlying listener could end up
   registered twice, which independently re-triggered the same toast.)
@@ -186,7 +222,7 @@ typing feedback.
 - **Settings reorganized into clear sections** (Setup, Appearance, Typing, Sound & Haptics,
   Accessibility, About) instead of one long undifferentiated list.
 - **A floating "test your keyboard" button** in Settings opens a full-screen area to try typing
-  without leaving the app — warns and offers a one-tap switch if Omakey isn't your active
+  without leaving the app — warns and offers a one-tap switch if omakey isn't your active
   keyboard yet.
 - **Autocorrect toggle** in Settings.
 - **Live correction suggestions** — a typo like "corrcet" now shows "correct" right in the
@@ -224,7 +260,7 @@ typing feedback.
 
 ## [1.0.0] — 2026-08-12
 
-The first proper release. Omakey went from a from-scratch prototype to a genuinely daily-driver-
+The first proper release. omakey went from a from-scratch prototype to a genuinely daily-driver-
 ready keyboard: fast gesture typing, real offline autocorrect and next-word prediction, a full
 modern emoji picker, and a keyboard that feels tuned rather than just functional.
 

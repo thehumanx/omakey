@@ -32,18 +32,25 @@ class TextEditor(private val connectionProvider: () -> InputConnection?) {
         ic?.commitText("\n", 1)
     }
 
+    /** Inserts [text] as a single batch, e.g. for undo/redo retyping a multi-character run —
+     * one `commitText` call rather than looping [commitCharacter], so the host app sees one
+     * edit instead of N. */
+    fun insertText(text: String) {
+        if (text.isEmpty()) return
+        ic?.commitText(text, 1)
+    }
+
     fun sendEditorAction(actionId: Int) {
         ic?.performEditorAction(actionId)
     }
 
-    /** Deletes the whole word immediately before the cursor, including trailing whitespace,
-     * via a manual boundary scan + deleteSurroundingText rather than KEYCODE_DEL spam, since
-     * "delete word" isn't a single Android editor primitive and this behaves more reliably
-     * across third-party InputConnection implementations. */
-    fun deleteWordBackward() {
-        val connection = ic ?: return
-        val textBefore = connection.getTextBeforeCursor(MAX_CURSOR_CONTEXT_CHARS, 0)?.toString() ?: return
-        if (textBefore.isEmpty()) return
+    /** Exactly what [deleteWordBackward] would remove — the trailing-whitespace run plus the
+     * word before it — without actually deleting it. Exposed so callers that need to record the
+     * deletion (undo/redo) capture the literal text, not just the letters-only word from
+     * [wordAtCursor], which would silently drop whatever whitespace came with it. */
+    fun wordBackwardDeletionPreview(): String? {
+        val textBefore = ic?.getTextBeforeCursor(MAX_CURSOR_CONTEXT_CHARS, 0)?.toString() ?: return null
+        if (textBefore.isEmpty()) return null
 
         var end = textBefore.length
         var index = end
@@ -52,8 +59,18 @@ class TextEditor(private val connectionProvider: () -> InputConnection?) {
         // Skip the word itself.
         while (index > 0 && !textBefore[index - 1].isWhitespace()) index--
 
-        val deleteCount = end - index
-        if (deleteCount <= 0) return
+        return textBefore.substring(index, end).takeIf { it.isNotEmpty() }
+    }
+
+    /** Deletes the whole word immediately before the cursor, including trailing whitespace,
+     * via a manual boundary scan + deleteSurroundingText rather than KEYCODE_DEL spam, since
+     * "delete word" isn't a single Android editor primitive and this behaves more reliably
+     * across third-party InputConnection implementations. Shares its boundary scan with
+     * [wordBackwardDeletionPreview] so callers recording the deletion for undo see exactly what
+     * this removes. */
+    fun deleteWordBackward() {
+        val connection = ic ?: return
+        val deleteCount = wordBackwardDeletionPreview()?.length ?: return
 
         connection.beginBatchEdit()
         connection.deleteSurroundingText(deleteCount, 0)
@@ -118,6 +135,29 @@ class TextEditor(private val connectionProvider: () -> InputConnection?) {
     }
 
     data class WordAtCursor(val word: String, val charsBeforeCursor: Int, val charsAfterCursor: Int)
+
+    /** The nearest run of letters before the cursor, plus whatever non-letter separator (if any)
+     * sits between it and the cursor — e.g. cursor at the end of "wont " (a trailing space with
+     * nothing typed after it) resolves to word="wont", separator=" ". Unlike [wordAtCursor], this
+     * doesn't require the word to be touching the cursor, which is exactly the case right after a
+     * word/character delete leaves the cursor sitting just past a separator instead of a letter.
+     * Null if there's no letter run within [MAX_CURSOR_CONTEXT_CHARS] before the cursor. */
+    fun wordBeforeCursor(): WordBeforeCursor? {
+        val connection = ic ?: return null
+        val textBefore = connection.getTextBeforeCursor(MAX_CURSOR_CONTEXT_CHARS, 0)?.toString() ?: return null
+        if (textBefore.isEmpty()) return null
+        var end = textBefore.length
+        var index = end
+        while (index > 0 && !textBefore[index - 1].isLetter()) index--
+        val separator = textBefore.substring(index, end)
+        end = index
+        while (index > 0 && textBefore[index - 1].isLetter()) index--
+        val word = textBefore.substring(index, end)
+        if (word.isEmpty()) return null
+        return WordBeforeCursor(word, separator)
+    }
+
+    data class WordBeforeCursor(val word: String, val separator: String)
 
     fun toggleCaps(currentlyCaps: Boolean): Boolean = !currentlyCaps
 

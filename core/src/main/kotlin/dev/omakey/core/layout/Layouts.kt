@@ -17,28 +17,36 @@ object Layouts {
      * grids are more useful there. Same 10-key shape as [NumberRow] for identical sizing. */
     val SymbolsExtraRow = KeyRow(listOf("~", "%", "=", "{", "}", "<", ">", "]", "€", "£").map(::charKey))
 
+    // Each letter's `popupChars` ends with the symbol sitting at the *same grid position* on
+    // `Symbols1` (row 1 <-> digits, row 2 <-> `@#$_&-+()`, row 3 <-> `*"':,;!`) — long-pressing
+    // "z" (row 3, position 1) pops up "*" (Symbols1 row 3, position 1, right after the row's
+    // `=\<` toggle key, which isn't a real symbol) for exactly that reason. Vowels keep their
+    // existing accent variants first, with the mirrored symbol appended after them rather than
+    // replacing them. Symbols1 row 2 has one more key (10) than this row has letters (9), and row
+    // 3 has one more (8, after excluding `=\<`) than this row has letters (7) — `/` and `?` are
+    // simply left unmirrored rather than double-mapped onto an existing key.
     val QwertyEnUS = KeyboardLayout(
         id = "qwerty_en_us",
         rows = listOf(
             KeyRow(
                 listOf(
-                    charKey("q"), charKey("w"), charKey("e", listOf("è", "é", "ê", "ë")),
-                    charKey("r"), charKey("t"), charKey("y"), charKey("u", listOf("ù", "ú", "û", "ü")),
-                    charKey("i", listOf("ì", "í", "î", "ï")), charKey("o", listOf("ò", "ó", "ô", "õ", "ö")),
-                    charKey("p"),
+                    charKey("q", listOf("1")), charKey("w", listOf("2")), charKey("e", listOf("è", "é", "ê", "ë", "3")),
+                    charKey("r", listOf("4")), charKey("t", listOf("5")), charKey("y", listOf("6")), charKey("u", listOf("ù", "ú", "û", "ü", "7")),
+                    charKey("i", listOf("ì", "í", "î", "ï", "8")), charKey("o", listOf("ò", "ó", "ô", "õ", "ö", "9")),
+                    charKey("p", listOf("0")),
                 ),
             ),
             KeyRow(
                 listOf(
-                    charKey("a", listOf("à", "á", "â", "ä")), charKey("s"), charKey("d"), charKey("f"),
-                    charKey("g"), charKey("h"), charKey("j"), charKey("k"), charKey("l"),
+                    charKey("a", listOf("à", "á", "â", "ä", "@")), charKey("s", listOf("#")), charKey("d", listOf("$")), charKey("f", listOf("_")),
+                    charKey("g", listOf("&")), charKey("h", listOf("-")), charKey("j", listOf("+")), charKey("k", listOf("(")), charKey("l", listOf(")")),
                 ),
             ),
             KeyRow(
                 listOf(
                     KeyDefinition("⇧", SpecialKeyCode.SHIFT, widthWeight = 1.5f, keyType = KeyType.SPECIAL),
-                    charKey("z"), charKey("x"), charKey("c"), charKey("v"), charKey("b"),
-                    charKey("n"), charKey("m"),
+                    charKey("z", listOf("*")), charKey("x", listOf("\"")), charKey("c", listOf("'")), charKey("v", listOf(":")), charKey("b", listOf(",")),
+                    charKey("n", listOf(";")), charKey("m", listOf("!")),
                     KeyDefinition("⌫", SpecialKeyCode.BACKSPACE, widthWeight = 1.5f, keyType = KeyType.SPECIAL),
                 ),
             ),

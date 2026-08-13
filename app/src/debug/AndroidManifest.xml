@@ -4,6 +4,6 @@
         <activity
             android:name=".debug.ScratchInputActivity"
             android:exported="true"
-            android:label="Omakey Scratch" />
+            android:label="omakey Scratch" />
     </application>
 </manifest>
