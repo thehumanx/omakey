@@ -69,6 +69,13 @@ class GestureStateMachine(
         }
     }
 
+    /** True while this touch could still resolve into a plain tap on [downKeyCode] — i.e. it
+     * hasn't yet committed to a swipe or a long-press. Lets the host finalize a still-ambiguous
+     * touch as a tap on demand (e.g. because a second finger just landed elsewhere — see
+     * [GestureStateMachine]'s caller in KeyGrid) instead of only at this touch's own eventual UP. */
+    fun isPendingTap(): Boolean =
+        state == State.DOWN || state == State.TAP_CANDIDATE || state == State.SWIPE_CANDIDATE
+
     /** Call from the host when the long-press timer (started at DOWN) elapses with no cancellation. */
     fun onLongPressTimerFired(atX: Float, atY: Float): GestureEvent? {
         if (state != State.DOWN && state != State.TAP_CANDIDATE) return null

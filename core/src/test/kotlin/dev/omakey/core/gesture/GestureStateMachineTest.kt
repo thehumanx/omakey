@@ -1,6 +1,7 @@
 package dev.omakey.core.gesture
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -28,6 +29,41 @@ class GestureStateMachineTest {
 
     private fun up(x: Float, y: Float, t: Long) =
         machine.onTouch(TouchSample(x, y, t, TouchAction.UP))
+
+    @Test
+    fun `isPendingTap is false before any touch and true right after down`() {
+        assertFalse(machine.isPendingTap())
+        down(50f, 50f, 0)
+        assertTrue(machine.isPendingTap())
+    }
+
+    @Test
+    fun `isPendingTap stays true through jitter under slop, letting a rollover finalize it as a tap`() {
+        down(50f, 50f, 0)
+        move(52f, 51f, 20) // under slop, still ambiguous
+        assertTrue(machine.isPendingTap())
+        // A second finger landing elsewhere (KeyboardRoot's multi-touch rollover) finalizes this
+        // still-pending touch as a tap by feeding it a synthetic UP, exactly like this.
+        val event = up(52f, 51f, 25)
+        assertTrue(event is GestureEvent.KeyTap)
+        assertFalse(machine.isPendingTap())
+    }
+
+    @Test
+    fun `isPendingTap turns false once a swipe commits`() {
+        down(200f, 50f, 0)
+        val committed = move(90f, 51f, 30)
+        assertTrue(committed is GestureEvent.Swipe)
+        assertFalse(machine.isPendingTap())
+    }
+
+    @Test
+    fun `isPendingTap turns false once a long-press fires`() {
+        down(50f, 50f, 0)
+        val event = machine.onLongPressTimerFired(50f, 50f)
+        assertTrue(event is GestureEvent.KeyLongPress)
+        assertFalse(machine.isPendingTap())
+    }
 
     @Test
     fun `clean tap with no movement emits KeyTap`() {

@@ -523,6 +523,8 @@ private fun KeyGrid(
                             while (!settled) {
                                 val event = awaitPointerEvent()
 
+                                val now = System.currentTimeMillis()
+
                                 // Multi-touch key rollover: this loop only tracks `down.id`, the
                                 // pointer that started this gesture. Fast typists' fingers overlap
                                 // in time — a second finger can land on another key before the
@@ -538,6 +540,31 @@ private fun KeyGrid(
                                         if (other.id != down.id && other.changedToDownIgnoreConsumed()) {
                                             val code = hitTester.keyCodeAt(other.position.x, other.position.y)
                                             if (code != 0) {
+                                                // The primary touch (down.id) was pressed *first*
+                                                // but, unless finalized here, only commits its own
+                                                // character at its own eventual UP — which, during a
+                                                // fast rollover, can easily land after this second
+                                                // key's tap and silently transpose the two (e.g.
+                                                // typing "so" fast committing "os"). If the primary
+                                                // is still ambiguous (hasn't already resolved into a
+                                                // swipe or long-press), a second finger landing
+                                                // elsewhere is an unambiguous signal that it was just
+                                                // a tap — finalize it as one right now, before this
+                                                // key, so commit order matches press order.
+                                                if (machine.isPendingTap()) {
+                                                    longPressJob.cancel()
+                                                    onPressedKeyChange(null)
+                                                    val primaryPosition = event.changes.firstOrNull { it.id == down.id }?.position
+                                                        ?: down.position
+                                                    val primaryEvent = machine.onTouch(
+                                                        TouchSample(primaryPosition.x, primaryPosition.y, now, TouchAction.UP),
+                                                    )
+                                                    handleGestureEvent(
+                                                        primaryEvent, viewModel, keyLookupByCode, gestureSettings.swipeRightForSpace,
+                                                        onPreviewKey, onOpenSettings, feedback,
+                                                        onSwipeDeleteTriggered = onSwipeDeleteTriggeredStable,
+                                                    )
+                                                }
                                                 feedback.onKeyPress()
                                                 onPreviewKey(code)
                                                 viewModel.onKeyTap(code)
@@ -547,7 +574,6 @@ private fun KeyGrid(
                                 }
 
                                 val change = event.changes.firstOrNull { it.id == down.id } ?: continue
-                                val now = System.currentTimeMillis()
                                 val dragState = accentDragState
                                 if (!change.pressed) {
                                     longPressJob.cancel()
