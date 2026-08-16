@@ -137,8 +137,20 @@ class AutocorrectIndex {
 
         if (lower.length in MIN_LENGTH..MAX_LENGTH) {
             if (lower !in frequencyByWord) {
-                if (results.size < limit) correctSplit(lower)?.let { results += it }
-                if (results.size < limit) bestByDistance(lower, maxDistance = 1, minFrequency = correctionFloor)?.let { results += it }
+                // Whichever of split-vs-single-word-typo-fix actually wins (see [correct]'s
+                // scoring) leads the list; the other still gets offered as a secondary candidate
+                // rather than being dropped, since this list is meant to be browsable.
+                val split = correctSplitCandidate(lower)
+                val distanceMatch = bestByDistance(lower, maxDistance = 1, minFrequency = correctionFloor)
+                val distanceFrequency = distanceMatch?.let { frequencyByWord[it] } ?: -1
+                val splitWins = split != null && (distanceMatch == null || split.minHalfFrequency > distanceFrequency)
+                if (splitWins) {
+                    if (results.size < limit) results += split!!.text
+                    if (results.size < limit) distanceMatch?.let { results += it }
+                } else {
+                    if (results.size < limit) distanceMatch?.let { results += it }
+                    if (results.size < limit) split?.let { results += it.text }
+                }
                 if (results.size < limit) bestByDistance(lower, maxDistance = 2, minFrequency = strictFloor)?.let { results += it }
             }
         }
@@ -162,24 +174,34 @@ class AutocorrectIndex {
      * short, contains non-letters, or no sufficiently common/close neighbor exists.
      *
      * Can also return two words separated by a single space (e.g. `"this is"`) when [typed] looks
-     * like two real words typed without the space between them — see [correctSplit], checked
-     * *before* single-word distance correction: a concatenation of two very common short words
-     * (e.g. "thisis") can coincidentally also be one edit away from some unrelated real word
-     * ("thesis") — when both split halves are this common, the split is almost always what was
-     * actually meant, so it wins outright rather than only being a fallback nobody reaches.
-     * Callers that commit the result must handle the two-word shape (split on the space, treat it
-     * as a real word boundary) rather than assuming the return value is always one token. */
+     * like two real words typed without the space between them — see [correctSplitCandidate].
+     * Whether the split or a single-word typo fix wins is decided by actually comparing their
+     * confidence (the split's weaker half's frequency vs. the single-word candidate's frequency)
+     * rather than the split always short-circuiting the single-word search: a concatenation of two
+     * very common short words (e.g. "thisis" -> "this"+"is") can coincidentally also be one edit
+     * away from some unrelated real word ("thesis"), and vice versa — an unrelated single-word
+     * typo (e.g. "helko" -> "hello") can coincidentally split into two barely-clears-the-bar real
+     * words ("he"+"lo") that are individually far less common than the actual intended word. Only
+     * when the split's weakest half is *more* confident than the single-word match does the split
+     * win; ties and everything else fall back to the single-word correction. Callers that commit
+     * the result must handle the two-word shape (split on the space, treat it as a real word
+     * boundary) rather than assuming the return value is always one token. */
     fun correct(typed: String): String? {
         val lower = typed.lowercase()
         if (lower.length < MIN_LENGTH || lower.length > MAX_LENGTH) return null
         if (!lower.all { it.isLetter() }) return null
         if (lower in frequencyByWord) return null // never "correct" an already-real word
 
-        correctSplit(lower)?.let { return it }
+        val split = correctSplitCandidate(lower)
+        val distanceMatch = bestByDistance(lower, maxDistance = 1, minFrequency = correctionFloor)
+        val distanceFrequency = distanceMatch?.let { frequencyByWord[it] } ?: -1
+        if (split != null && (distanceMatch == null || split.minHalfFrequency > distanceFrequency)) return split.text
+        if (distanceMatch != null) return distanceMatch
 
-        return bestByDistance(lower, maxDistance = 1, minFrequency = correctionFloor)
-            ?: bestByDistance(lower, maxDistance = 2, minFrequency = strictFloor)
+        return bestByDistance(lower, maxDistance = 2, minFrequency = strictFloor)
     }
+
+    private data class SplitCandidate(val text: String, val minHalfFrequency: Int)
 
     /** Checks whether [lower] is actually two real words typed without a space between them —
      * common for fast typists whose thumb slightly missed the spacebar — optionally with exactly
@@ -188,8 +210,9 @@ class AutocorrectIndex {
      * variant of it, at every possible split point; picks whichever split has the strongest
      * confidence in *both* halves (each must clear [strictFloor] — stricter than plain single-word
      * correction, since a split has more freedom to coincidentally line up than a single edit
-     * does). */
-    private fun correctSplit(lower: String): String? {
+     * does). The returned [SplitCandidate.minHalfFrequency] is what [correct]/[alternatives] weigh
+     * against the single-word candidate's own frequency to decide which one actually wins. */
+    private fun correctSplitCandidate(lower: String): SplitCandidate? {
         if (lower.length < MIN_SPLIT_LENGTH) return null
         val candidates = (listOf(lower) + lower.indices.map { lower.removeRange(it, it + 1) }).distinct()
         var best: Pair<String, String>? = null
@@ -210,7 +233,7 @@ class AutocorrectIndex {
                 }
             }
         }
-        return best?.let { "${it.first} ${it.second}" }
+        return best?.let { SplitCandidate("${it.first} ${it.second}", bestScore) }
     }
 
     /** Real-dictionary neighbors of [word] exactly one edit away — the candidate set a context-

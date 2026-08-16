@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
@@ -47,6 +48,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -214,6 +218,7 @@ private fun SettingsScreen(
 ) {
     val currentTheme by themeRepository.currentTheme.collectAsState()
     val useSystemAccent by themeRepository.useSystemAccent.collectAsState()
+    val layoutMode by themeRepository.layoutMode.collectAsState()
     // The raw stored theme (above) is what ThemePicker highlights as "selected" — this resolved
     // version (following "Follow system"/"pick accent from system" if either is on) is what every
     // live preview mock should actually show, so previews reflect what really gets applied.
@@ -270,10 +275,17 @@ private fun SettingsScreen(
 
             item {
                 SettingsSection(title = "Appearance") {
+                    // Shown first — Normal vs. Grid decides how the rest of this section's
+                    // options apply (e.g. "Key backgrounds" is a Normal-mode-only concept; Grid
+                    // mode always shows bordered cells regardless of that toggle).
+                    Text(text = "Layout style", style = MaterialTheme.typography.bodyLarge)
+                    LayoutModePicker(themeRepository)
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     Text(text = "Theme", style = MaterialTheme.typography.bodyLarge)
                     ThemePicker(
                         themeRepository = themeRepository,
                         customThemePreferences = customThemePreferences,
+                        layoutMode = layoutMode,
                         onCreateTheme = { themeBeingEdited = null; showThemeEditor = true },
                         onEditTheme = { theme -> themeBeingEdited = theme; showThemeEditor = true },
                     )
@@ -287,6 +299,8 @@ private fun SettingsScreen(
                         )
                     }
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    AppearanceLayoutToggles(layoutPreferences)
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     Text(text = "Font", style = MaterialTheme.typography.bodyLarge)
                     FontPicker(fontPreferences, currentFontId)
                 }
@@ -296,6 +310,7 @@ private fun SettingsScreen(
                 SettingsSection(title = "Typing") {
                     AutocorrectToggle(autocorrectPreferences)
                     AutoCapitalizeToggle(autocorrectPreferences)
+                    DoubleTapSpaceForPeriodToggle(autocorrectPreferences)
                     NextWordPredictionToggle(predictionPreferences)
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     ClickableSettingRow(
@@ -311,7 +326,7 @@ private fun SettingsScreen(
                             "easier one-handed thumb reach — drag to adjust both.",
                         onClick = { showSizePositionOverlay = true },
                     )
-                    LayoutTogglesSection(layoutPreferences)
+                    CapitalizationToggleSection(layoutPreferences)
                     GestureSettingsSection(gesturePreferences)
                 }
             }
@@ -362,6 +377,7 @@ private fun SettingsScreen(
         KeyboardSizePositionOverlay(
             layoutPreferences = layoutPreferences,
             theme = effectiveTheme,
+            layoutMode = layoutMode,
             fontId = currentFontId,
             onClose = { showSizePositionOverlay = false },
         )
@@ -369,6 +385,7 @@ private fun SettingsScreen(
     if (showThemeEditor) {
         ThemeEditorOverlay(
             initialTheme = themeBeingEdited,
+            layoutMode = layoutMode,
             onSave = { theme ->
                 customThemePreferences.save(theme)
                 themeRepository.setTheme(theme)
@@ -395,6 +412,7 @@ private fun SettingsScreen(
 private fun KeyboardSizePositionOverlay(
     layoutPreferences: LayoutPreferences,
     theme: OmakeyTheme,
+    layoutMode: dev.omakey.core.theme.LayoutMode,
     fontId: String,
     onClose: () -> Unit,
 ) {
@@ -469,22 +487,30 @@ private fun KeyboardSizePositionOverlay(
                     .height(keyboardTotalHeightDp.dp)
                     .background(theme.keyboardBackground.toComposeColor()),
             ) {
-                Column(Modifier.fillMaxWidth().padding(horizontal = 4.dp)) {
-                    rows.forEachIndexed { index, row ->
-                        dev.omakey.app.keyboard.ui.KeyRowView(
-                            rowKeys = row.keys,
-                            rowHeightDp = rowHeightDp,
-                            shiftOn = false,
-                            theme = theme,
-                            accessibleMode = false,
-                            showKeyBackgrounds = settings.showKeyBackgrounds,
-                            isHomeRow = settings.showMiddleRowStripe && index == 1,
-                            onKeyTap = {},
-                            ancestorCoordinates = noOpAncestor,
-                            onBoundsMeasured = { _, _, _ -> },
-                            fontFamily = fontFamily,
-                            alwaysShowUppercaseLetters = settings.alwaysShowUppercaseLetters,
-                        )
+                // Provides the user's actual current layout mode — without this,
+                // LocalKeyboardLayoutMode defaults to NORMAL (nothing else in Settings' compose
+                // tree provides it), so this preview would always show Normal-mode keys even with
+                // Grid mode active, same bug ThemeEditorOverlay's preview had.
+                androidx.compose.runtime.CompositionLocalProvider(
+                    dev.omakey.core.theme.LocalKeyboardLayoutMode provides layoutMode,
+                ) {
+                    Column(Modifier.fillMaxWidth().padding(horizontal = 4.dp)) {
+                        rows.forEachIndexed { index, row ->
+                            dev.omakey.app.keyboard.ui.KeyRowView(
+                                rowKeys = row.keys,
+                                rowHeightDp = rowHeightDp,
+                                shiftOn = false,
+                                theme = theme,
+                                accessibleMode = false,
+                                showKeyBackgrounds = settings.showKeyBackgrounds,
+                                isHomeRow = settings.showMiddleRowStripe && index == 1,
+                                onKeyTap = {},
+                                ancestorCoordinates = noOpAncestor,
+                                onBoundsMeasured = { _, _, _ -> },
+                                fontFamily = fontFamily,
+                                alwaysShowUppercaseLetters = settings.alwaysShowUppercaseLetters,
+                            )
+                        }
                     }
                 }
                 // Position grip — centered inside the preview, its own draggable so it doesn't
@@ -808,11 +834,20 @@ private fun rememberSetupStatus(): Pair<Boolean, Boolean> {
  * needs attention — quick at-a-glance status instead of having to tap each button to find out. */
 @Composable
 private fun SetupStatusIcon(done: Boolean) {
-    Text(
-        text = if (done) "✓" else "!",
-        color = if (done) androidx.compose.ui.graphics.Color(0xFF3A9D5D) else androidx.compose.ui.graphics.Color(0xFFC77B00),
-        style = MaterialTheme.typography.titleMedium,
-    )
+    if (done) {
+        Icon(
+            imageVector = dev.omakey.core.icons.PhosphorCheckmark,
+            contentDescription = null,
+            tint = androidx.compose.ui.graphics.Color(0xFF3A9D5D),
+            modifier = Modifier.size(20.dp),
+        )
+    } else {
+        Text(
+            text = "!",
+            color = androidx.compose.ui.graphics.Color(0xFFC77B00),
+            style = MaterialTheme.typography.titleMedium,
+        )
+    }
 }
 
 @Composable
@@ -837,9 +872,6 @@ private fun FontPicker(fontPreferences: FontPreferences, currentFontId: String) 
                     modifier = Modifier.width(40.dp),
                 )
                 Text(text = name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-                if (selected) {
-                    Text(text = "✓", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleMedium)
-                }
             }
         }
     }
@@ -872,6 +904,18 @@ private fun AutoCapitalizeToggle(autocorrectPreferences: AutocorrectPreferences)
 }
 
 @Composable
+private fun DoubleTapSpaceForPeriodToggle(autocorrectPreferences: AutocorrectPreferences) {
+    val settings by autocorrectPreferences.settings.collectAsState()
+    SettingToggle(
+        title = "Double-tap space for period",
+        description = "Tap (or swipe right, if that's enabled) space twice quickly to insert " +
+            "a period instead of two spaces. Off by default.",
+        checked = settings.doubleTapSpaceForPeriod,
+        onCheckedChange = autocorrectPreferences::setDoubleTapSpaceForPeriod,
+    )
+}
+
+@Composable
 private fun NextWordPredictionToggle(predictionPreferences: PredictionPreferences) {
     val settings by predictionPreferences.settings.collectAsState()
     SettingToggle(
@@ -884,13 +928,18 @@ private fun NextWordPredictionToggle(predictionPreferences: PredictionPreference
     )
 }
 
+/** "Key backgrounds" (renamed from "Boxed keys" — the old name read as a reference to Grid mode,
+ * which this toggle has nothing to do with; Grid mode always shows bordered cells regardless of
+ * this setting) and "Home row highlight" — both purely visual, so they live in Appearance now
+ * rather than Typing. */
 @Composable
-private fun LayoutTogglesSection(layoutPreferences: LayoutPreferences) {
+private fun AppearanceLayoutToggles(layoutPreferences: LayoutPreferences) {
     val settings by layoutPreferences.settings.collectAsState()
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         SettingToggle(
-            title = "Boxed keys",
-            description = "Shows a background box behind every key, instead of the flat default.",
+            title = "Key backgrounds",
+            description = "Shows a background box behind every key, instead of the flat default. " +
+                "Normal mode only — Grid mode always shows bordered keys.",
             checked = settings.showKeyBackgrounds,
             onCheckedChange = layoutPreferences::setShowKeyBackgrounds,
         )
@@ -901,14 +950,27 @@ private fun LayoutTogglesSection(layoutPreferences: LayoutPreferences) {
             onCheckedChange = layoutPreferences::setShowMiddleRowStripe,
         )
         SettingToggle(
-            title = "Always show capital letters",
-            description = "Keycaps always show uppercase letters, regardless of shift state " +
-                "(omakey's default look). Turn off for the usual keyboard behavior — lowercase " +
-                "keycaps that switch to uppercase only while shift is on.",
-            checked = settings.alwaysShowUppercaseLetters,
-            onCheckedChange = layoutPreferences::setAlwaysShowUppercaseLetters,
+            title = "Show key press popup",
+            description = "Briefly shows an enlarged copy of the letter above your finger on " +
+                "every tap. Distinct from \"Long press for special characters\" — this one is " +
+                "the ordinary per-tap preview, not the held-key accent picker.",
+            checked = settings.showTapPreview,
+            onCheckedChange = layoutPreferences::setShowTapPreview,
         )
     }
+}
+
+@Composable
+private fun CapitalizationToggleSection(layoutPreferences: LayoutPreferences) {
+    val settings by layoutPreferences.settings.collectAsState()
+    SettingToggle(
+        title = "Always show capital letters",
+        description = "Keycaps always show uppercase letters, regardless of shift state " +
+            "(omakey's default look). Turn off for the usual keyboard behavior — lowercase " +
+            "keycaps that switch to uppercase only while shift is on.",
+        checked = settings.alwaysShowUppercaseLetters,
+        onCheckedChange = layoutPreferences::setAlwaysShowUppercaseLetters,
+    )
 }
 
 @Composable
@@ -974,13 +1036,15 @@ private fun GestureSettingsSection(gesturePreferences: GesturePreferences) {
             )
             Text(text = "Long", style = MaterialTheme.typography.bodySmall)
         }
+        Spacer(Modifier.height(12.dp))
         SettingToggle(
-            title = "Key preview popup",
+            title = "Long press for special characters",
             description = "Long-press a key (like e, a, or the period) to pick an accent or " +
                 "punctuation variant. Turning this off makes every long-press just repeat the tap.",
             checked = settings.showKeyPopup,
             onCheckedChange = gesturePreferences::setShowKeyPopup,
         )
+        Spacer(Modifier.height(12.dp))
         SettingToggle(
             title = "Swipe right for space",
             description = "Swipe right anywhere on the keys to insert a space. Off by default.",
@@ -1065,9 +1129,6 @@ private fun SoundChoicePicker(preferences: HapticSoundPreferences, currentChoice
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Text(text = name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-                if (selected) {
-                    Text(text = "✓", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleMedium)
-                }
             }
         }
     }
@@ -1093,10 +1154,44 @@ private fun AccessibleModeToggle(accessibilityPreferences: AccessibilityPreferen
     }
 }
 
+/** Normal vs. Grid — orthogonal to the color theme picked via [ThemePicker] below (every color
+ * theme works with either layout mode, see [dev.omakey.core.theme.LayoutMode]'s doc), shown
+ * first in Appearance since it decides how the rest of the section's options apply (e.g. "Key
+ * backgrounds" is a Normal-mode-only concept). Material3's own segmented-button pill row — the
+ * platform's standard two/three-way switch control — rather than a bespoke bordered-box list, and
+ * with no checkmark icon (`icon = {}` suppresses `SegmentedButton`'s default one): the pill's own
+ * filled/outlined state already communicates which option is selected. */
+@Composable
+private fun LayoutModePicker(themeRepository: ThemeRepository) {
+    val currentMode by themeRepository.layoutMode.collectAsState()
+    val options = listOf(
+        dev.omakey.core.theme.LayoutMode.NORMAL to "Normal",
+        dev.omakey.core.theme.LayoutMode.GRID to "Grid",
+    )
+    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+        options.forEachIndexed { index, (mode, label) ->
+            SegmentedButton(
+                selected = mode == currentMode,
+                onClick = { themeRepository.setLayoutMode(mode) },
+                shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
+                icon = {},
+                label = { Text(label) },
+            )
+        }
+    }
+}
+
+/** Split into two sub-sections, per real user feedback: a custom theme built while previewing one
+ * layout mode often has fields (`gridBorderColor`/`gridBorderWidth`) that were never actually
+ * looked at for the *other* mode, so it "doesn't always work" there — not broken, just half-tuned.
+ * The 4 built-in presets aren't affected by that (they're tuned for both modes already), so they
+ * stay a flat always-visible picker; only the custom-theme list below them filters by
+ * [layoutMode]. */
 @Composable
 private fun ThemePicker(
     themeRepository: ThemeRepository,
     customThemePreferences: CustomThemePreferences,
+    layoutMode: dev.omakey.core.theme.LayoutMode,
     onCreateTheme: () -> Unit,
     onEditTheme: (OmakeyTheme) -> Unit,
 ) {
@@ -1105,14 +1200,46 @@ private fun ThemePicker(
     var themeToDelete by remember { mutableStateOf<OmakeyTheme?>(null) }
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        (Presets.all + customThemes).forEach { theme ->
-            val isCustom = theme.id.startsWith(CustomThemePreferences.ID_PREFIX)
+        // Presets — a flat segmented toggle, same control style as Layout style above, since
+        // there are always exactly these 4 and exactly one is ever selected.
+        val presetOptions = listOf(
+            Presets.Light to "Light",
+            Presets.Dark to "Dark",
+            Presets.Auto to "Auto",
+            Presets.Accent to "Accent",
+        )
+        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+            presetOptions.forEachIndexed { index, (preset, label) ->
+                SegmentedButton(
+                    selected = preset.id == currentTheme.id,
+                    onClick = { themeRepository.setTheme(preset) },
+                    shape = SegmentedButtonDefaults.itemShape(index = index, count = presetOptions.size),
+                    icon = {},
+                    label = { Text(label) },
+                )
+            }
+        }
+
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        Text(text = "Custom themes", style = MaterialTheme.typography.bodyLarge)
+
+        // null designedForLayoutMode = made before this field existed, or never re-tagged —
+        // shown regardless of mode rather than disappearing from a list it used to be in.
+        val visibleCustomThemes = customThemes.filter { it.designedForLayoutMode == null || it.designedForLayoutMode == layoutMode }
+        if (visibleCustomThemes.isEmpty() && customThemes.isNotEmpty()) {
+            Text(
+                text = "You have custom themes, but none are tagged for ${if (layoutMode == dev.omakey.core.theme.LayoutMode.GRID) "Grid" else "Normal"} mode yet — edit one to tag it, or create a new one below.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        visibleCustomThemes.forEach { theme ->
             ThemeRow(
                 theme = theme,
                 selected = theme.id == currentTheme.id,
                 onClick = { themeRepository.setTheme(theme) },
-                onEdit = if (isCustom) { { onEditTheme(theme) } } else null,
-                onDelete = if (isCustom) { { themeToDelete = theme } } else null,
+                onEdit = { onEditTheme(theme) },
+                onDelete = { themeToDelete = theme },
             )
         }
         Row(
@@ -1182,9 +1309,6 @@ private fun ThemeRow(
         Column(Modifier.weight(1f)) {
             Text(text = theme.name, style = MaterialTheme.typography.bodyLarge)
         }
-        if (selected) {
-            Text(text = "✓", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleMedium)
-        }
         if (onEdit != null) {
             TextButton(onClick = onEdit) { Text(text = "Edit") }
         }
@@ -1247,15 +1371,31 @@ private fun dev.omakey.core.theme.ColorSpec.toComposeColor() = Color(argb.toInt(
  * user actually thinks about." [initialTheme] non-null means editing an existing custom theme
  * (keeps its id); null means creating a new one. */
 @Composable
-private fun ThemeEditorOverlay(initialTheme: OmakeyTheme?, onSave: (OmakeyTheme) -> Unit, onClose: () -> Unit) {
+private fun ThemeEditorOverlay(
+    initialTheme: OmakeyTheme?,
+    layoutMode: dev.omakey.core.theme.LayoutMode,
+    onSave: (OmakeyTheme) -> Unit,
+    onClose: () -> Unit,
+) {
     BackHandler(onBack = onClose)
     var name by remember { mutableStateOf(initialTheme?.name ?: "My theme") }
     var background by remember { mutableStateOf(initialTheme?.keyboardBackground?.toComposeColor() ?: Color(0xFF1E1E1E)) }
     var keyColor by remember { mutableStateOf(initialTheme?.keyBackground?.toComposeColor() ?: Color(0xFF2C2C2C)) }
     var stripeColor by remember { mutableStateOf(initialTheme?.middleRowStripeColor?.toComposeColor() ?: Color(0xFF3A3A3A)) }
     var spacebarColor by remember { mutableStateOf(initialTheme?.spacebarAccentColor?.toComposeColor() ?: Color(0xFF4A90D9)) }
+    // Grid mode's own border color — independent of the auto-derived isDark default (see
+    // OmakeyTheme.gridBorderColor's doc) once the user has actually edited it here.
+    var gridBorderColor by remember {
+        mutableStateOf(
+            initialTheme?.gridBorderColor?.toComposeColor()
+                ?: (if (relativeLuminance(keyColor) < 0.5f) Color(0xFFE0E0E0) else Color(0xFF2A2A2A)),
+        )
+    }
+    var gridBorderWidth by remember {
+        mutableStateOf(initialTheme?.gridBorderWidth ?: dev.omakey.core.theme.GridBorderWidth.MD)
+    }
 
-    val previewTheme = remember(name, background, keyColor, stripeColor, spacebarColor) {
+    val previewTheme = remember(name, background, keyColor, stripeColor, spacebarColor, gridBorderColor, gridBorderWidth) {
         buildCustomTheme(
             id = initialTheme?.id ?: (CustomThemePreferences.ID_PREFIX + java.util.UUID.randomUUID().toString()),
             name = name.ifBlank { "My theme" },
@@ -1263,17 +1403,39 @@ private fun ThemeEditorOverlay(initialTheme: OmakeyTheme?, onSave: (OmakeyTheme)
             keyColor = keyColor,
             stripeColor = stripeColor,
             spacebarColor = spacebarColor,
+            gridBorderColor = gridBorderColor,
+            gridBorderWidth = gridBorderWidth,
+            // Tagged with whichever mode is actually being previewed/edited right now — not
+            // preserved from initialTheme, since re-saving a theme while looking at a *different*
+            // mode than it was originally made for should re-tag it to the mode actually being
+            // edited (that's the whole point: the fields being edited right now are for this mode).
+            designedForLayoutMode = layoutMode,
         )
     }
 
-    // The 4 edit fields, one page each — see [ThemeEditCarousel]'s own doc for why this replaced
-    // the old vertically-stacked list of 4 always-expanded pickers.
-    val editPages = listOf(
-        ThemeEditField("Background", background) { background = it },
-        ThemeEditField("Key color", keyColor) { keyColor = it },
-        ThemeEditField("Home-row stripe", stripeColor) { stripeColor = it },
-        ThemeEditField("Spacebar", spacebarColor) { spacebarColor = it },
-    )
+    // The 5 edit fields, one page each — see [ThemeEditCarousel]'s own doc for why this replaced
+    // the old vertically-stacked list of always-expanded pickers.
+    // "Key color" only visually matters in Normal mode — every Grid-mode cell fills with
+    // Background instead (see KeyRowView's own doc on why: one less setting doing the same
+    // visual job as Background, since every cell is "boxed" by its border regardless of key type
+    // there). Hidden from the carousel while editing with Grid mode active, rather than shown but
+    // silently doing nothing — the underlying `keyColor` state (and the theme's derived
+    // `keyTextColor`/`keyBackgroundPressed`/etc, still computed from it) is untouched, so
+    // switching back to Normal mode later still has whatever was last set.
+    val editPages = buildList {
+        add(ThemeEditField("Background", background) { background = it })
+        if (layoutMode != dev.omakey.core.theme.LayoutMode.GRID) {
+            add(ThemeEditField("Key color", keyColor) { keyColor = it })
+        }
+        add(ThemeEditField("Home-row stripe", stripeColor) { stripeColor = it })
+        add(ThemeEditField("Spacebar", spacebarColor) { spacebarColor = it })
+        // Grid-mode-only, same reasoning as hiding "Key color" above (just the reverse) — this
+        // field has no visible effect while editing/previewing Normal mode, so showing it there
+        // read as a control that silently does nothing (real user feedback).
+        if (layoutMode == dev.omakey.core.theme.LayoutMode.GRID) {
+            add(ThemeEditField("Grid border", gridBorderColor) { gridBorderColor = it })
+        }
+    }
 
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(
@@ -1309,7 +1471,39 @@ private fun ThemeEditorOverlay(initialTheme: OmakeyTheme?, onSave: (OmakeyTheme)
             // scrolling away with the rest of the form (real user feedback: "so we know how it
             // looks as we edit"). Fixed height, everything below shares the remaining space. No
             // "Preview" label above it (removed, real user feedback) — self-evident from context.
-            ThemePreviewMock(previewTheme)
+            // Provides the user's actual current layout mode (real bug, fixed: this preview used
+            // to always render Normal-mode keys — LocalKeyboardLayoutMode defaults to NORMAL when
+            // nothing provides it — even while editing a theme with Grid mode active) so the
+            // preview matches what the keyboard will really look like.
+            androidx.compose.runtime.CompositionLocalProvider(
+                dev.omakey.core.theme.LocalKeyboardLayoutMode provides layoutMode,
+            ) {
+                ThemePreviewMock(previewTheme)
+            }
+
+            // Border thickness — a 3-step preset, not a color, so it doesn't fit ThemeEditField's
+            // color-carousel model. Grid-mode-only, same reasoning as hiding "Key color" above.
+            if (layoutMode == dev.omakey.core.theme.LayoutMode.GRID) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(text = "Border thickness", style = MaterialTheme.typography.bodyLarge)
+                    val widthOptions = listOf(
+                        dev.omakey.core.theme.GridBorderWidth.SM to "SM",
+                        dev.omakey.core.theme.GridBorderWidth.MD to "MD",
+                        dev.omakey.core.theme.GridBorderWidth.LG to "LG",
+                    )
+                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                        widthOptions.forEachIndexed { index, (width, label) ->
+                            SegmentedButton(
+                                selected = width == gridBorderWidth,
+                                onClick = { gridBorderWidth = width },
+                                shape = SegmentedButtonDefaults.itemShape(index = index, count = widthOptions.size),
+                                icon = {},
+                                label = { Text(label) },
+                            )
+                        }
+                    }
+                }
+            }
 
             ThemeEditCarousel(
                 pages = editPages,
@@ -1572,6 +1766,9 @@ private fun buildCustomTheme(
     keyColor: Color,
     stripeColor: Color,
     spacebarColor: Color,
+    gridBorderColor: Color,
+    gridBorderWidth: dev.omakey.core.theme.GridBorderWidth,
+    designedForLayoutMode: dev.omakey.core.theme.LayoutMode,
 ): OmakeyTheme {
     val isDark = relativeLuminance(keyColor) < 0.5f
     val textColor = if (isDark) Color(0xFFF2F2F2) else Color(0xFF1A1A1A)
@@ -1589,6 +1786,9 @@ private fun buildCustomTheme(
         suggestionBarBackground = nudgeColor(backgroundColor, smallNudge).toColorSpec(),
         spacebarAccentColor = spacebarColor.toColorSpec(),
         middleRowStripeColor = stripeColor.toColorSpec(),
+        gridBorderColor = gridBorderColor.toColorSpec(),
+        gridBorderWidth = gridBorderWidth,
+        designedForLayoutMode = designedForLayoutMode,
     )
 }
 

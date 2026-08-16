@@ -21,6 +21,11 @@ interface ClipboardRepository {
     suspend fun recent(limit: Int = 50): List<ClipboardItem>
     suspend fun pin(id: Long, pinned: Boolean)
     suspend fun delete(id: Long)
+
+    /** One-shot catch-up read of whatever's on the system clipboard right now, capturing it if
+     * it's new. Call before [recent] when opening the clipboard panel, so content copied while
+     * the keyboard wasn't on screen (the common case for images) is guaranteed present. */
+    suspend fun captureCurrentClipboard()
 }
 
 enum class ClipboardContentType { TEXT, IMAGE }
@@ -36,9 +41,16 @@ data class ClipboardItem(
     val imagePath: String? = null,
 )
 
+interface EmojiRecentsRepository {
+    /** Most-recently-used emoji first. */
+    fun recent(): List<String>
+    fun recordUse(emoji: String)
+}
+
 interface ExtensionContext {
     val textEditor: TextEditorFacade
     val clipboardRepository: ClipboardRepository
+    val emojiRecents: EmojiRecentsRepository
     fun requestPanelClose()
 }
 

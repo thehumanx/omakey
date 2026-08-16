@@ -5,6 +5,13 @@ import kotlinx.serialization.json.Json
 
 enum class KeyShape { ROUNDED, SQUARE, PILL }
 
+/** Grid mode's border stroke width, user-editable as a 3-step preset (not a continuous slider —
+ * matches the rest of the theme editor's simple-choice controls) rather than a raw dp value.
+ * Actual dp mapping lives in the render layer (`GridBorderWidth.toDp()` in `KeyboardRoot.kt`),
+ * not here — this module has no reason to depend on Compose's `Dp` type for what's otherwise a
+ * plain enum. */
+enum class GridBorderWidth { SM, MD, LG }
+
 @Serializable
 data class ColorSpec(val argb: Long) {
     companion object {
@@ -33,6 +40,27 @@ data class OmakeyTheme(
     // newer fields) still deserializes fine via kotlinx.serialization's optional-field handling.
     val spacebarAccentColor: ColorSpec = ColorSpec(0xFF4A90D9),
     val middleRowStripeColor: ColorSpec = ColorSpec(0x1FFFFFFF),
+    // User-editable via the theme editor's 5th carousel page — the single color every Grid-mode
+    // border (main key grid, suggestion/tools/numbers strip, extension-panel header tabs) draws
+    // with, everywhere, at full opacity, no per-key-type dimming. Replaces an earlier design that
+    // derived two different alpha levels from keyTextColor (regular vs. "special" keys like
+    // shift/backspace) — real user feedback: that dimming read as an inconsistency/bug ("border
+    // color affected"), not an intentional visual cue. Defaults to a sensible isDark-derived value
+    // (dark grey on light themes, light grey on dark themes) so a theme JSON already persisted on
+    // a user's device before this field existed still gets a reasonable border color rather than
+    // deserializing to some arbitrary flat default.
+    val gridBorderColor: ColorSpec = if (isDark) ColorSpec(0xFFE0E0E0) else ColorSpec(0xFF2A2A2A),
+    val gridBorderWidth: GridBorderWidth = GridBorderWidth.MD,
+    // Custom themes only (see Presets, none of which set this) — which layout mode this theme
+    // was created/last edited for, so the Settings custom-theme list can show only the ones
+    // relevant to whichever mode is currently active. A theme built while previewing Normal mode
+    // never had its Grid-specific fields (gridBorderColor/gridBorderWidth above) intentionally
+    // chosen, and vice versa — real user feedback: a custom theme "doesn't always work" for the
+    // other mode, not because it's broken, but because half its fields were never actually
+    // looked at while making it. Null (the default, and what every custom theme saved before this
+    // field existed deserializes to) means "not tagged" — shown regardless of active mode, rather
+    // than silently disappearing from one mode's list.
+    val designedForLayoutMode: LayoutMode? = null,
 )
 
 object ThemeSerializer {
@@ -61,6 +89,7 @@ object Presets {
         // shown unconditionally, which looked like an accent color nobody asked for.
         spacebarAccentColor = ColorSpec(0xFFFFFFFF),
         middleRowStripeColor = ColorSpec(0x14000000),
+        gridBorderColor = ColorSpec(0xFF2A2A2A),
     )
 
     val Dark = OmakeyTheme(
@@ -76,6 +105,7 @@ object Presets {
         // Neutral (same as keyBackground) — see Light's identical comment above.
         spacebarAccentColor = ColorSpec(0xFF2C2C2C),
         middleRowStripeColor = ColorSpec(0x1FFFFFFF),
+        gridBorderColor = ColorSpec(0xFFE0E0E0),
     )
 
     /** Not a real color scheme of its own — a sentinel selected via [id] that tells the render
@@ -98,6 +128,7 @@ object Presets {
         keyShape = KeyShape.PILL,
         spacebarAccentColor = ColorSpec(0xFF3D4EFF),
         middleRowStripeColor = ColorSpec(0x1FFFFFFF),
+        gridBorderColor = ColorSpec(0xFF6B70A8),
     )
 
     val all = listOf(Light, Dark, Auto, Accent)

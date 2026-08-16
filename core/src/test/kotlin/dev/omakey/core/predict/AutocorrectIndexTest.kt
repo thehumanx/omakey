@@ -133,6 +133,38 @@ class AutocorrectIndexTest {
     }
 
     @Test
+    fun `prefers an obvious single-word typo fix over a coincidental split into short common words`() {
+        // Real bug: "helko" (a typo of "hello") is one deletion away from also splitting into
+        // "he"+"lo" — both real, individually common short words — which used to shadow "hello"
+        // outright just because a split existed at all, regardless of how much less confident it
+        // was than the actual one-edit fix.
+        val words = buildList {
+            add(WordEntity("hello", frequency = 100, isUserAdded = false, lastUsedTimestamp = 0))
+            add(WordEntity("he", frequency = 99, isUserAdded = false, lastUsedTimestamp = 0))
+            add(WordEntity("lo", frequency = 98, isUserAdded = false, lastUsedTimestamp = 0))
+            for (i in 1..95) add(WordEntity("word$i", frequency = 97 - i, isUserAdded = false, lastUsedTimestamp = 0))
+        }
+        val splitIndex = AutocorrectIndex()
+        splitIndex.load(words)
+        assertEquals("hello", splitIndex.correct("helko"))
+    }
+
+    @Test
+    fun `prefers an obvious single-word typo fix over a split into two short low-confidence words`() {
+        // Same bug, different shape: "thid" (a typo of "this") splits into "th"+"id" — both
+        // clearing the split's frequency bar, but far less confident than "this" itself.
+        val words = buildList {
+            add(WordEntity("this", frequency = 100, isUserAdded = false, lastUsedTimestamp = 0))
+            add(WordEntity("th", frequency = 60, isUserAdded = false, lastUsedTimestamp = 0))
+            add(WordEntity("id", frequency = 55, isUserAdded = false, lastUsedTimestamp = 0))
+            for (i in 1..95) add(WordEntity("word$i", frequency = 54 - i, isUserAdded = false, lastUsedTimestamp = 0))
+        }
+        val splitIndex = AutocorrectIndex()
+        splitIndex.load(words)
+        assertEquals("this", splitIndex.correct("thid"))
+    }
+
+    @Test
     fun `corrects a two-edit typo when no one-edit candidate exists`() {
         // "keynaord" -> "keyboard" needs both a substitution (n->b) and a transposition (ao->oa) —
         // genuinely two edits, not one. Only reachable via the distance-2 fallback.

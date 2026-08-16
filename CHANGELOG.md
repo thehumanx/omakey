@@ -3,6 +3,82 @@
 All notable changes to omakey are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.2.0] — 2026-08-16
+
+A new keyboard layout style, plus a large batch of autocorrect, gesture, and emoji-panel fixes.
+
+### Added
+- **Clipboard history now has its own Grid-mode layout** — a bordered 2-column grid matching the
+  rest of Grid mode, instead of the same floating card list Normal mode uses.
+- **Grid layout mode** — a new "Layout style" toggle in Settings → Appearance, independent of
+  which color theme is picked. Every key becomes a bordered, edge-to-edge cell, and a pressed key
+  fills its whole cell solid instead of just dimming, for a plain spreadsheet-like look. Works
+  with Light, Dark, Follow-system, Accent, and your own custom themes.
+- **Grid mode's border is fully customizable** — a dedicated color (defaults to a legible
+  dark/light grey depending on the theme) and a thickness preset (Small/Medium/Large), both
+  editable from the theme editor.
+- **Custom themes now remember which layout mode they were designed for** and the Settings theme
+  list only shows the ones relevant to whichever mode is currently active — a theme tuned while
+  looking at Normal mode often has Grid-specific fields nobody ever actually chose, and vice
+  versa. Themes made before this existed still show up in both, untagged.
+- **A "Recent" emoji category**, always shown first, tracking your most-recently-used emoji so you
+  don't have to hunt for the same one repeatedly.
+- **A "Show key press popup" setting** — turn off the brief enlarged-letter bubble that appears
+  above your finger on every tap, independent of the separate long-press accent/punctuation
+  popup.
+- **"Double-tap space for period"** — off by default — tap (or swipe right, if that gesture is
+  enabled) space twice quickly to insert a period instead of two spaces, same convention as most
+  mainstream keyboards. Works identically whether you're tapping the spacebar or using the
+  swipe-right-for-space gesture.
+
+### Changed
+- **The suggestion strip now clearly shows which candidate is about to be typed** while you cycle
+  through alternatives with swipe up/down — the active one renders at full brightness, the rest
+  fade, instead of every candidate looking equally "selected."
+- **Autocorrect no longer suggests broken word-splits for obvious typos** — "helko" now correctly
+  suggests "hello" (not "he lo"), "thid" now suggests "this" (not "th id"). Splitting a run-together
+  phrase like "thisis" into "this is" still works correctly when that's genuinely the best fix.
+- **Swipe-left delete treats a trailing emoji or punctuation mark as its own unit** — e.g.
+  "hahaha😂" now deletes the emoji on one swipe and the word on the next, instead of both at once.
+- **Swipe-up save now learns the right word even with the cursor sitting after a trailing space**
+  (e.g. "bibek |") — it used to silently do nothing in that specific case.
+- **The learn/unlearn confirmation ("word learned") now shows up regardless of which extension bar
+  tab or panel is open**, not just the suggestion strip.
+- Settings reorganized: **Theme is now split into Presets** (a simple Light/Dark/Follow
+  system/Accent toggle) **and Custom themes** (filtered by layout mode, see above). **Layout style
+  moved to the top of Appearance**, since it decides how the rest of that section applies. **"Key
+  backgrounds" and "Home row highlight" moved from Typing to Appearance.** "Key preview popup"
+  renamed to **"Long press for special characters"** for clarity against the new tap-popup
+  setting. Checkmarks replaced with clearer selected-state styling (segmented toggles, highlighted
+  borders) throughout, and spacing between related settings rows increased for readability.
+
+### Fixed
+- **Fast typing could still occasionally transpose two letters** when a second finger landed on
+  the next key before the first one lifted — commit order now always matches press order.
+- **The suggestion/tools/numbers bar could go completely invisible** in some states — a real
+  regression, now fixed.
+- **Emoji panel**: the Recent category's transition no longer looks like a glitchy "expand" instead
+  of a clean slide; the category tab row now scrolls to keep the active category visible when you
+  swipe past off-screen ones; deleting all your text via the emoji panel's own backspace button no
+  longer leaves stale suggestions sitting in the strip; emoji now sit centered in their grid cells.
+- A long tail of Grid-mode visual consistency fixes — border thickness, missing borders, background
+  fills, and padding across the suggestion strip, tools row, number row, emoji panel, and extension
+  tabs, so every screen of the keyboard renders consistently in Grid mode.
+- **Long-pressing a clipboard item to delete it no longer closes/crashes the keyboard** — the
+  delete confirmation used a system dialog that didn't fit how the keyboard hosts its own window;
+  replaced with a confirmation that renders in-place like every other popup in the app.
+- **Copied images now actually show up in clipboard history.** They used to be missed entirely
+  whenever the image was copied from an app with no keyboard on screen (the common case — gallery,
+  files, browser), since the clipboard listener only runs while the keyboard is visible and can't
+  catch up on anything retroactively. Opening the clipboard panel now does a one-time check for
+  whatever's currently on the clipboard first, so nothing gets missed.
+- **Swipe-left now deletes the whole word even when the cursor is sitting in the middle of it**,
+  not just the half behind the cursor — e.g. tapping into the middle of "hello" and swiping left
+  used to leave half the word behind.
+- **Special-character and kaomoji cells in the emoji panel no longer render at uneven heights** —
+  different glyphs were falling back to different system fonts with different line heights, which
+  threw off the Grid-mode borders.
+
 ## [2.1.2] — 2026-08-13
 
 ### Fixed

@@ -58,6 +58,16 @@ val PhosphorCheck: ImageVector by lazy {
     )
 }
 
+/** `check-bold` — a plain checkmark stroke, no enclosing box/circle, unlike [PhosphorCheck]
+ * (which is specifically the Enter key's rounded-square glyph). Used for "this step is done"
+ * status indicators (Settings' Setup section) — a proper vector icon instead of a "✓" text glyph,
+ * which read as an old-school/inconsistent style choice against the rest of the icon set. */
+val PhosphorCheckmark: ImageVector by lazy {
+    pathIcon(
+        "M104,192a12,12,0,0,1-8.49-3.51l-64-64a12,12,0,0,1,17-17L104,163.51,207.51,60a12,12,0,0,1,17,17l-112,112A12,12,0,0,1,104,192Z",
+    )
+}
+
 /** `arrow-right-fill` — Enter key for GO/NEXT actions. */
 val PhosphorArrowRight: ImageVector by lazy {
     pathIcon("M221.66,133.66l-72,72A8,8,0,0,1,136,200V136H40a8,8,0,0,1,0-16h96V56a8,8,0,0,1,13.66-5.66l72,72A8,8,0,0,1,221.66,133.66Z")

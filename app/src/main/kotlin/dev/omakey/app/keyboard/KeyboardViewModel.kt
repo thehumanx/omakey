@@ -58,20 +58,29 @@ data class KeyboardUiState(
      * since it's an orthogonal flag (see `resolveEffectiveTheme`, which is what actually applies
      * it), not a property of the theme data itself. */
     val useSystemAccent: Boolean = false,
+    /** Mirrors [ThemeRepository.layoutMode] — Normal vs. Grid keyboard structure, orthogonal to
+     * [theme]'s color. See [dev.omakey.core.theme.LayoutMode]'s doc. */
+    val layoutMode: dev.omakey.core.theme.LayoutMode = dev.omakey.core.theme.LayoutMode.NORMAL,
     val activeExtensionId: String? = null,
     val layoutSettings: LayoutSettings = LayoutSettings(),
     val fontId: String = FontChoices.SYSTEM_DEFAULT,
     val gestureSettings: GestureSettings = GestureSettings(),
     val topStripTab: TopStripTab = TopStripTab.SUGGESTIONS,
     val firstSuggestionKind: SuggestionKind = SuggestionKind.PLAIN,
+    /** Mirrors the private `suggestionCycleIndex` in [KeyboardViewModel] — -1 means "nothing's
+     * been cycled yet, treat index 0 as the highlighted candidate," >=0 is the actual index into
+     * [suggestions] currently applied via swipe up/down cycling. The suggestion strip highlights
+     * this index (falling back to 0 when -1), not always index 0. */
+    val activeSuggestionIndex: Int = -1,
     /** Resolved from the focused field's [EditorInfo.imeOptions] each time a new field is
      * focused — drives both the Enter key's label (e.g. "Go", "Send") and what it actually does
      * on tap. [EditorInfo.IME_ACTION_NONE] (the default) means "just insert a newline." */
     val enterAction: Int = EditorInfo.IME_ACTION_NONE,
     val canUndo: Boolean = false,
     val canRedo: Boolean = false,
-    /** A short-lived confirmation ("hello learnt"/"hello unlearnt") shown in place of the
-     * suggestion strip for ~0.5s — see [KeyboardViewModel.showBanner]. */
+    /** A short-lived confirmation ("hello learned"/"hello unlearned") shown as an overlay above
+     * whichever extension bar content is currently active, for ~0.5s — see
+     * [KeyboardViewModel.showBanner]. */
     val bannerMessage: String? = null,
 )
 
@@ -104,6 +113,7 @@ class KeyboardViewModel(
         KeyboardUiState(
             theme = themeRepository.currentTheme.value,
             useSystemAccent = themeRepository.useSystemAccent.value,
+            layoutMode = themeRepository.layoutMode.value,
             layoutSettings = layoutPreferences.settings.value,
             fontId = fontPreferences.fontId.value,
             gestureSettings = gesturePreferences.settings.value,
@@ -129,10 +139,25 @@ class KeyboardViewModel(
     private var lastWordBoundarySeparator: String = " "
     private var currentWordBuffer = StringBuilder()
 
+    /** When the most recent space was actually committed — 0 means "none yet this session, or
+     * already consumed by a double-tap conversion." Powers [onSpace]'s double-tap-space-for-
+     * period detection (`AutocorrectSettings.doubleTapSpaceForPeriod`); see that function's own
+     * doc for why this is time-based rather than counting taps. */
+    private var lastSpaceCommitAtMs: Long = 0L
+
     /** -1 = not currently cycling (buffer holds what was actually typed, or nothing's been
      * cycled yet); >=0 = index into the frozen suggestions snapshot currently applied, via swipe
-     * up/down. */
+     * up/down. Kept in sync with [KeyboardUiState.activeSuggestionIndex] via
+     * [setSuggestionCycleIndex] — every assignment site goes through that function (not a plain
+     * `=`), since the suggestion strip needs to know which candidate is actually applied to
+     * highlight it. Real bug, fixed: this used to be a private field the UI never saw, so
+     * `SuggestionsTabContent` always highlighted index 0 regardless of which candidate cycling
+     * had actually landed on. */
     private var suggestionCycleIndex = -1
+        set(value) {
+            field = value
+            _uiState.update { it.copy(activeSuggestionIndex = value) }
+        }
     private var refreshJob: Job? = null
 
     /** Set the moment an autocorrect swap fires, cleared by anything else. Lets the very next
@@ -217,6 +242,9 @@ class KeyboardViewModel(
             .launchIn(scope)
         themeRepository.useSystemAccent
             .onEach { enabled -> _uiState.update { it.copy(useSystemAccent = enabled) } }
+            .launchIn(scope)
+        themeRepository.layoutMode
+            .onEach { mode -> _uiState.update { it.copy(layoutMode = mode) } }
             .launchIn(scope)
         layoutPreferences.settings
             .onEach { settings -> _uiState.update { it.copy(layoutSettings = settings) } }
@@ -398,7 +426,12 @@ class KeyboardViewModel(
      * user wants remembered — so this now applies uniformly to any mode. */
     private fun revertAndMaybeSave() {
         val active = activeCorrection
-        val original = active?.originalWord ?: currentWordBuffer.toString()
+        // currentWordBuffer is already empty once a trailing separator (space, punctuation) has
+        // flushed it — e.g. cursor sitting right after "bibek " with nothing typed since. Falling
+        // back to wordBeforeCursor() recovers "bibek" (not "bibek " — its separator is reported
+        // separately and never included) instead of silently no-op'ing the swipe-up-to-save.
+        val original = active?.originalWord
+            ?: currentWordBuffer.toString().ifBlank { textEditor.wordBeforeCursor()?.word.orEmpty() }
         if (original.isBlank()) return
         if (active != null) applyActiveCorrection(original)
         suggestionCycleIndex = -1
@@ -407,12 +440,12 @@ class KeyboardViewModel(
             autocorrectIndex.isUserAdded(original) -> {
                 autocorrectIndex.unlearn(original)
                 scope.launch { predictionEngine.deleteWord(original) }
-                showBanner("$original unlearnt")
+                showBanner("$original unlearned")
             }
             !autocorrectIndex.isKnown(original) -> {
                 autocorrectIndex.learn(original)
                 scope.launch { predictionEngine.saveWord(original) }
-                showBanner("$original learnt")
+                showBanner("$original learned")
             }
             // Already known and not user-added (i.e. a bundled dictionary word) — nothing to
             // learn or unlearn, so no banner; swiping up on an ordinary real word is a plain
@@ -659,10 +692,45 @@ class KeyboardViewModel(
     }
 
     private fun onSpace() {
+        if (shouldConvertDoubleSpaceToPeriod()) {
+            convertPrecedingSpaceToPeriod()
+            return
+        }
         maybeAutocorrectBufferedWord()
         flushWordBuffer(separator = " ")
         textEditor.insertSpace()
         lastWordBoundarySeparator = " "
+        lastSpaceCommitAtMs = System.currentTimeMillis()
+        refreshSuggestions(checkContextualCorrection = true)
+        maybeAutoCapitalize()
+    }
+
+    /** "Double tap space for period" (off by default — `AutocorrectSettings
+     * .doubleTapSpaceForPeriod`): two spaces in quick succession become ". " instead, same
+     * convention as most mainstream keyboards. Also covers double *swipe-right*, with zero extra
+     * wiring — [onSwipeRight] already just calls [onSpace] when "swipe right for space" is
+     * enabled, so both gestures share this exact same detection.
+     *
+     * Time-based, not a tap counter: [lastSpaceCommitAtMs] only ever gets set at the bottom of a
+     * *plain* space commit, so anything else happening in between (typing a letter, deleting,
+     * moving the cursor) simply never refreshes it and the window quietly expires — no explicit
+     * "cancel" needed anywhere else. Also verified against the live text (the character
+     * immediately before the cursor really is the space this same mechanism just committed, not
+     * e.g. one the user pasted or moved the cursor back onto within the window) rather than
+     * trusting elapsed time alone. */
+    private fun shouldConvertDoubleSpaceToPeriod(): Boolean {
+        if (!autocorrectPreferences.settings.value.doubleTapSpaceForPeriod) return false
+        if (lastSpaceCommitAtMs == 0L) return false
+        if (System.currentTimeMillis() - lastSpaceCommitAtMs > DOUBLE_TAP_SPACE_WINDOW_MS) return false
+        return textEditor.textBeforeCursor(1) == " "
+    }
+
+    private fun convertPrecedingSpaceToPeriod() {
+        textEditor.deleteCharacterBackward()
+        textEditor.commitCharacter('.')
+        textEditor.insertSpace()
+        lastWordBoundarySeparator = " "
+        lastSpaceCommitAtMs = 0L
         refreshSuggestions(checkContextualCorrection = true)
         maybeAutoCapitalize()
     }
@@ -840,8 +908,16 @@ class KeyboardViewModel(
      * from the live text (via [TextEditor.wordBeforeCursor], same "don't trust typing-order
      * bookkeeping" approach [onCursorMoved] uses for the analogous tap-into-a-word case) and
      * offers alternatives for it in [CorrectionApplyMode.RETROACTIVE] mode, so swipe-down/up
-     * cycling works immediately after a delete, not just after normal typing. */
-    private fun refreshSuggestionsAfterDeletion() {
+     * cycling works immediately after a delete, not just after normal typing.
+     *
+     * Internal, not private: also called from [OmakeyInputMethodService]'s extension-facing
+     * `TextEditorFacade.deleteBackward` — deleting text via an extension (e.g. the emoji panel's
+     * own backspace button) bypasses [onDeleteCharacter] entirely, since it goes straight through
+     * the raw [TextEditor] rather than a key tap, so nothing was ever refreshing/clearing the
+     * suggestion strip for that path (real bug, fixed: delete all text while the emoji panel is
+     * open and the previous word's suggestions kept showing, stale, with nothing left to suggest
+     * for). */
+    internal fun refreshSuggestionsAfterDeletion() {
         if (currentWordBuffer.isNotEmpty()) {
             refreshSuggestions()
             return
@@ -1093,5 +1169,7 @@ class KeyboardViewModel(
         const val PREFERRED_EXTENSION_ID = "builtin.emoji"
         const val SUGGESTION_LIMIT = 6
         const val UNDO_STACK_LIMIT = 50
+        // Matches the ~500ms window most mainstream keyboards use for double-tap-space-for-period.
+        const val DOUBLE_TAP_SPACE_WINDOW_MS = 500L
     }
 }

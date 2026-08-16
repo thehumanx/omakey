@@ -23,6 +23,7 @@ import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import dev.omakey.app.keyboard.ui.KeyboardRoot
 import dev.omakey.core.db.ClipboardEntity
 import dev.omakey.core.db.OmakeyDatabase
+import dev.omakey.core.emoji.EmojiRecentsPreferences
 import dev.omakey.core.feedback.HapticSoundPreferences
 import dev.omakey.core.gesture.GesturePreferences
 import dev.omakey.core.input.TextEditor
@@ -82,6 +83,7 @@ class OmakeyInputMethodService :
     private lateinit var gesturePreferences: GesturePreferences
     private lateinit var topStripTabPreferences: TopStripTabPreferences
     private lateinit var hapticSoundPreferences: HapticSoundPreferences
+    private lateinit var emojiRecentsPreferences: EmojiRecentsPreferences
     private lateinit var keyboardFeedback: KeyboardFeedback
     private var keyboardViewModel: KeyboardViewModel? = null
 
@@ -106,42 +108,47 @@ class OmakeyInputMethodService :
     private val clipboardListener = ClipboardManager.OnPrimaryClipChangedListener {
         if (suppressNextClipboardRead) {
             suppressNextClipboardRead = false
-            return@OnPrimaryClipChangedListener
+        } else {
+            serviceScope.launch { captureCurrentClipboardIfNew() }
         }
-        val clip = clipboardManager.primaryClip?.takeIf { it.itemCount > 0 } ?: return@OnPrimaryClipChangedListener
+    }
+
+    /** Shared by [clipboardListener] (fires on every clipboard *change* while the keyboard is on
+     * screen) and `ClipboardRepository.captureCurrentClipboard` below (a one-shot catch-up read —
+     * see its call site's doc for why that's needed at all). Both just want "look at whatever's
+     * on the clipboard right now and capture it if it's new"; the only difference is *when* and
+     * *from what coroutine* they're called — this is `suspend` (does the image-copy/DB-insert
+     * work directly, no nested `launch`) specifically so the panel-open caller can `await` it
+     * finishing before reloading its own list, instead of racing a detached coroutine. */
+    private suspend fun captureCurrentClipboardIfNew() {
+        val clip = clipboardManager.primaryClip?.takeIf { it.itemCount > 0 } ?: return
         val item = clip.getItemAt(0)
         val imageUri = item.uri?.takeIf { clip.description?.hasMimeType("image/*") == true }
         if (imageUri != null) {
-            if (imageUri.toString() == lastCapturedClipUri) return@OnPrimaryClipChangedListener
+            if (imageUri.toString() == lastCapturedClipUri) return
             lastCapturedClipUri = imageUri.toString()
             lastCapturedClipText = null
-            serviceScope.launch {
-                // The clip's content:// URI grant is only guaranteed valid for the moment of
-                // capture, not whenever the user later opens the clipboard panel — so the bytes
-                // are copied into app-private storage right now, not just the URI referenced.
-                val path = copyClipboardImage(imageUri) ?: return@launch
-                database.clipboardDao().insert(
-                    ClipboardEntity(
-                        content = "Image",
-                        timestamp = System.currentTimeMillis(),
-                        contentType = ClipboardEntity.TYPE_IMAGE,
-                        imagePath = path,
-                    ),
-                )
-                database.clipboardDao().trimUnpinned()
-            }
-            return@OnPrimaryClipChangedListener
-        }
-        val text = item.coerceToText(this)?.toString()?.trim()
-        if (text.isNullOrEmpty() || text == lastCapturedClipText) return@OnPrimaryClipChangedListener
-        lastCapturedClipText = text
-        lastCapturedClipUri = null
-        serviceScope.launch {
+            // The clip's content:// URI grant is only guaranteed valid for the moment of capture,
+            // not whenever the user later opens the clipboard panel — so the bytes are copied
+            // into app-private storage right now, not just the URI referenced.
+            val path = copyClipboardImage(imageUri) ?: return
             database.clipboardDao().insert(
-                ClipboardEntity(content = text, timestamp = System.currentTimeMillis()),
+                ClipboardEntity(
+                    content = "Image",
+                    timestamp = System.currentTimeMillis(),
+                    contentType = ClipboardEntity.TYPE_IMAGE,
+                    imagePath = path,
+                ),
             )
             database.clipboardDao().trimUnpinned()
+            return
         }
+        val text = item.coerceToText(this)?.toString()?.trim()
+        if (text.isNullOrEmpty() || text == lastCapturedClipText) return
+        lastCapturedClipText = text
+        lastCapturedClipUri = null
+        database.clipboardDao().insert(ClipboardEntity(content = text, timestamp = System.currentTimeMillis()))
+        database.clipboardDao().trimUnpinned()
     }
 
     private fun copyClipboardImage(uri: android.net.Uri): String? = runCatching {
@@ -170,6 +177,7 @@ class OmakeyInputMethodService :
         gesturePreferences = GesturePreferences(applicationContext)
         topStripTabPreferences = TopStripTabPreferences(applicationContext)
         hapticSoundPreferences = HapticSoundPreferences(applicationContext)
+        emojiRecentsPreferences = EmojiRecentsPreferences(applicationContext)
         keyboardFeedback = VibratorKeyboardFeedback(applicationContext, hapticSoundPreferences)
 
         // Async, off the main thread, and a no-op after the first run — must not block
@@ -201,7 +209,14 @@ class OmakeyInputMethodService :
     private fun buildExtensionContext(): ExtensionContext = object : ExtensionContext {
         override val textEditor: TextEditorFacade = object : TextEditorFacade {
             override fun insertText(text: String) = text.forEach { this@OmakeyInputMethodService.textEditor.commitCharacter(it) }
-            override fun deleteBackward(count: Int) = repeat(count) { this@OmakeyInputMethodService.textEditor.deleteCharacterBackward() }
+            override fun deleteBackward(count: Int) {
+                repeat(count) { this@OmakeyInputMethodService.textEditor.deleteCharacterBackward() }
+                // Deleting via an extension (e.g. the emoji panel's own backspace) bypasses
+                // KeyboardViewModel.onDeleteCharacter() entirely — nothing else refreshes the
+                // suggestion strip for this path, so it kept showing whatever was suggested
+                // before the delete, stale, real bug fixed.
+                keyboardViewModel?.refreshSuggestionsAfterDeletion()
+            }
         }
         override val clipboardRepository: ClipboardRepository = object : ClipboardRepository {
             override suspend fun recent(limit: Int): List<ClipboardItem> =
@@ -228,6 +243,11 @@ class OmakeyInputMethodService :
                 }
                 database.clipboardDao().delete(id)
             }
+            override suspend fun captureCurrentClipboard() = captureCurrentClipboardIfNew()
+        }
+        override val emojiRecents: dev.omakey.extapi.EmojiRecentsRepository = object : dev.omakey.extapi.EmojiRecentsRepository {
+            override fun recent(): List<String> = emojiRecentsPreferences.recents.value
+            override fun recordUse(emoji: String) = emojiRecentsPreferences.recordUse(emoji)
         }
         override fun requestPanelClose() {
             keyboardViewModel?.extensionHost?.close()
@@ -269,6 +289,7 @@ class OmakeyInputMethodService :
                 val uiState by viewModel.uiState.collectAsState()
                 androidx.compose.runtime.CompositionLocalProvider(
                     LocalOmakeyTheme provides resolveEffectiveTheme(uiState.theme, uiState.useSystemAccent),
+                    dev.omakey.core.theme.LocalKeyboardLayoutMode provides uiState.layoutMode,
                 ) {
                     KeyboardRoot(
                         viewModel,
