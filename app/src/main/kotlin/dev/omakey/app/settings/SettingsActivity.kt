@@ -310,6 +310,7 @@ private fun SettingsScreen(
                 SettingsSection(title = "Typing") {
                     AutocorrectToggle(autocorrectPreferences)
                     AutoCapitalizeToggle(autocorrectPreferences)
+                    DoubleTapSpaceForPeriodToggle(autocorrectPreferences)
                     NextWordPredictionToggle(predictionPreferences)
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     ClickableSettingRow(
@@ -899,6 +900,18 @@ private fun AutoCapitalizeToggle(autocorrectPreferences: AutocorrectPreferences)
             "punctuation (. ! ?). Off by default.",
         checked = settings.autoCapitalizeEnabled,
         onCheckedChange = autocorrectPreferences::setAutoCapitalizeEnabled,
+    )
+}
+
+@Composable
+private fun DoubleTapSpaceForPeriodToggle(autocorrectPreferences: AutocorrectPreferences) {
+    val settings by autocorrectPreferences.settings.collectAsState()
+    SettingToggle(
+        title = "Double-tap space for period",
+        description = "Tap (or swipe right, if that's enabled) space twice quickly to insert " +
+            "a period instead of two spaces. Off by default.",
+        checked = settings.doubleTapSpaceForPeriod,
+        onCheckedChange = autocorrectPreferences::setDoubleTapSpaceForPeriod,
     )
 }
 

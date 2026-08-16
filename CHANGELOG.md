@@ -3,7 +3,7 @@
 All notable changes to omakey are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
-## [2.3.0] — 2026-08-16
+## [2.2.0] — 2026-08-16
 
 A new keyboard layout style, plus a large batch of autocorrect, gesture, and emoji-panel fixes.
 
@@ -24,6 +24,10 @@ A new keyboard layout style, plus a large batch of autocorrect, gesture, and emo
 - **A "Show key press popup" setting** — turn off the brief enlarged-letter bubble that appears
   above your finger on every tap, independent of the separate long-press accent/punctuation
   popup.
+- **"Double-tap space for period"** — off by default — tap (or swipe right, if that gesture is
+  enabled) space twice quickly to insert a period instead of two spaces, same convention as most
+  mainstream keyboards. Works identically whether you're tapping the spacebar or using the
+  swipe-right-for-space gesture.
 
 ### Changed
 - **The suggestion strip now clearly shows which candidate is about to be typed** while you cycle

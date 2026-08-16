@@ -139,6 +139,12 @@ class KeyboardViewModel(
     private var lastWordBoundarySeparator: String = " "
     private var currentWordBuffer = StringBuilder()
 
+    /** When the most recent space was actually committed — 0 means "none yet this session, or
+     * already consumed by a double-tap conversion." Powers [onSpace]'s double-tap-space-for-
+     * period detection (`AutocorrectSettings.doubleTapSpaceForPeriod`); see that function's own
+     * doc for why this is time-based rather than counting taps. */
+    private var lastSpaceCommitAtMs: Long = 0L
+
     /** -1 = not currently cycling (buffer holds what was actually typed, or nothing's been
      * cycled yet); >=0 = index into the frozen suggestions snapshot currently applied, via swipe
      * up/down. Kept in sync with [KeyboardUiState.activeSuggestionIndex] via
@@ -686,10 +692,45 @@ class KeyboardViewModel(
     }
 
     private fun onSpace() {
+        if (shouldConvertDoubleSpaceToPeriod()) {
+            convertPrecedingSpaceToPeriod()
+            return
+        }
         maybeAutocorrectBufferedWord()
         flushWordBuffer(separator = " ")
         textEditor.insertSpace()
         lastWordBoundarySeparator = " "
+        lastSpaceCommitAtMs = System.currentTimeMillis()
+        refreshSuggestions(checkContextualCorrection = true)
+        maybeAutoCapitalize()
+    }
+
+    /** "Double tap space for period" (off by default — `AutocorrectSettings
+     * .doubleTapSpaceForPeriod`): two spaces in quick succession become ". " instead, same
+     * convention as most mainstream keyboards. Also covers double *swipe-right*, with zero extra
+     * wiring — [onSwipeRight] already just calls [onSpace] when "swipe right for space" is
+     * enabled, so both gestures share this exact same detection.
+     *
+     * Time-based, not a tap counter: [lastSpaceCommitAtMs] only ever gets set at the bottom of a
+     * *plain* space commit, so anything else happening in between (typing a letter, deleting,
+     * moving the cursor) simply never refreshes it and the window quietly expires — no explicit
+     * "cancel" needed anywhere else. Also verified against the live text (the character
+     * immediately before the cursor really is the space this same mechanism just committed, not
+     * e.g. one the user pasted or moved the cursor back onto within the window) rather than
+     * trusting elapsed time alone. */
+    private fun shouldConvertDoubleSpaceToPeriod(): Boolean {
+        if (!autocorrectPreferences.settings.value.doubleTapSpaceForPeriod) return false
+        if (lastSpaceCommitAtMs == 0L) return false
+        if (System.currentTimeMillis() - lastSpaceCommitAtMs > DOUBLE_TAP_SPACE_WINDOW_MS) return false
+        return textEditor.textBeforeCursor(1) == " "
+    }
+
+    private fun convertPrecedingSpaceToPeriod() {
+        textEditor.deleteCharacterBackward()
+        textEditor.commitCharacter('.')
+        textEditor.insertSpace()
+        lastWordBoundarySeparator = " "
+        lastSpaceCommitAtMs = 0L
         refreshSuggestions(checkContextualCorrection = true)
         maybeAutoCapitalize()
     }
@@ -1128,5 +1169,7 @@ class KeyboardViewModel(
         const val PREFERRED_EXTENSION_ID = "builtin.emoji"
         const val SUGGESTION_LIMIT = 6
         const val UNDO_STACK_LIMIT = 50
+        // Matches the ~500ms window most mainstream keyboards use for double-tap-space-for-period.
+        const val DOUBLE_TAP_SPACE_WINDOW_MS = 500L
     }
 }

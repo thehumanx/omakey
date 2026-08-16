@@ -65,6 +65,8 @@ Being upfront about scope matters more than a longer feature list:
   landed — toggle it off in Settings if you'd rather not see it.
 - Tuned to keep up with fast, sloppy typing — built to handle fingers that overlap mid-word
   without falling behind.
+- Optional double-tap (or double-swipe-right, if that's your space gesture) space for a period —
+  off by default, same convention as most mainstream keyboards.
 - Adjustable keyboard height and position in one combined screen: drag a handle to resize, drag a
   grip to raise the keyboard off the bottom edge for easier one-handed reach — capped so it can
   never be dragged past the middle of the screen, so you can always see what you're typing into.
@@ -77,7 +79,7 @@ no menus required:
 | Gesture | What it does |
 |---|---|
 | **Swipe left** on any key | Deletes the entire last word, not just one character — with its own distinct "swoosh" sound and a shimmer across the home row so it's unmistakably different from a normal tap. A trailing emoji or punctuation mark stuck right up against a word (no space) counts as its own swipe first — e.g. `hahaha😂` deletes the emoji on one swipe, the word on the next. |
-| **Swipe right** on any key | Inserts a space (optional — off by default, one tap to enable in Settings). |
+| **Swipe right** on any key | Inserts a space (optional — off by default, one tap to enable in Settings). Swipe right twice quickly to insert a period instead, if "Double-tap space for period" is on. |
 | **Swipe up** on the suggestion strip | Accepts the current suggestion, or — if you swipe up on a word you typed yourself — saves it to your personal dictionary so it's never flagged as a typo again. Swipe up a second time on an already-learned word to un-learn it. Either way you'll see a quick confirmation flash in the strip. |
 | **Swipe down** on the suggestion strip | Cycles backward through alternatives, the mirror of swipe up. |
 | **Swipe up/down repeatedly** | Genuinely cycles through every alternative, back and forth, as many times as you want — whether the word is still being typed, just finished, or you've tapped the cursor back into something you wrote a minute ago. Whichever candidate is currently selected stands out at full brightness; the rest fade, so you always know what's about to be typed. |
@@ -183,7 +185,7 @@ setting live in local storage only.
 
 ## Status
 
-omakey is on release 2.3.0. Core typing, gestures, autocorrect, predictive text, themes (including
+omakey is on release 2.2.0. Core typing, gestures, autocorrect, predictive text, themes (including
 the newer Grid layout style), the clipboard manager, and the emoji panel are all working today and
 getting refined constantly — see [CHANGELOG.md](CHANGELOG.md) for the full history of what's
 shipped in each release.
