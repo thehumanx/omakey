@@ -96,7 +96,13 @@ class ClipboardHistoryExtension : OmakeyExtension {
         suspend fun reload() {
             items = extensionContext?.clipboardRepository?.recent() ?: emptyList()
         }
-        LaunchedEffect(Unit) { reload() }
+        LaunchedEffect(Unit) {
+            // Catch up on anything copied while the keyboard wasn't on screen (the common case
+            // for images — they're rarely copied from a text field) before reading the list, so
+            // it's guaranteed to already be in the DB rather than racing a detached capture.
+            extensionContext?.clipboardRepository?.captureCurrentClipboard()
+            reload()
+        }
 
         // Same fix as EmojiPanelExtension: Text() with no explicit color defaults to black outside
         // a Material theming ancestor, invisible against the dark keyboard background.

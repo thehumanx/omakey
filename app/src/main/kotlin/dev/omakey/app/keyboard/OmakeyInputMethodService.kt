@@ -108,42 +108,47 @@ class OmakeyInputMethodService :
     private val clipboardListener = ClipboardManager.OnPrimaryClipChangedListener {
         if (suppressNextClipboardRead) {
             suppressNextClipboardRead = false
-            return@OnPrimaryClipChangedListener
+        } else {
+            serviceScope.launch { captureCurrentClipboardIfNew() }
         }
-        val clip = clipboardManager.primaryClip?.takeIf { it.itemCount > 0 } ?: return@OnPrimaryClipChangedListener
+    }
+
+    /** Shared by [clipboardListener] (fires on every clipboard *change* while the keyboard is on
+     * screen) and `ClipboardRepository.captureCurrentClipboard` below (a one-shot catch-up read —
+     * see its call site's doc for why that's needed at all). Both just want "look at whatever's
+     * on the clipboard right now and capture it if it's new"; the only difference is *when* and
+     * *from what coroutine* they're called — this is `suspend` (does the image-copy/DB-insert
+     * work directly, no nested `launch`) specifically so the panel-open caller can `await` it
+     * finishing before reloading its own list, instead of racing a detached coroutine. */
+    private suspend fun captureCurrentClipboardIfNew() {
+        val clip = clipboardManager.primaryClip?.takeIf { it.itemCount > 0 } ?: return
         val item = clip.getItemAt(0)
         val imageUri = item.uri?.takeIf { clip.description?.hasMimeType("image/*") == true }
         if (imageUri != null) {
-            if (imageUri.toString() == lastCapturedClipUri) return@OnPrimaryClipChangedListener
+            if (imageUri.toString() == lastCapturedClipUri) return
             lastCapturedClipUri = imageUri.toString()
             lastCapturedClipText = null
-            serviceScope.launch {
-                // The clip's content:// URI grant is only guaranteed valid for the moment of
-                // capture, not whenever the user later opens the clipboard panel — so the bytes
-                // are copied into app-private storage right now, not just the URI referenced.
-                val path = copyClipboardImage(imageUri) ?: return@launch
-                database.clipboardDao().insert(
-                    ClipboardEntity(
-                        content = "Image",
-                        timestamp = System.currentTimeMillis(),
-                        contentType = ClipboardEntity.TYPE_IMAGE,
-                        imagePath = path,
-                    ),
-                )
-                database.clipboardDao().trimUnpinned()
-            }
-            return@OnPrimaryClipChangedListener
-        }
-        val text = item.coerceToText(this)?.toString()?.trim()
-        if (text.isNullOrEmpty() || text == lastCapturedClipText) return@OnPrimaryClipChangedListener
-        lastCapturedClipText = text
-        lastCapturedClipUri = null
-        serviceScope.launch {
+            // The clip's content:// URI grant is only guaranteed valid for the moment of capture,
+            // not whenever the user later opens the clipboard panel — so the bytes are copied
+            // into app-private storage right now, not just the URI referenced.
+            val path = copyClipboardImage(imageUri) ?: return
             database.clipboardDao().insert(
-                ClipboardEntity(content = text, timestamp = System.currentTimeMillis()),
+                ClipboardEntity(
+                    content = "Image",
+                    timestamp = System.currentTimeMillis(),
+                    contentType = ClipboardEntity.TYPE_IMAGE,
+                    imagePath = path,
+                ),
             )
             database.clipboardDao().trimUnpinned()
+            return
         }
+        val text = item.coerceToText(this)?.toString()?.trim()
+        if (text.isNullOrEmpty() || text == lastCapturedClipText) return
+        lastCapturedClipText = text
+        lastCapturedClipUri = null
+        database.clipboardDao().insert(ClipboardEntity(content = text, timestamp = System.currentTimeMillis()))
+        database.clipboardDao().trimUnpinned()
     }
 
     private fun copyClipboardImage(uri: android.net.Uri): String? = runCatching {
@@ -238,6 +243,7 @@ class OmakeyInputMethodService :
                 }
                 database.clipboardDao().delete(id)
             }
+            override suspend fun captureCurrentClipboard() = captureCurrentClipboardIfNew()
         }
         override val emojiRecents: dev.omakey.extapi.EmojiRecentsRepository = object : dev.omakey.extapi.EmojiRecentsRepository {
             override fun recent(): List<String> = emojiRecentsPreferences.recents.value
