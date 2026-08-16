@@ -190,23 +190,18 @@ class EmojiPanelExtension : OmakeyExtension {
                         items(animatedCategory.emoji) { emoji ->
                             val interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
                             val isPressed by interactionSource.collectIsPressedAsState()
-                            Text(
-                                text = emoji,
-                                // Real bug, not just the tab row: this Text() had no explicit
-                                // color at all, so every glyph (and the "Special"/#category's
-                                // actual symbols, which — unlike emoji — have no built-in color of
-                                // their own) rendered in the platform default (black), invisible
-                                // against a dark theme.
-                                color = textColor,
-                                fontSize = if (isEmoticons) 14.sp else 26.sp,
-                                maxLines = 1,
-                                // Centered within its own grid cell instead of the glyph's own
-                                // intrinsic (left-hugging) width — real bug, fixed: fillMaxWidth()
-                                // makes this Text claim the whole column so textAlign has
-                                // something to center within, matching every other bordered cell.
-                                textAlign = TextAlign.Center,
+                            // Real bug, fixed: this cell used to size itself to the Text's own
+                            // measured height, which varies by glyph — plain emoji, "Special"
+                            // category symbols (№, ©, ▶) and kaomoji all fall back to different
+                            // system fonts with different line-height metrics, so cells in the
+                            // same row came out different heights and their borders didn't line
+                            // up. Pinning every cell to the same fixed height (independent of
+                            // whatever font the glyph happens to render in) keeps the grid even.
+                            Box(
+                                contentAlignment = Alignment.Center,
                                 modifier = Modifier
                                     .fillMaxWidth()
+                                    .height(if (isEmoticons) 48.dp else 44.dp)
                                     .clickable(
                                         interactionSource = interactionSource,
                                         indication = if (isGridMode) null else androidx.compose.foundation.LocalIndication.current,
@@ -226,9 +221,21 @@ class EmojiPanelExtension : OmakeyExtension {
                                         } else {
                                             m
                                         }
-                                    }
-                                    .padding(if (isEmoticons) 10.dp else 6.dp),
-                            )
+                                    },
+                            ) {
+                                Text(
+                                    text = emoji,
+                                    // Real bug, not just the tab row: this Text() had no explicit
+                                    // color at all, so every glyph (and the "Special"/#category's
+                                    // actual symbols, which — unlike emoji — have no built-in color
+                                    // of their own) rendered in the platform default (black),
+                                    // invisible against a dark theme.
+                                    color = textColor,
+                                    fontSize = if (isEmoticons) 14.sp else 26.sp,
+                                    maxLines = 1,
+                                    textAlign = TextAlign.Center,
+                                )
+                            }
                         }
                     }
                 }
