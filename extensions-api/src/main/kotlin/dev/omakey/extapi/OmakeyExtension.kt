@@ -36,9 +36,16 @@ data class ClipboardItem(
     val imagePath: String? = null,
 )
 
+interface EmojiRecentsRepository {
+    /** Most-recently-used emoji first. */
+    fun recent(): List<String>
+    fun recordUse(emoji: String)
+}
+
 interface ExtensionContext {
     val textEditor: TextEditorFacade
     val clipboardRepository: ClipboardRepository
+    val emojiRecents: EmojiRecentsRepository
     fun requestPanelClose()
 }
 

@@ -62,7 +62,7 @@ Being upfront about scope matters more than a longer feature list:
 - The Enter key adapts to context — it becomes "Go," "Search," "Send," "Next," or "Done"
   depending on what field you're typing into, instead of always being a plain return key.
 - Every key press shows a small preview bubble above your finger, so you always know what
-  landed.
+  landed — toggle it off in Settings if you'd rather not see it.
 - Tuned to keep up with fast, sloppy typing — built to handle fingers that overlap mid-word
   without falling behind.
 - Adjustable keyboard height and position in one combined screen: drag a handle to resize, drag a
@@ -76,11 +76,11 @@ no menus required:
 
 | Gesture | What it does |
 |---|---|
-| **Swipe left** on any key | Deletes the entire last word, not just one character — with its own distinct "swoosh" sound and a shimmer across the home row so it's unmistakably different from a normal tap. |
+| **Swipe left** on any key | Deletes the entire last word, not just one character — with its own distinct "swoosh" sound and a shimmer across the home row so it's unmistakably different from a normal tap. A trailing emoji or punctuation mark stuck right up against a word (no space) counts as its own swipe first — e.g. `hahaha😂` deletes the emoji on one swipe, the word on the next. |
 | **Swipe right** on any key | Inserts a space (optional — off by default, one tap to enable in Settings). |
 | **Swipe up** on the suggestion strip | Accepts the current suggestion, or — if you swipe up on a word you typed yourself — saves it to your personal dictionary so it's never flagged as a typo again. Swipe up a second time on an already-learned word to un-learn it. Either way you'll see a quick confirmation flash in the strip. |
 | **Swipe down** on the suggestion strip | Cycles backward through alternatives, the mirror of swipe up. |
-| **Swipe up/down repeatedly** | Genuinely cycles through every alternative, back and forth, as many times as you want — whether the word is still being typed, just finished, or you've tapped the cursor back into something you wrote a minute ago. |
+| **Swipe up/down repeatedly** | Genuinely cycles through every alternative, back and forth, as many times as you want — whether the word is still being typed, just finished, or you've tapped the cursor back into something you wrote a minute ago. Whichever candidate is currently selected stands out at full brightness; the rest fade, so you always know what's about to be typed. |
 | **Tap and hold Shift** | Locks in all-caps typing (caps lock). A quick tap instead capitalizes just the next letter, then releases — the standard mobile-keyboard convention, done properly. |
 | **Long-press and drag the spacebar** | Moves the text cursor left or right without needing to tap precisely inside your text — great for fixing a typo three words back without losing your place. |
 | **Long-press a letter key** with accent variants | The keyboard fades into a full-width symbol-picking mode showing that key's alternate characters (à, á, â, ä, etc.) — keep holding and drag anywhere left or right to browse, then lift to select. Drag further for a few extra everyday symbols, and it fades right back to letters the moment you release. |
@@ -127,6 +127,8 @@ Swipe to the Tools tab in the suggestion strip and you get, grouped clearly:
 
 ### A full, modern emoji picker
 
+- A "Recent" category up front, showing your most-recently-used emoji so you don't have to hunt
+  for the same one over and over.
 - Thousands of emoji across every standard category — smileys, people, animals, food, travel,
   activities, objects, symbols, and flags.
 - A dedicated emoticon/kaomoji category — `(^_^)`, `ヽ(´▽\`)/`, and dozens more text-based faces,
@@ -141,10 +143,17 @@ Swipe to the Tools tab in the suggestion strip and you get, grouped clearly:
   keep a clean, neutral spacebar by default; turn on "Pick accent color from system" if you want
   the spacebar (and press states) to pull color from your device's own wallpaper-based palette
   instead.
+- Two layout styles, independent of which color theme you pick: **Normal** (the default —
+  rounded keys with gaps between them) and **Grid** — every key becomes a bordered, edge-to-edge
+  cell with no gaps, and a pressed key fills its whole cell solid instead of just dimming, for a
+  plain spreadsheet-like look. Works with any theme, including your own custom one. The border's
+  color and thickness (Small/Medium/Large) are both customizable from the theme editor.
 - A full custom theme builder with an HSV color picker (plus a hex code field you can type a
   color into directly, or copy the current one from) — pick your own background, key, and accent
   colors and omakey derives the rest. A live, full-size keyboard preview stays on screen the
-  whole time you're editing.
+  whole time you're editing. Custom themes remember which layout style (Normal or Grid) they were
+  made for, and the theme list only shows you the ones that match whichever style is currently
+  active.
 - Adjustable font for the keys.
 - A home-row highlight to help you find your place by feel, without looking.
 - A consistent icon set for Shift, Backspace, and every Enter state — dimmed by default, lighting
@@ -174,9 +183,10 @@ setting live in local storage only.
 
 ## Status
 
-omakey is on release 2.1.2. Core typing, gestures, autocorrect, predictive text, themes, the
-clipboard manager, and the emoji panel are all working today and getting refined constantly — see
-[CHANGELOG.md](CHANGELOG.md) for the full history of what's shipped in each release.
+omakey is on release 2.3.0. Core typing, gestures, autocorrect, predictive text, themes (including
+the newer Grid layout style), the clipboard manager, and the emoji panel are all working today and
+getting refined constantly — see [CHANGELOG.md](CHANGELOG.md) for the full history of what's
+shipped in each release.
 
 ## Getting started
 

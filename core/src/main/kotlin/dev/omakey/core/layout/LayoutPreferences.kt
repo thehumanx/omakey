@@ -23,6 +23,11 @@ data class LayoutSettings(
      * is engaged (one-shot or locked), matching what almost every other keyboard does and what
      * users coming from one expect. */
     val alwaysShowUppercaseLetters: Boolean = true,
+    /** The brief enlarged-character bubble that floats above a tapped character key (distinct
+     * from the long-press accent/punctuation popup, `GestureSettings.showKeyPopup`, which is a
+     * held-key thing). On by default; off makes ordinary taps give no extra visual feedback
+     * beyond the key's own press state. */
+    val showTapPreview: Boolean = true,
 ) {
     companion object {
         const val DEFAULT_HEIGHT_DP = 260
@@ -62,6 +67,7 @@ class LayoutPreferences(context: Context) {
     fun setShowKeyBackgrounds(show: Boolean) = update { it.copy(showKeyBackgrounds = show) }
     fun setShowMiddleRowStripe(show: Boolean) = update { it.copy(showMiddleRowStripe = show) }
     fun setAlwaysShowUppercaseLetters(show: Boolean) = update { it.copy(alwaysShowUppercaseLetters = show) }
+    fun setShowTapPreview(show: Boolean) = update { it.copy(showTapPreview = show) }
 
     /** [offsetDp] is expected to already be clamped by the caller (the placement-mode drag UI,
      * which knows the live screen height) — only a non-negative floor is enforced here. */
@@ -75,6 +81,7 @@ class LayoutPreferences(context: Context) {
             .putBoolean(KEY_MIDDLE_STRIPE, next.showMiddleRowStripe)
             .putInt(KEY_BOTTOM_OFFSET, next.bottomOffsetDp)
             .putBoolean(KEY_ALWAYS_UPPERCASE, next.alwaysShowUppercaseLetters)
+            .putBoolean(KEY_SHOW_TAP_PREVIEW, next.showTapPreview)
             .apply()
         _settings.value = next
     }
@@ -85,6 +92,7 @@ class LayoutPreferences(context: Context) {
         showMiddleRowStripe = prefs.getBoolean(KEY_MIDDLE_STRIPE, true),
         bottomOffsetDp = prefs.getInt(KEY_BOTTOM_OFFSET, 0),
         alwaysShowUppercaseLetters = prefs.getBoolean(KEY_ALWAYS_UPPERCASE, true),
+        showTapPreview = prefs.getBoolean(KEY_SHOW_TAP_PREVIEW, true),
     )
 
     private companion object {
@@ -94,5 +102,6 @@ class LayoutPreferences(context: Context) {
         const val KEY_MIDDLE_STRIPE = "show_middle_row_stripe"
         const val KEY_BOTTOM_OFFSET = "keyboard_bottom_offset_dp"
         const val KEY_ALWAYS_UPPERCASE = "always_show_uppercase_letters"
+        const val KEY_SHOW_TAP_PREVIEW = "show_tap_preview"
     }
 }

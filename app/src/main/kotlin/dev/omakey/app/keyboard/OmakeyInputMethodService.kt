@@ -23,6 +23,7 @@ import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import dev.omakey.app.keyboard.ui.KeyboardRoot
 import dev.omakey.core.db.ClipboardEntity
 import dev.omakey.core.db.OmakeyDatabase
+import dev.omakey.core.emoji.EmojiRecentsPreferences
 import dev.omakey.core.feedback.HapticSoundPreferences
 import dev.omakey.core.gesture.GesturePreferences
 import dev.omakey.core.input.TextEditor
@@ -82,6 +83,7 @@ class OmakeyInputMethodService :
     private lateinit var gesturePreferences: GesturePreferences
     private lateinit var topStripTabPreferences: TopStripTabPreferences
     private lateinit var hapticSoundPreferences: HapticSoundPreferences
+    private lateinit var emojiRecentsPreferences: EmojiRecentsPreferences
     private lateinit var keyboardFeedback: KeyboardFeedback
     private var keyboardViewModel: KeyboardViewModel? = null
 
@@ -170,6 +172,7 @@ class OmakeyInputMethodService :
         gesturePreferences = GesturePreferences(applicationContext)
         topStripTabPreferences = TopStripTabPreferences(applicationContext)
         hapticSoundPreferences = HapticSoundPreferences(applicationContext)
+        emojiRecentsPreferences = EmojiRecentsPreferences(applicationContext)
         keyboardFeedback = VibratorKeyboardFeedback(applicationContext, hapticSoundPreferences)
 
         // Async, off the main thread, and a no-op after the first run — must not block
@@ -201,7 +204,14 @@ class OmakeyInputMethodService :
     private fun buildExtensionContext(): ExtensionContext = object : ExtensionContext {
         override val textEditor: TextEditorFacade = object : TextEditorFacade {
             override fun insertText(text: String) = text.forEach { this@OmakeyInputMethodService.textEditor.commitCharacter(it) }
-            override fun deleteBackward(count: Int) = repeat(count) { this@OmakeyInputMethodService.textEditor.deleteCharacterBackward() }
+            override fun deleteBackward(count: Int) {
+                repeat(count) { this@OmakeyInputMethodService.textEditor.deleteCharacterBackward() }
+                // Deleting via an extension (e.g. the emoji panel's own backspace) bypasses
+                // KeyboardViewModel.onDeleteCharacter() entirely — nothing else refreshes the
+                // suggestion strip for this path, so it kept showing whatever was suggested
+                // before the delete, stale, real bug fixed.
+                keyboardViewModel?.refreshSuggestionsAfterDeletion()
+            }
         }
         override val clipboardRepository: ClipboardRepository = object : ClipboardRepository {
             override suspend fun recent(limit: Int): List<ClipboardItem> =
@@ -228,6 +238,10 @@ class OmakeyInputMethodService :
                 }
                 database.clipboardDao().delete(id)
             }
+        }
+        override val emojiRecents: dev.omakey.extapi.EmojiRecentsRepository = object : dev.omakey.extapi.EmojiRecentsRepository {
+            override fun recent(): List<String> = emojiRecentsPreferences.recents.value
+            override fun recordUse(emoji: String) = emojiRecentsPreferences.recordUse(emoji)
         }
         override fun requestPanelClose() {
             keyboardViewModel?.extensionHost?.close()
@@ -269,6 +283,7 @@ class OmakeyInputMethodService :
                 val uiState by viewModel.uiState.collectAsState()
                 androidx.compose.runtime.CompositionLocalProvider(
                     LocalOmakeyTheme provides resolveEffectiveTheme(uiState.theme, uiState.useSystemAccent),
+                    dev.omakey.core.theme.LocalKeyboardLayoutMode provides uiState.layoutMode,
                 ) {
                     KeyboardRoot(
                         viewModel,

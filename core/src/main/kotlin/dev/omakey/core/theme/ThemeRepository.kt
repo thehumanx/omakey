@@ -26,12 +26,20 @@ class ThemeRepository(context: Context) {
     private val _useSystemAccent = MutableStateFlow(prefs.getBoolean(KEY_USE_SYSTEM_ACCENT, false))
     val useSystemAccent: StateFlow<Boolean> = _useSystemAccent
 
+    /** Normal vs. Grid — see [LayoutMode]'s own doc. Independent of [currentTheme] the same way
+     * [useSystemAccent] is: any color theme can be paired with either layout mode, so this is its
+     * own flag rather than a field on [OmakeyTheme] (which would otherwise need duplicating every
+     * preset/custom theme to offer both). */
+    private val _layoutMode = MutableStateFlow(loadPersistedLayoutMode())
+    val layoutMode: StateFlow<LayoutMode> = _layoutMode
+
     // Held as a field, not an inline lambda — SharedPreferences only keeps a weak reference to
     // registered listeners, so an unreferenced lambda would get garbage collected almost
     // immediately and silently stop firing.
     private val prefsChangeListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
         _currentTheme.value = loadPersistedTheme()
         _useSystemAccent.value = prefs.getBoolean(KEY_USE_SYSTEM_ACCENT, false)
+        _layoutMode.value = loadPersistedLayoutMode()
     }
 
     init {
@@ -48,14 +56,25 @@ class ThemeRepository(context: Context) {
         _useSystemAccent.value = enabled
     }
 
+    fun setLayoutMode(mode: LayoutMode) {
+        prefs.edit().putString(KEY_LAYOUT_MODE, mode.name).apply()
+        _layoutMode.value = mode
+    }
+
     private fun loadPersistedTheme(): OmakeyTheme {
         val json = prefs.getString(KEY_THEME_JSON, null) ?: return Presets.Dark
         return runCatching { ThemeSerializer.fromJson(json) }.getOrDefault(Presets.Dark)
+    }
+
+    private fun loadPersistedLayoutMode(): LayoutMode {
+        val stored = prefs.getString(KEY_LAYOUT_MODE, null) ?: return LayoutMode.NORMAL
+        return runCatching { LayoutMode.valueOf(stored) }.getOrDefault(LayoutMode.NORMAL)
     }
 
     private companion object {
         const val PREFS_NAME = "omakey_theme_prefs"
         const val KEY_THEME_JSON = "current_theme_json"
         const val KEY_USE_SYSTEM_ACCENT = "use_system_accent"
+        const val KEY_LAYOUT_MODE = "layout_mode"
     }
 }

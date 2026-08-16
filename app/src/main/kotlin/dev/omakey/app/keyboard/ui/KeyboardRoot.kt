@@ -2,7 +2,9 @@ package dev.omakey.app.keyboard.ui
 
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
@@ -13,11 +15,15 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -33,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -74,6 +81,83 @@ import kotlinx.coroutines.launch
 private fun ColorSpec.toComposeColor() = Color(argb.toInt())
 
 private const val SUGGESTION_STRIP_HEIGHT_DP = 44
+
+/** Opacity for every suggestion-strip candidate except the currently-focused one (index 0) —
+ * see [SuggestionsTabContent]. */
+private const val SUGGESTION_FADED_ALPHA = 0.45f
+
+/** Grid mode's border thickness — same everywhere, cell-to-cell and at the true outer edges.
+ *
+ * History, briefly: a "double-width outer border" approach (each cell drew a full 4-sided border,
+ * adjacent cells doubling up on shared edges, so outer edges needed a manually-matched 2x-width
+ * compensating border) kept needing new special cases every time another seam turned up thin or
+ * double-thick. Replaced with a single-draw model — every cell ([gridCellBorder]) draws *only* its
+ * right and bottom edges, so no seam can double up by construction — plus a region-level top+left
+ * "outer edge" border on the wrapping ancestor for the two sides no cell ever draws. That
+ * region-level border used `drawBehind`, which turned out to be the wrong tool: a `drawBehind` on
+ * an *ancestor* draws before its children, so a child's own full-bounds opaque background (e.g.
+ * `TopStrip`'s own `.background()`, or the top-left key's own fill) painted directly over it every
+ * time, real bug — reported as "missing with no suggestions on screen," but it was actually always
+ * covered regardless of content. `drawWithContent` (paint the border *after* `drawContent()`) was
+ * the theoretically-correct fix and should have worked, but didn't reliably show up in practice
+ * either, for reasons that weren't worth continuing to chase.
+ *
+ * Landed on the simplest reliable answer instead: skip the ancestor-level border entirely.
+ * `TopStrip`, `KeyGrid`, `ExtensionPanelSlot`'s own Column/header Row, and the emoji panel's
+ * bottom bar each call plain, official `Modifier.border()` **directly on themselves** (the exact
+ * same element that also owns their own background) — `border()` is guaranteed to draw on top of
+ * all of an element's own descendant content regardless of nesting depth, so there's no ordering
+ * ambiguity left to get wrong. Each region's own cells still draw right+bottom only, so a region's
+ * self-border only *actually* contributes new pixels on its top/left (its right/bottom edges just
+ * redundantly overlap the rightmost/bottommost cell's own edge — same pixels, not a visible
+ * doubling). The one accepted trade-off: two *different*, adjacent self-bordering regions (e.g.
+ * `TopStrip`'s bottom against `KeyGrid`'s top) do genuinely double up at that shared seam, since
+ * both are now separately, fully self-bordered — a real but minor, purely cosmetic inconsistency,
+ * traded for a border that's actually guaranteed to render.
+ *
+ * 0.75dp also read as too thin once actually on-device (real user feedback) — bumped to 1.5dp. */
+private val GRID_BORDER_WIDTH = 1.5.dp
+
+/** Maps the user's SM/MD/LG choice (`OmakeyTheme.gridBorderWidth`) to an actual stroke width —
+ * kept in the render layer, not `core`, since `Dp` is a Compose UI type (see `GridBorderWidth`'s
+ * own doc in `OmakeyTheme.kt`). MD matches [GRID_BORDER_WIDTH], the value every border already
+ * used before this became user-configurable. */
+private fun dev.omakey.core.theme.GridBorderWidth.toDp(): androidx.compose.ui.unit.Dp = when (this) {
+    dev.omakey.core.theme.GridBorderWidth.SM -> 1.dp
+    dev.omakey.core.theme.GridBorderWidth.MD -> GRID_BORDER_WIDTH
+    dev.omakey.core.theme.GridBorderWidth.LG -> 2.5.dp
+}
+
+/** [includeBottom] defaults to true (the normal case — a cell inside a multi-row grid needs to
+ * own the seam to the row below it, since nothing else will). Pass false for a cell that's the
+ * *only* row in its own region and sits directly above another self-bordering region (e.g. a
+ * suggestion chip, tool button, or `NumbersTabContent`'s number key — all single-row content
+ * inside `TopStrip`, which sits flush above `KeyGrid`) — real bug, fixed: those cells' own bottom
+ * edge was an *extra*, uncoordinated contributor at that exact seam on top of `KeyGrid`'s own top
+ * self-border, doubling it up specifically wherever a cell/chip/key actually existed in the strip
+ * (reported as "the bottom border is thicker when there's a suggestion" — an empty strip has no
+ * chips to contribute the extra stroke, so it looked correct only by having nothing there). */
+private fun Modifier.gridCellBorder(color: Color, strokeWidth: androidx.compose.ui.unit.Dp = GRID_BORDER_WIDTH, includeBottom: Boolean = true): Modifier = this.drawBehind {
+    val strokePx = strokeWidth.toPx()
+    val half = strokePx / 2f
+    drawLine(color, Offset(size.width - half, 0f), Offset(size.width - half, size.height), strokePx)
+    if (includeBottom) drawLine(color, Offset(0f, size.height - half), Offset(size.width, size.height - half), strokePx)
+}
+
+/** `TopStrip` sits flush (zero gap) directly above `KeyGrid`, which already self-borders its own
+ * top edge — a second full 4-sided border on `TopStrip` would double up at that one shared seam
+ * (the exact inconsistency reported after landing the self-border fix). Skips the bottom edge for
+ * exactly that reason. Still applied directly on `TopStrip`'s own element (not a separate
+ * ancestor) via `drawWithContent`, same "must be the same element that owns the background" lesson
+ * as everywhere else here — this one just also needs to leave one side out. */
+private fun Modifier.gridBorderExceptBottom(color: Color, strokeWidth: androidx.compose.ui.unit.Dp = GRID_BORDER_WIDTH): Modifier = this.drawWithContent {
+    drawContent()
+    val strokePx = strokeWidth.toPx()
+    val half = strokePx / 2f
+    drawLine(color, Offset(half, 0f), Offset(half, size.height), strokePx)
+    drawLine(color, Offset(size.width - half, 0f), Offset(size.width - half, size.height), strokePx)
+    drawLine(color, Offset(0f, half), Offset(size.width, half), strokePx)
+}
 
 /** Matches `EmojiPanelExtension.id` (`extensions-builtin`) and
  * `KeyboardViewModel.PREFERRED_EXTENSION_ID` — kept as a plain string constant here rather than a
@@ -186,8 +270,13 @@ fun KeyboardRoot(
             .background(theme.keyboardBackground.toComposeColor())
             // Leaves a gap for the system gesture pill / 3-button nav bar instead of drawing under
             // it — without this the bottom row (and the extension panel's close button) can sit
-            // underneath or flush against the system nav area.
-            .navigationBarsPadding(),
+            // underneath or flush against the system nav area. Bottom only (real bug, fixed): the
+            // plain `.navigationBarsPadding()` this used to be applies whatever sides
+            // WindowInsets.navigationBars reports, which on gesture-nav devices includes left/
+            // right edge-gesture insets too — invisible in Normal mode (no border to reveal it)
+            // but a very visible dark gutter down both sides once Grid mode's bordered cells make
+            // "the keyboard isn't actually full-width" obvious.
+            .windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom)),
     ) {
         // Which of the 3 "TopStrip is visible" bottom-content modes is active — used only to
         // drive the Crossfade below, not the branching itself (that's still the same explicit
@@ -208,6 +297,14 @@ fun KeyboardRoot(
             uiState.activeExtensionId == null -> "keys"
             else -> null // any other extension takes over the whole strip+grid area; see below
         }
+        // Box (z-stacking), not Column, on purpose: the banner below needs to float *on top of*
+        // whichever of TopStrip/KeyGrid/ExtensionPanelSlot is showing, not sit below it. The
+        // actual vertical stacking of TopStrip above KeyGrid happens via the inner Column —
+        // using this outer Box alone for that (real bug, fixed) silently painted KeyGrid's solid
+        // background directly over TopStrip instead of below it, hiding the suggestion/tools/
+        // numbers strip entirely.
+        Box(Modifier.fillMaxWidth()) {
+        Column(Modifier.fillMaxWidth()) {
         if (uiState.activeExtensionId != null && bottomContentMode == null) {
             // Replaces the suggestion strip AND the key grid entirely — matches how the
             // clipboard/GIF pickers behave on every mainstream keyboard, instead of stacking
@@ -313,6 +410,28 @@ fun KeyboardRoot(
                 }
                 }
             }
+        }
+        } // Column
+
+        // Learn/unlearn confirmation ("hello learned") — an overlay independent of whichever
+        // extension bar content (suggestions/numbers/tools, emoji, clipboard, or a third-party
+        // extension's own ExtensionPanelSlot) happens to be active underneath, cleared
+        // automatically after ~0.5s (see KeyboardViewModel.showBanner). Previously lived inside
+        // TopStrip itself, so it silently never appeared while any non-suggestion extension panel
+        // (anything routed through the `bottomContentMode == null` / ExtensionPanelSlot branch
+        // above) was open.
+        val banner = uiState.bannerMessage
+        if (banner != null) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(SUGGESTION_STRIP_HEIGHT_DP.dp)
+                    .background(theme.suggestionBarBackground.toComposeColor()),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(text = banner, color = theme.keyTextColor.toComposeColor(), fontFamily = fontFamily, fontSize = 14.sp)
+            }
+        }
         }
 
         // User-adjustable breathing room below the spacebar row, set via the drag-to-position
@@ -428,11 +547,22 @@ private fun KeyGrid(
             animationSpec = androidx.compose.animation.core.tween(160),
         )
     }
+    val isGridModeOuter = dev.omakey.core.theme.LocalKeyboardLayoutMode.current == dev.omakey.core.theme.LayoutMode.GRID
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(gridHeightDp.dp)
             .onGloballyPositioned(onKeysAreaPositioned)
+            // Plain, official Modifier.border() directly on this same Box — real bug, fixed: a
+            // region-level border on an *ancestor* Column kept getting silently covered by this
+            // Box's own descendants' opaque key backgrounds (e.g. the top-left key's own fill
+            // sits exactly at this Box's top-left corner, painting over anything an ancestor drew
+            // there via drawBehind). border() draws on top of all descendant content regardless
+            // of nesting depth, guaranteed, so applying it directly here has no such ambiguity.
+            // Its own cells already draw right+bottom only (gridCellBorder), so this border's own
+            // right/bottom edges just redundantly overlap those (same pixels, no visible
+            // doubling) while its top/left edges are the only real contributor there.
+            .let { m -> if (isGridModeOuter) m.border(theme.gridBorderWidth.toDp(), theme.gridBorderColor.toComposeColor()) else m }
             .let { base ->
                 if (accessibleMode) {
                     base // gesture capture skipped entirely — keys below are individually clickable
@@ -664,10 +794,14 @@ private fun KeyGrid(
                 }
             },
     ) {
+        val isGridMode = dev.omakey.core.theme.LocalKeyboardLayoutMode.current == dev.omakey.core.theme.LayoutMode.GRID
         Column(
             Modifier
                 .fillMaxWidth()
-                .padding(PaddingValues(horizontal = 4.dp))
+                // Grid mode is meant to be edge-to-edge — this 4dp gutter (harmless/invisible in
+                // Normal mode, which has no border to reveal it) left a visible sliver of
+                // unbordered background down both sides of the bordered grid otherwise.
+                .let { m -> if (isGridMode) m else m.padding(PaddingValues(horizontal = 4.dp)) }
                 // Fades out as symbol mode fades in (see symbolModeAlpha above) — alpha only, not
                 // removed from composition, so keyBoundsState (needed by the drag-select math in
                 // the pointer loop above, which reads the held key's own bounds throughout) keeps
@@ -701,7 +835,11 @@ private fun KeyGrid(
             }
         }
 
-        if (previewKey != null) {
+        // Gated on the render side, not inside onPreviewKeyStable — that lambda is deliberately
+        // `remember`ed with no keys (see its own doc, this is what keeps typing from recomposing
+        // every key row), so it would otherwise capture a stale first-composition value of this
+        // setting instead of staying live if the user changes it from Settings mid-session.
+        if (previewKey != null && layoutSettings.showTapPreview) {
             val (key, rect) = previewKey
             val density = androidx.compose.ui.platform.LocalDensity.current
             val bubbleWidthPx = with(density) { 44.dp.toPx() }.coerceAtLeast(rect.width)
@@ -711,11 +849,25 @@ private fun KeyGrid(
             val x = ((rect.left + rect.right) / 2f - bubbleWidthPx / 2f)
                 .coerceIn(0f, (parentWidthPx - bubbleWidthPx).coerceAtLeast(0f))
             val y = (rect.top - bubbleHeightPx - gapPx).coerceAtLeast(0f)
+            val isGridModeBubble = dev.omakey.core.theme.LocalKeyboardLayoutMode.current == dev.omakey.core.theme.LayoutMode.GRID
+            val bubbleShape = if (isGridModeBubble) {
+                androidx.compose.foundation.shape.RoundedCornerShape(0.dp)
+            } else {
+                androidx.compose.foundation.shape.RoundedCornerShape(8.dp)
+            }
+            val bubbleBackground = if (isGridModeBubble) theme.keyBackgroundPressed.toComposeColor() else theme.keySpecialBackground.toComposeColor()
             Box(
                 modifier = Modifier
                     .offset { androidx.compose.ui.unit.IntOffset(x.toInt(), y.toInt()) }
                     .size(with(density) { bubbleWidthPx.toDp() }, with(density) { bubbleHeightPx.toDp() })
-                    .background(theme.keySpecialBackground.toComposeColor(), androidx.compose.foundation.shape.RoundedCornerShape(8.dp)),
+                    .background(bubbleBackground, bubbleShape)
+                    .let { m ->
+                        if (isGridModeBubble) {
+                            m.border(theme.gridBorderWidth.toDp(), theme.gridBorderColor.toComposeColor(), bubbleShape)
+                        } else {
+                            m
+                        }
+                    },
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
@@ -779,6 +931,7 @@ private fun SymbolModeOverlay(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
             ) {
+                val isGridModeOverlay = dev.omakey.core.theme.LocalKeyboardLayoutMode.current == dev.omakey.core.theme.LayoutMode.GRID
                 state.options.forEachIndexed { index, option ->
                     val isHighlighted = index == state.highlightedIndex
                     // Cells beyond the key's own curated popupChars (the EXTENDED_POPUP_SYMBOLS
@@ -796,17 +949,29 @@ private fun SymbolModeOverlay(
                     } else {
                         1f
                     }
+                    val cellShape = if (isGridModeOverlay) {
+                        androidx.compose.foundation.shape.RoundedCornerShape(0.dp)
+                    } else {
+                        androidx.compose.foundation.shape.RoundedCornerShape(10.dp)
+                    }
                     Box(
                         modifier = Modifier
                             .width(cellWidthDp)
                             .height(56.dp)
-                            .padding(3.dp)
+                            .let { m -> if (isGridModeOverlay) m else m.padding(3.dp) }
                             .alpha(optionAlpha)
                             .let {
                                 if (isHighlighted) {
-                                    it.background(theme.keyBackgroundPressed.toComposeColor(), androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
+                                    it.background(theme.keyBackgroundPressed.toComposeColor(), cellShape)
                                 } else {
-                                    it.background(theme.keySpecialBackground.toComposeColor(), androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
+                                    it.background(theme.keySpecialBackground.toComposeColor(), cellShape)
+                                }
+                            }
+                            .let { m ->
+                                if (isGridModeOverlay) {
+                                    m.border(theme.gridBorderWidth.toDp(), theme.gridBorderColor.toComposeColor(), cellShape)
+                                } else {
+                                    m
                                 }
                             },
                         contentAlignment = Alignment.Center,
@@ -982,6 +1147,11 @@ internal fun KeyRowView(
     // case (shiftOn/capsLockOn), same as what's about to be typed. See LayoutSettings's doc.
     alwaysShowUppercaseLetters: Boolean = true,
     shimmerProgress: Float = 0f,
+    // False only for NumbersTabContent — a single row sitting directly above KeyGrid inside
+    // TopStrip, whose own top self-border already owns that shared seam (see gridCellBorder's
+    // own doc on includeBottom). Every other caller is a row inside a real multi-row grid, where
+    // each row still needs to own the seam to the row below it.
+    gridCellBottomBorder: Boolean = true,
 ) {
     Box(
         Modifier
@@ -1065,7 +1235,14 @@ internal fun KeyRowView(
                 val fontSize = if (key.label.length == 1) 24.sp else 15.sp
                 val isSpace = key.code == SpecialKeyCode.SPACE
                 val isCapsLockKey = key.code == SpecialKeyCode.SHIFT && capsLockOn
+                val isPressed = pressedKeyCode == key.code
+                val isGridMode = dev.omakey.core.theme.LocalKeyboardLayoutMode.current == dev.omakey.core.theme.LayoutMode.GRID
                 val keyBackground = when {
+                    // Grid mode's whole point is a solid fill on press, so it takes priority over
+                    // every other background rule here (including the spacebar's own accent color
+                    // and the "borderless" showKeyBackgrounds toggle, which is a Normal-mode-only
+                    // preference — a borderless grid isn't a grid).
+                    isGridMode && isPressed -> theme.keyBackgroundPressed.toComposeColor()
                     isSpace -> theme.spacebarAccentColor.toComposeColor()
                     // Caps lock gets its own persistent highlight, same visual language as a
                     // physical caps-lock LED — distinguishes "locked on" from a plain momentary
@@ -1077,11 +1254,30 @@ internal fun KeyRowView(
                     // which read as flat, barely-distinguishable "weird grey" instead of a clear
                     // locked-on indicator (real bug report).
                     isCapsLockKey -> theme.keyBackgroundPressed.toComposeColor()
-                    !showKeyBackgrounds -> Color.Transparent
+                    !isGridMode && !showKeyBackgrounds -> Color.Transparent
+                    // Grid mode deliberately has only 4 meaningfully distinct colors — background,
+                    // border, spacebar accent, and the home-row tint below — not a separate "key
+                    // color"/"special key color" on top. Real user feedback: keeping keyBackground
+                    // and keySpecialBackground as distinct fields there just meant two theme
+                    // settings doing the same visual job (every cell is "boxed" by its border
+                    // regardless of key type), for no benefit.
+                    isGridMode -> theme.keyboardBackground.toComposeColor()
                     key.keyType == dev.omakey.core.layout.KeyType.SPECIAL -> theme.keySpecialBackground.toComposeColor()
                     else -> theme.keyBackground.toComposeColor()
                 }
                 val keyDescription = if (key.code == SpecialKeyCode.ENTER) describeKey(key, enterAction) else describeKey(key)
+                // Grid mode: no gap between cells, square corners, and a hairline border in
+                // theme.gridBorderColor — the same single color, at full opacity, on every key
+                // regardless of type (shift/backspace/symbols/emoji/enter included). Previously
+                // derived two different alpha levels from keyTextColor (dimmer for special keys),
+                // which read as an inconsistency/bug rather than an intentional cue — real user
+                // feedback, removed.
+                val keyShapeForMode = if (isGridMode) {
+                    androidx.compose.foundation.shape.RoundedCornerShape(0.dp)
+                } else {
+                    androidx.compose.foundation.shape.RoundedCornerShape(8.dp)
+                }
+                val gridBorderColor = theme.gridBorderColor.toComposeColor()
                 Box(
                     modifier = Modifier
                         .weight(key.widthWeight)
@@ -1094,8 +1290,19 @@ internal fun KeyRowView(
                                 m.semantics { contentDescription = keyDescription }
                             }
                         }
-                        .padding(horizontal = 1.5.dp, vertical = 1.5.dp)
-                        .background(keyBackground, androidx.compose.foundation.shape.RoundedCornerShape(8.dp)),
+                        .padding(horizontal = if (isGridMode) 0.dp else 1.5.dp, vertical = if (isGridMode) 0.dp else 1.5.dp)
+                        .background(keyBackground, keyShapeForMode)
+                        // Home-row tint layered on top of the cell's own opaque fill, not
+                        // instead of the row's own background behind it. Real bug, fixed:
+                        // middleRowStripeColor previously only ever painted the row's own
+                        // container Box, which every key's opaque fill completely covers once
+                        // keys have solid backgrounds (Grid mode, or Normal mode's "Key
+                        // backgrounds" toggle) — the home-row highlight was invisible in both
+                        // cases. middleRowStripeColor is a low-alpha tint by design (see
+                        // OmakeyTheme's own preset values), so drawing it as a second background
+                        // layer composites correctly over whatever's already filled.
+                        .let { m -> if (isGridMode && isHomeRow) m.background(theme.middleRowStripeColor.toComposeColor(), keyShapeForMode) else m }
+                        .let { m -> if (isGridMode) m.gridCellBorder(gridBorderColor, theme.gridBorderWidth.toDp(), includeBottom = gridCellBottomBorder) else m },
                     contentAlignment = Alignment.Center,
                 ) {
                     val isActiveShift = key.code == SpecialKeyCode.SHIFT && shiftOn
@@ -1105,7 +1312,6 @@ internal fun KeyRowView(
                     // control keys as secondary, plus gives a clear "yes, I registered your
                     // press" cue for keys like backspace that have no other visual feedback.
                     val isDimmable = key.keyType == dev.omakey.core.layout.KeyType.SPECIAL && !isSpace
-                    val isPressed = pressedKeyCode == key.code
                     val tint = when {
                         isActiveShift -> theme.keyBackgroundPressed.toComposeColor()
                         isDimmable && !isPressed -> theme.keyTextColor.toComposeColor().copy(alpha = 0.5f)
@@ -1180,11 +1386,23 @@ private fun TopStrip(
         }
     }
 
+    val isGridMode = dev.omakey.core.theme.LocalKeyboardLayoutMode.current == dev.omakey.core.theme.LayoutMode.GRID
     Box(
         Modifier
             .fillMaxWidth()
             .height(44.dp)
-            .background(theme.suggestionBarBackground.toComposeColor()),
+            // Grid mode fills with keyboardBackground (the same single "Background" field every
+            // grid-mode cell fills with — see KeyRowView), not suggestionBarBackground, so the
+            // strip reads consistently even with nothing in it (e.g. no suggestions to show)
+            // instead of showing through to a separately-configured, possibly very different
+            // color underneath the per-chip fills.
+            .background(if (isGridMode) theme.keyboardBackground.toComposeColor() else theme.suggestionBarBackground.toComposeColor())
+            // Applied directly on this same element as its own background (see GRID_BORDER_WIDTH's
+            // doc for why that matters) — but skipping the bottom edge specifically, since
+            // KeyGrid sits flush directly below with zero gap and already self-borders its own
+            // top edge; a second full border here would double up right at that one seam (real
+            // bug, fixed — reported as "the border above QWERTY is thicker than the others").
+            .let { m -> if (isGridMode) m.gridBorderExceptBottom(theme.gridBorderColor.toComposeColor(), theme.gridBorderWidth.toDp()) else m },
     ) {
         androidx.compose.foundation.pager.HorizontalPager(
             state = pagerState,
@@ -1204,6 +1422,7 @@ private fun TopStrip(
                 0 -> SuggestionsTabContent(
                     suggestions = uiState.suggestions,
                     firstSuggestionKind = uiState.firstSuggestionKind,
+                    activeSuggestionIndex = uiState.activeSuggestionIndex,
                     theme = theme,
                     fontFamily = fontFamily,
                     onAccept = viewModel::onSuggestionAccepted,
@@ -1215,20 +1434,6 @@ private fun TopStrip(
                 )
             }
         }
-        // Learn/unlearn confirmation ("hello learnt") — briefly covers whichever page is showing,
-        // same visual slot as the suggestions themselves, cleared automatically after ~0.5s (see
-        // KeyboardViewModel.showBanner).
-        val banner = uiState.bannerMessage
-        if (banner != null) {
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .background(theme.suggestionBarBackground.toComposeColor()),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(text = banner, color = theme.keyTextColor.toComposeColor(), fontFamily = fontFamily, fontSize = 14.sp)
-            }
-        }
     }
 }
 
@@ -1236,31 +1441,76 @@ private fun TopStrip(
 private fun SuggestionsTabContent(
     suggestions: List<String>,
     firstSuggestionKind: dev.omakey.app.keyboard.SuggestionKind,
+    activeSuggestionIndex: Int,
     theme: OmakeyTheme,
     fontFamily: androidx.compose.ui.text.font.FontFamily?,
     onAccept: (String) -> Unit,
 ) {
+    val isGridMode = dev.omakey.core.theme.LocalKeyboardLayoutMode.current == dev.omakey.core.theme.LayoutMode.GRID
+    // -1 means nothing's been cycled yet (via swipe up/down) — treat index 0 as active, same as
+    // before cycling existed. Once cycling starts, KeyboardViewModel.applySuggestion() never
+    // reorders this list — it only tracks *which* index is currently applied — so the highlighted
+    // item must follow that index, not always sit at position 0 (real bug, fixed: swiping to,
+    // say, "these" left "this" looking highlighted/quoted the whole time).
+    val activeIndex = if (activeSuggestionIndex in suggestions.indices) activeSuggestionIndex else 0
     LazyRow(
-        Modifier.fillMaxWidth().fillMaxHeight().padding(horizontal = 8.dp),
+        Modifier.fillMaxWidth().fillMaxHeight().padding(horizontal = if (isGridMode) 0.dp else 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         itemsIndexed(suggestions) { index, suggestion ->
+            val isActive = index == activeIndex
             // Quoted, same as Gboard/Fleksy's convention for "this slot is a typo fix," not just
             // another word choice — lets the user tell at a glance that swiping/tapping it
             // corrects a word rather than merely completing or predicting one. Both correction
             // kinds (the word being typed right now, or the one just finished) render the same
-            // way here — the difference is only in which text gets edited when accepted.
-            val isCorrection = index == 0 && firstSuggestionKind != dev.omakey.app.keyboard.SuggestionKind.PLAIN
+            // way here — the difference is only in which text gets edited when accepted. Follows
+            // whichever candidate is currently active (see activeIndex above), not always index 0.
+            val isCorrection = isActive && firstSuggestionKind != dev.omakey.app.keyboard.SuggestionKind.PLAIN
+            // The currently active candidate — the one swipe-up/down cycling moved to and space
+            // would actually commit — renders at full opacity while the rest fade, letting the
+            // user see at a glance what's about to be typed as they cycle instead of every
+            // candidate looking equally "selected."
+            val itemColor = theme.keyTextColor.toComposeColor().let { if (isActive) it else it.copy(alpha = SUGGESTION_FADED_ALPHA) }
+            // Tracked so a tap fills the whole cell solid (keyBackgroundPressed), same as tapping
+            // a letter key in the main grid — real user feedback: without this, tapping a
+            // suggestion/tool/tab cell showed no press feedback at all next to keys that do.
+            val interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+            val isPressed by interactionSource.collectIsPressedAsState()
             Box(
                 Modifier
-                    .padding(horizontal = 4.dp)
-                    .clickable { onAccept(suggestion) }
-                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                    .let { m -> if (isGridMode) m.fillMaxHeight() else m.padding(horizontal = 4.dp) }
+                    .clickable(
+                        interactionSource = interactionSource,
+                        // Grid mode's own solid press-fill (below) already gives clear feedback —
+                        // a ripple on top of that reads as a redundant second effect.
+                        indication = if (isGridMode) null else androidx.compose.foundation.LocalIndication.current,
+                    ) { onAccept(suggestion) }
+                    .let { m ->
+                        // Same grid-cell treatment as KeyRowView: edge-to-edge, square, bordered,
+                        // AND filled with keyboardBackground (Grid mode's single "Background"
+                        // field — see KeyRowView) — matches the boxed look of the key rows
+                        // underneath instead of floating pill-like chips. Real bug, fixed: this had
+                        // a border but no background fill of its own, so it stayed transparent and
+                        // showed TopStrip's own suggestionBarBackground through instead — on a
+                        // custom theme where that differs, every suggestion chip looked like it
+                        // was ignoring the theme entirely, while the Numbers row (which reuses
+                        // KeyRowView, always filling per cell) looked correct right next to it.
+                        if (isGridMode) {
+                            m.background(if (isPressed) theme.keyBackgroundPressed.toComposeColor() else theme.keyboardBackground.toComposeColor())
+                                // No bottom edge — this chip is the only row inside TopStrip,
+                                // which sits flush above KeyGrid; KeyGrid's own top self-border
+                                // already owns that seam (see gridCellBorder's includeBottom doc).
+                                .gridCellBorder(theme.gridBorderColor.toComposeColor(), theme.gridBorderWidth.toDp(), includeBottom = false)
+                                .padding(horizontal = 12.dp, vertical = 6.dp)
+                        } else {
+                            m.padding(horizontal = 10.dp, vertical = 6.dp)
+                        }
+                    },
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
                     text = if (isCorrection) "“$suggestion”" else suggestion,
-                    color = theme.keyTextColor.toComposeColor(),
+                    color = itemColor,
                     fontFamily = fontFamily,
                     fontSize = 16.sp,
                 )
@@ -1289,6 +1539,47 @@ private fun ToolsTabContent(
             Triple("Cut", PhosphorCut, viewModel::onCut),
             Triple("Paste", PhosphorPaste, viewModel::onPaste),
         )
+    }
+    val isGridMode = dev.omakey.core.theme.LocalKeyboardLayoutMode.current == dev.omakey.core.theme.LayoutMode.GRID
+    if (isGridMode) {
+        // Fixed, non-scrolling Row with every tool given equal weight — fills the whole strip
+        // width edge-to-edge like every other bordered grid row, instead of a left-aligned
+        // scrollable LazyRow leaving empty space on the right when there's fewer tools than fit
+        // (real user feedback: this specifically only happened in Grid mode, since Normal mode's
+        // floating chips never needed to visually "fill" anything). No group dividers here —
+        // ToolGroupDivider already no-ops in Grid mode, so there'd be nothing to fit a slot for
+        // anyway.
+        data class ToolAction(val description: String, val icon: ImageVector, val enabled: Boolean, val onClick: () -> Unit)
+        val actions = buildList {
+            add(ToolAction("Undo", PhosphorUndo, canUndo && !clipboardModeActive) { feedback.onKeyPress(); viewModel.undo() })
+            add(ToolAction("Redo", PhosphorRedo, canRedo && !clipboardModeActive) { feedback.onKeyPress(); viewModel.redo() })
+            editTools.forEach { (description, icon, action) ->
+                add(ToolAction(description, icon, !clipboardModeActive) { feedback.onKeyPress(); action() })
+            }
+            add(
+                ToolAction(
+                    if (clipboardModeActive) "Close clipboard" else "Clipboard",
+                    PhosphorClipboardHistory,
+                    true,
+                ) {
+                    feedback.onKeyPress()
+                    if (clipboardModeActive) viewModel.extensionHost.close() else viewModel.selectExtension("builtin.clipboard")
+                },
+            )
+        }
+        Row(Modifier.fillMaxWidth().fillMaxHeight(), verticalAlignment = Alignment.CenterVertically) {
+            actions.forEach { action ->
+                ToolButton(
+                    description = action.description,
+                    icon = action.icon,
+                    enabled = action.enabled,
+                    theme = theme,
+                    onClick = action.onClick,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+        return
     }
     LazyRow(
         Modifier.fillMaxWidth().fillMaxHeight().padding(horizontal = 8.dp),
@@ -1344,6 +1635,10 @@ private fun ToolsTabContent(
 
 @Composable
 private fun ToolGroupDivider(theme: OmakeyTheme) {
+    // A free-floating line sitting inside an already-bordered grid cell reads as a stray mark,
+    // not an intentional grouping divider — Grid mode's own per-button borders already separate
+    // every tool, including across these group boundaries, so this is redundant there.
+    if (dev.omakey.core.theme.LocalKeyboardLayoutMode.current == dev.omakey.core.theme.LayoutMode.GRID) return
     Box(
         Modifier
             .padding(horizontal = 4.dp)
@@ -1354,12 +1649,51 @@ private fun ToolGroupDivider(theme: OmakeyTheme) {
 }
 
 @Composable
-private fun ToolButton(description: String, icon: ImageVector, enabled: Boolean, theme: OmakeyTheme, onClick: () -> Unit) {
+private fun ToolButton(
+    description: String,
+    icon: ImageVector,
+    enabled: Boolean,
+    theme: OmakeyTheme,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val isGridMode = dev.omakey.core.theme.LocalKeyboardLayoutMode.current == dev.omakey.core.theme.LayoutMode.GRID
+    val interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
     Box(
-        Modifier
-            .padding(horizontal = 4.dp)
-            .let { m -> if (enabled) m.clickable(onClick = onClick) else m }
-            .padding(horizontal = 12.dp, vertical = 8.dp)
+        modifier
+            .let { m -> if (isGridMode) m.fillMaxHeight() else m.padding(horizontal = 4.dp) }
+            .let { m ->
+                if (enabled) {
+                    m.clickable(
+                        interactionSource = interactionSource,
+                        // Grid mode's own solid press-fill (below) already gives clear feedback —
+                        // a ripple on top of that reads as a redundant second effect.
+                        indication = if (isGridMode) null else androidx.compose.foundation.LocalIndication.current,
+                        onClick = onClick,
+                    )
+                } else {
+                    m
+                }
+            }
+            .let { m ->
+                // Filled with keyboardBackground (Grid mode's single "Background" field), same
+                // real-bug fix as SuggestionsTabContent's chips — this used to have only a
+                // border, staying transparent over ToolsTabContent's own (potentially very
+                // different, on a custom theme) background color. Also fills solid with
+                // keyBackgroundPressed while held, matching the main key grid's own press
+                // feedback (real user feedback: tapping these showed nothing next to keys that
+                // visibly fill on press).
+                if (isGridMode) {
+                    m.background(if (isPressed) theme.keyBackgroundPressed.toComposeColor() else theme.keyboardBackground.toComposeColor())
+                        // Same includeBottom = false reasoning as SuggestionsTabContent's chips —
+                        // this button is the only row inside TopStrip.
+                        .gridCellBorder(theme.gridBorderColor.toComposeColor(), theme.gridBorderWidth.toDp(), includeBottom = false)
+                        .padding(horizontal = 14.dp, vertical = 8.dp)
+                } else {
+                    m.padding(horizontal = 12.dp, vertical = 8.dp)
+                }
+            }
             .semantics { contentDescription = description },
         contentAlignment = Alignment.Center,
     ) {
@@ -1391,7 +1725,8 @@ private fun NumbersTabContent(
     } else {
         Layouts.NumberRow.keys
     }
-    Box(Modifier.fillMaxWidth().fillMaxHeight().padding(horizontal = 4.dp)) {
+    val isGridMode = dev.omakey.core.theme.LocalKeyboardLayoutMode.current == dev.omakey.core.theme.LayoutMode.GRID
+    Box(Modifier.fillMaxWidth().fillMaxHeight().let { m -> if (isGridMode) m else m.padding(horizontal = 4.dp) }) {
         KeyRowView(
             rowKeys = rowKeys,
             rowHeightDp = 44,
@@ -1404,6 +1739,9 @@ private fun NumbersTabContent(
             ancestorCoordinates = noOpAncestor,
             onBoundsMeasured = { _, _, _ -> },
             fontFamily = fontFamily,
+            // This row sits directly above KeyGrid inside TopStrip — see gridCellBottomBorder's
+            // own doc on KeyRowView.
+            gridCellBottomBorder = false,
         )
     }
 }
@@ -1422,28 +1760,53 @@ private fun ExtensionPanelSlot(viewModel: KeyboardViewModel, heightDp: Int, show
     androidx.compose.runtime.CompositionLocalProvider(
         dev.omakey.core.theme.LocalOmakeyTheme provides uiState.theme,
     ) {
+        val isGridMode = dev.omakey.core.theme.LocalKeyboardLayoutMode.current == dev.omakey.core.theme.LayoutMode.GRID
         Column(
             Modifier
                 .fillMaxWidth()
                 .height(heightDp.dp)
-                .background(uiState.theme.suggestionBarBackground.toComposeColor()),
+                .background(if (isGridMode) uiState.theme.keyboardBackground.toComposeColor() else uiState.theme.suggestionBarBackground.toComposeColor())
+                // Directly on this same element as its own background — see KeyGrid's identical
+                // fix/doc in KeyboardRoot for why a border on an ancestor kept getting silently
+                // covered by this element's own descendants' opaque fills.
+                .let { m -> if (isGridMode) m.border(uiState.theme.gridBorderWidth.toDp(), uiState.theme.gridBorderColor.toComposeColor()) else m },
         ) {
             if (showHeaderRow) {
-                Row(Modifier.fillMaxWidth().height(36.dp)) {
+                val gridBorderColor = uiState.theme.gridBorderColor.toComposeColor()
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(36.dp)
+                        // Plain border() directly on this Row, same fix/reasoning as KeyGrid's own
+                        // doc — its own tab cells already draw right+bottom only.
+                        .let { m -> if (isGridMode) m.border(uiState.theme.gridBorderWidth.toDp(), gridBorderColor) else m },
+                ) {
                     allExtensions.forEach { ext ->
                         val glyph = (ext.icon as? dev.omakey.extapi.ExtensionIcon.Emoji)?.glyph ?: "•"
+                        val interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                        val isPressed by interactionSource.collectIsPressedAsState()
                         Box(
                             modifier = Modifier
                                 .fillMaxHeight()
                                 .weight(1f)
-                                .clickable { viewModel.selectExtension(ext.id) }
+                                .clickable(
+                                    interactionSource = interactionSource,
+                                    indication = if (isGridMode) null else androidx.compose.foundation.LocalIndication.current,
+                                ) { viewModel.selectExtension(ext.id) }
                                 .background(
-                                    if (ext.id == activeId) {
-                                        uiState.theme.keySpecialBackground.toComposeColor()
-                                    } else {
-                                        Color.Transparent
+                                    when {
+                                        isGridMode && (ext.id == activeId || isPressed) -> uiState.theme.keyBackgroundPressed.toComposeColor()
+                                        // Real bug, fixed: inactive tabs fell through to
+                                        // Color.Transparent in Grid mode too, same as every other
+                                        // unfilled grid-mode cell — showing the header row's own
+                                        // (potentially very different, on a custom theme)
+                                        // background through instead of keyboardBackground.
+                                        isGridMode -> uiState.theme.keyboardBackground.toComposeColor()
+                                        ext.id == activeId -> uiState.theme.keySpecialBackground.toComposeColor()
+                                        else -> Color.Transparent
                                     },
-                                ),
+                                )
+                                .let { m -> if (isGridMode) m.gridCellBorder(gridBorderColor, uiState.theme.gridBorderWidth.toDp()) else m },
                             contentAlignment = Alignment.Center,
                         ) {
                             Text(text = glyph, fontSize = 18.sp)
@@ -1452,10 +1815,23 @@ private fun ExtensionPanelSlot(viewModel: KeyboardViewModel, heightDp: Int, show
                     // Returns to the normal keyboard — lives in the panel's own header row rather
                     // than needing to double up with the ?123 key at the bottom, which used to be
                     // the only way back and sat awkwardly close to the system nav area.
+                    val closeInteractionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                    val closeIsPressed by closeInteractionSource.collectIsPressedAsState()
                     Box(
                         modifier = Modifier
                             .fillMaxHeight()
-                            .clickable { viewModel.extensionHost.close() }
+                            .clickable(
+                                interactionSource = closeInteractionSource,
+                                indication = if (isGridMode) null else androidx.compose.foundation.LocalIndication.current,
+                            ) { viewModel.extensionHost.close() }
+                            .let { m ->
+                                if (isGridMode) {
+                                    m.background(if (closeIsPressed) uiState.theme.keyBackgroundPressed.toComposeColor() else uiState.theme.keyboardBackground.toComposeColor())
+                                        .gridCellBorder(gridBorderColor, uiState.theme.gridBorderWidth.toDp())
+                                } else {
+                                    m
+                                }
+                            }
                             .padding(horizontal = 14.dp),
                         contentAlignment = Alignment.Center,
                     ) {

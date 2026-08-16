@@ -45,9 +45,10 @@ class TextEditor(private val connectionProvider: () -> InputConnection?) {
     }
 
     /** Exactly what [deleteWordBackward] would remove — the trailing-whitespace run plus the
-     * word before it — without actually deleting it. Exposed so callers that need to record the
-     * deletion (undo/redo) capture the literal text, not just the letters-only word from
-     * [wordAtCursor], which would silently drop whatever whitespace came with it. */
+     * word/emoji/punctuation run before it — without actually deleting it. Exposed so callers
+     * that need to record the deletion (undo/redo) capture the literal text, not just the
+     * letters-only word from [wordAtCursor], which would silently drop whatever whitespace came
+     * with it. */
     fun wordBackwardDeletionPreview(): String? {
         val textBefore = ic?.getTextBeforeCursor(MAX_CURSOR_CONTEXT_CHARS, 0)?.toString() ?: return null
         if (textBefore.isEmpty()) return null
@@ -56,8 +57,17 @@ class TextEditor(private val connectionProvider: () -> InputConnection?) {
         var index = end
         // Skip trailing whitespace.
         while (index > 0 && textBefore[index - 1].isWhitespace()) index--
-        // Skip the word itself.
-        while (index > 0 && !textBefore[index - 1].isWhitespace()) index--
+        // Skip one contiguous run of a single character category (letters/digits, or everything
+        // else non-whitespace) rather than every non-whitespace char regardless of kind. Without
+        // this, a word glued directly to a trailing emoji or punctuation mark with no space in
+        // between (e.g. "hahaha😂", "what?") deleted both together in a single swipe — this way an
+        // emoji/punctuation run right up against the cursor is its own swipe, and the word itself
+        // is a separate swipe after that, matching how those two "things" read as distinct even
+        // though there's no whitespace separating them.
+        if (index > 0) {
+            val isWord = textBefore[index - 1].isLetterOrDigit()
+            while (index > 0 && !textBefore[index - 1].isWhitespace() && textBefore[index - 1].isLetterOrDigit() == isWord) index--
+        }
 
         return textBefore.substring(index, end).takeIf { it.isNotEmpty() }
     }
