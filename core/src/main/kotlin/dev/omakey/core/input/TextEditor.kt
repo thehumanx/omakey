@@ -44,12 +44,33 @@ class TextEditor(private val connectionProvider: () -> InputConnection?) {
         ic?.performEditorAction(actionId)
     }
 
-    /** Exactly what [deleteWordBackward] would remove — the trailing-whitespace run plus the
-     * word/emoji/punctuation run before it — without actually deleting it. Exposed so callers
-     * that need to record the deletion (undo/redo) capture the literal text, not just the
-     * letters-only word from [wordAtCursor], which would silently drop whatever whitespace came
-     * with it. */
+    /** Exactly what [deleteWordBackward] would remove — the trailing-whitespace run, the
+     * word/emoji/punctuation run before the cursor, and (if the cursor sits mid-word rather than
+     * at its end) the rest of that same run after the cursor too — without actually deleting it.
+     * Exposed so callers that need to record the deletion (undo/redo) capture the literal text,
+     * not just the letters-only word from [wordAtCursor], which would silently drop whatever
+     * whitespace came with it. */
     fun wordBackwardDeletionPreview(): String? {
+        val (before, after) = wordBackwardDeletionParts() ?: return null
+        return (before + after).takeIf { it.isNotEmpty() }
+    }
+
+    /** Deletes the whole word touching the cursor, including trailing whitespace, via a manual
+     * boundary scan + deleteSurroundingText rather than KEYCODE_DEL spam, since "delete word"
+     * isn't a single Android editor primitive and this behaves more reliably across third-party
+     * InputConnection implementations. Shares its boundary scan with [wordBackwardDeletionPreview]
+     * so callers recording the deletion for undo see exactly what this removes. */
+    fun deleteWordBackward() {
+        val connection = ic ?: return
+        val (before, after) = wordBackwardDeletionParts() ?: return
+        if (before.isEmpty() && after.isEmpty()) return
+
+        connection.beginBatchEdit()
+        connection.deleteSurroundingText(before.length, after.length)
+        connection.endBatchEdit()
+    }
+
+    private fun wordBackwardDeletionParts(): Pair<String, String>? {
         val textBefore = ic?.getTextBeforeCursor(MAX_CURSOR_CONTEXT_CHARS, 0)?.toString() ?: return null
         if (textBefore.isEmpty()) return null
 
@@ -57,6 +78,7 @@ class TextEditor(private val connectionProvider: () -> InputConnection?) {
         var index = end
         // Skip trailing whitespace.
         while (index > 0 && textBefore[index - 1].isWhitespace()) index--
+        val trimmedTrailingWhitespace = index != end
         // Skip one contiguous run of a single character category (letters/digits, or everything
         // else non-whitespace) rather than every non-whitespace char regardless of kind. Without
         // this, a word glued directly to a trailing emoji or punctuation mark with no space in
@@ -68,23 +90,24 @@ class TextEditor(private val connectionProvider: () -> InputConnection?) {
             val isWord = textBefore[index - 1].isLetterOrDigit()
             while (index > 0 && !textBefore[index - 1].isWhitespace() && textBefore[index - 1].isLetterOrDigit() == isWord) index--
         }
+        val before = textBefore.substring(index, end)
 
-        return textBefore.substring(index, end).takeIf { it.isNotEmpty() }
-    }
+        // Real bug, fixed: this scan only ever looked backward, so a swipe-left with the cursor
+        // sitting in the *middle* of a word (moved there by a tap or arrow keys, not just typed
+        // up to) only deleted the half behind the caret, leaving the other half sitting there.
+        // If the cursor is touching this run with nothing (no whitespace) between them, the run
+        // continues forward past the cursor too, and the whole word should go in one swipe —
+        // matching [wordAtCursor]'s "touching the cursor on both sides" definition of a word.
+        var after = ""
+        if (!trimmedTrailingWhitespace && before.isNotEmpty()) {
+            val isWord = before.last().isLetterOrDigit()
+            val textAfter = ic?.getTextAfterCursor(MAX_CURSOR_CONTEXT_CHARS, 0)?.toString() ?: ""
+            var afterEnd = 0
+            while (afterEnd < textAfter.length && !textAfter[afterEnd].isWhitespace() && textAfter[afterEnd].isLetterOrDigit() == isWord) afterEnd++
+            after = textAfter.substring(0, afterEnd)
+        }
 
-    /** Deletes the whole word immediately before the cursor, including trailing whitespace,
-     * via a manual boundary scan + deleteSurroundingText rather than KEYCODE_DEL spam, since
-     * "delete word" isn't a single Android editor primitive and this behaves more reliably
-     * across third-party InputConnection implementations. Shares its boundary scan with
-     * [wordBackwardDeletionPreview] so callers recording the deletion for undo see exactly what
-     * this removes. */
-    fun deleteWordBackward() {
-        val connection = ic ?: return
-        val deleteCount = wordBackwardDeletionPreview()?.length ?: return
-
-        connection.beginBatchEdit()
-        connection.deleteSurroundingText(deleteCount, 0)
-        connection.endBatchEdit()
+        return before to after
     }
 
     /** Real bug, fixed: plain `deleteSurroundingText(1, 0)` deletes exactly one UTF-16 code unit,
