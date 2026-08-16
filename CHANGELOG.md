@@ -8,6 +8,8 @@ All notable changes to omakey are documented here. Format loosely follows
 A new keyboard layout style, plus a large batch of autocorrect, gesture, and emoji-panel fixes.
 
 ### Added
+- **Clipboard history now has its own Grid-mode layout** — a bordered 2-column grid matching the
+  rest of Grid mode, instead of the same floating card list Normal mode uses.
 - **Grid layout mode** — a new "Layout style" toggle in Settings → Appearance, independent of
   which color theme is picked. Every key becomes a bordered, edge-to-edge cell, and a pressed key
   fills its whole cell solid instead of just dimming, for a plain spreadsheet-like look. Works
@@ -62,6 +64,20 @@ A new keyboard layout style, plus a large batch of autocorrect, gesture, and emo
 - A long tail of Grid-mode visual consistency fixes — border thickness, missing borders, background
   fills, and padding across the suggestion strip, tools row, number row, emoji panel, and extension
   tabs, so every screen of the keyboard renders consistently in Grid mode.
+- **Long-pressing a clipboard item to delete it no longer closes/crashes the keyboard** — the
+  delete confirmation used a system dialog that didn't fit how the keyboard hosts its own window;
+  replaced with a confirmation that renders in-place like every other popup in the app.
+- **Copied images now actually show up in clipboard history.** They used to be missed entirely
+  whenever the image was copied from an app with no keyboard on screen (the common case — gallery,
+  files, browser), since the clipboard listener only runs while the keyboard is visible and can't
+  catch up on anything retroactively. Opening the clipboard panel now does a one-time check for
+  whatever's currently on the clipboard first, so nothing gets missed.
+- **Swipe-left now deletes the whole word even when the cursor is sitting in the middle of it**,
+  not just the half behind the cursor — e.g. tapping into the middle of "hello" and swiping left
+  used to leave half the word behind.
+- **Special-character and kaomoji cells in the emoji panel no longer render at uneven heights** —
+  different glyphs were falling back to different system fonts with different line heights, which
+  threw off the Grid-mode borders.
 
 ## [2.1.2] — 2026-08-13
 
