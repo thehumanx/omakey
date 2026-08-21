@@ -1421,11 +1421,13 @@ private fun TopStrip(
             when (page) {
                 0 -> SuggestionsTabContent(
                     suggestions = uiState.suggestions,
+                    emojiSuggestions = uiState.emojiSuggestions,
                     firstSuggestionKind = uiState.firstSuggestionKind,
                     activeSuggestionIndex = uiState.activeSuggestionIndex,
                     theme = theme,
                     fontFamily = fontFamily,
                     onAccept = viewModel::onSuggestionAccepted,
+                    onAcceptEmoji = viewModel::onEmojiSuggestionAccepted,
                 )
                 1 -> NumbersTabContent(theme, fontFamily, viewModel, feedback, uiState.layout.id)
                 else -> ToolsTabContent(
@@ -1440,11 +1442,13 @@ private fun TopStrip(
 @Composable
 private fun SuggestionsTabContent(
     suggestions: List<String>,
+    emojiSuggestions: List<String>,
     firstSuggestionKind: dev.omakey.app.keyboard.SuggestionKind,
     activeSuggestionIndex: Int,
     theme: OmakeyTheme,
     fontFamily: androidx.compose.ui.text.font.FontFamily?,
     onAccept: (String) -> Unit,
+    onAcceptEmoji: (String) -> Unit,
 ) {
     val isGridMode = dev.omakey.core.theme.LocalKeyboardLayoutMode.current == dev.omakey.core.theme.LayoutMode.GRID
     // -1 means nothing's been cycled yet (via swipe up/down) — treat index 0 as active, same as
@@ -1514,6 +1518,33 @@ private fun SuggestionsTabContent(
                     fontFamily = fontFamily,
                     fontSize = 16.sp,
                 )
+            }
+        }
+        // Independent of the word suggestions above — see KeyboardUiState.emojiSuggestions's own
+        // doc — a plain, un-highlighted row of emoji chips that ride along at the end, tapping one
+        // just inserts it rather than replacing/cycling anything.
+        items(emojiSuggestions) { emoji ->
+            val interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+            val isPressed by interactionSource.collectIsPressedAsState()
+            Box(
+                Modifier
+                    .let { m -> if (isGridMode) m.fillMaxHeight() else m.padding(horizontal = 4.dp) }
+                    .clickable(
+                        interactionSource = interactionSource,
+                        indication = if (isGridMode) null else androidx.compose.foundation.LocalIndication.current,
+                    ) { onAcceptEmoji(emoji) }
+                    .let { m ->
+                        if (isGridMode) {
+                            m.background(if (isPressed) theme.keyBackgroundPressed.toComposeColor() else theme.keyboardBackground.toComposeColor())
+                                .gridCellBorder(theme.gridBorderColor.toComposeColor(), theme.gridBorderWidth.toDp(), includeBottom = false)
+                                .padding(horizontal = 10.dp, vertical = 6.dp)
+                        } else {
+                            m.padding(horizontal = 8.dp, vertical = 6.dp)
+                        }
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(text = emoji, fontSize = 20.sp)
             }
         }
     }

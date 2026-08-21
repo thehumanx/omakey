@@ -96,13 +96,25 @@ class OmakeyInputMethodService :
     // just caused (the text is already known, no read needed) is what avoids firing a second,
     // redundant toast on top of the OS's own unavoidable "Copied to clipboard" one.
     private var suppressNextClipboardRead = false
-    private val onClipboardCopy: (String) -> Unit = { text ->
-        suppressNextClipboardRead = true
-        lastCapturedClipText = text
-        lastCapturedClipUri = null
-        serviceScope.launch {
-            database.clipboardDao().insert(ClipboardEntity(content = text, timestamp = System.currentTimeMillis()))
-            database.clipboardDao().trimUnpinned()
+    // Real bug, fixed: this used to insert the raw, untrimmed `selectedText()` (e.g. "Select all"
+    // on a multi-line field very often selects a trailing newline/whitespace the user never
+    // meant to copy), while captureCurrentClipboardIfNew() below trims before comparing/inserting.
+    // If suppressNextClipboardRead ever failed to suppress the listener for this same copy (e.g.
+    // ClipboardManager delivering more than one change callback for a single setPrimaryClip, a
+    // known platform quirk on some OEM builds) the two paths' `lastCapturedClipText` values
+    // wouldn't match — trimmed vs untrimmed — so the fallback path's own dedupe check silently
+    // failed too, and the same copy landed in the DB twice. Trimming both the same way closes
+    // that gap: even if the listener double-fires, the fallback path's dedupe now actually dedupes.
+    private val onClipboardCopy: (String) -> Unit = { rawText ->
+        val text = rawText.trim()
+        if (text.isNotEmpty()) {
+            suppressNextClipboardRead = true
+            lastCapturedClipText = text
+            lastCapturedClipUri = null
+            serviceScope.launch {
+                database.clipboardDao().insert(ClipboardEntity(content = text, timestamp = System.currentTimeMillis()))
+                database.clipboardDao().trimUnpinned()
+            }
         }
     }
     private val clipboardListener = ClipboardManager.OnPrimaryClipChangedListener {

@@ -1,6 +1,7 @@
 package dev.omakey.app.keyboard
 
 import android.view.inputmethod.EditorInfo
+import dev.omakey.core.emoji.WordEmojiSuggestions
 import dev.omakey.core.gesture.GesturePreferences
 import dev.omakey.core.gesture.GestureSettings
 import dev.omakey.core.input.TextEditor
@@ -53,6 +54,12 @@ data class KeyboardUiState(
      * letter" that clears itself after a single character (see [commitTypedChar]). */
     val capsLockOn: Boolean = false,
     val suggestions: List<String> = emptyList(),
+    /** Emoji matching the word currently being typed/just finished (see
+     * [dev.omakey.core.emoji.WordEmojiSuggestions]), rendered as extra chips alongside
+     * [suggestions] — an entirely separate, independent row: tapping one inserts the emoji next
+     * to the word rather than replacing/cycling it, so it never interacts with [firstSuggestionKind]
+     * / [activeSuggestionIndex] / correction-cycling state at all. */
+    val emojiSuggestions: List<String> = emptyList(),
     val theme: OmakeyTheme = Presets.Dark,
     /** Mirrors [ThemeRepository.useSystemAccent] — kept alongside [theme] rather than inside it
      * since it's an orthogonal flag (see `resolveEffectiveTheme`, which is what actually applies
@@ -283,6 +290,7 @@ class KeyboardViewModel(
                 shiftOn = autocorrectPreferences.settings.value.autoCapitalizeEnabled && textEditor.textBeforeCursor(1).isEmpty(),
                 capsLockOn = false,
                 suggestions = emptyList(),
+                emojiSuggestions = emptyList(),
                 firstSuggestionKind = SuggestionKind.PLAIN,
                 activeExtensionId = null,
                 // Deliberately NOT reset to SUGGESTIONS here — the whole point of persisting it
@@ -383,8 +391,16 @@ class KeyboardViewModel(
         }
     }
 
-    /** Cycles right through the frozen suggestions snapshot; clamps at the last candidate. */
+    /** Cycles right through the frozen suggestions snapshot; clamps at the last candidate. Unless
+     * "Double space + swipe down for comma" is on and this swipe-down lands right after a space
+     * (the same timing window [shouldConvertDoubleSpaceToPeriod] uses), in which case it converts
+     * that space into a comma instead — the comma-equivalent of double-tap-space-for-period, just
+     * triggered by a different second action. */
     fun onSwipeDown() {
+        if (shouldConvertSpaceToCommaOnSwipeDown()) {
+            convertPrecedingSpaceToComma()
+            return
+        }
         val suggestions = _uiState.value.suggestions
         if (suggestions.isEmpty()) return
         applySuggestion((suggestionCycleIndex + 1).coerceIn(0, suggestions.size - 1))
@@ -659,27 +675,43 @@ class KeyboardViewModel(
             flushWordBuffer(separator = char.toString())
             lastWordBoundarySeparator = char.toString()
             refreshSuggestions(checkContextualCorrection = true)
-            if (char == '=') maybeShowCalculatorResult()
+            if (char == '=') tryShowCalculatorResult()
         }
         if (_uiState.value.shiftOn && !_uiState.value.capsLockOn) {
             _uiState.update { it.copy(shiftOn = false) } // one-shot shift, matches typical mobile keyboard behavior
         }
     }
 
-    /** Inline calculator — typing "12+7=" offers "19" in the suggestion strip (never auto-
-     * applied, same convention as every other correction). Called right after '=' itself has
-     * already been committed as ordinary punctuation (see [commitTypedChar]), so [textBeforeCursor]
-     * already includes it. Scoped to plain `+ - * /` per [Calculator]'s own doc — deliberately not
-     * reusing [currentWordBuffer] (letters-only, never sees digits/operators in the first place),
-     * a separate read of the actual committed text instead. */
-    private fun maybeShowCalculatorResult() {
+    /** Inline calculator — typing "12+7=" offers the full "12+7=19" in the suggestion strip
+     * (never auto-applied, same convention as every other correction), so what you tap reads as
+     * a complete, self-explanatory answer rather than a bare number floating with no context.
+     * Tapping it deletes the typed "12+7=" and retypes "12+7=19" in its place — same
+     * [CorrectionApplyMode.RETROACTIVE] mechanism as every other correction, so on screen the net
+     * effect is just the missing "19" getting appended.
+     *
+     * Called right after '=' itself has already been committed as ordinary punctuation (see
+     * [commitTypedChar]), so [textBeforeCursor] already includes it — but also re-derived from
+     * [refreshSuggestionsAfterDeletion] on every backspace, not just fresh '=' keystrokes. Real
+     * bug, fixed: this used to be a one-shot side effect of typing '=', with nothing re-running
+     * it afterward — backspacing away just the applied result (leaving the cursor sitting right
+     * after "12+7=" again) fell through to the plain word-suggestion logic, which has no idea
+     * what a calculator expression is, silently dropping the suggestion and forcing the whole
+     * expression to be retyped from scratch to get it back. Returns whether a suggestion was
+     * actually shown, so deletion-refresh callers know whether to fall through to their own
+     * (non-calculator) suggestion logic instead.
+     *
+     * Scoped to plain `+ - * /` per [Calculator]'s own doc — deliberately not reusing
+     * [currentWordBuffer] (letters-only, never sees digits/operators in the first place), a
+     * separate read of the actual committed text instead. */
+    private fun tryShowCalculatorResult(): Boolean {
         val textBefore = textEditor.textBeforeCursor(64)
-        if (textBefore.isEmpty() || textBefore.last() != '=') return
+        if (textBefore.isEmpty() || textBefore.last() != '=') return false
         val beforeEquals = textBefore.dropLast(1)
         val exprStart = beforeEquals.indexOfLast { it !in "0123456789+-*/. " }
         val expression = beforeEquals.substring(exprStart + 1)
-        val result = Calculator.evaluate(expression) ?: return
+        val result = Calculator.evaluate(expression) ?: return false
         val formatted = Calculator.formatResult(result)
+        val display = "$expression=$formatted"
         activeCorrection = ActiveCorrection(
             mode = CorrectionApplyMode.RETROACTIVE,
             originalWord = expression + "=",
@@ -688,7 +720,8 @@ class KeyboardViewModel(
             separator = "",
         )
         suggestionCycleIndex = -1
-        _uiState.update { it.copy(suggestions = listOf(formatted), firstSuggestionKind = SuggestionKind.CORRECTION) }
+        _uiState.update { it.copy(suggestions = listOf(display), firstSuggestionKind = SuggestionKind.CORRECTION) }
+        return true
     }
 
     private fun onSpace() {
@@ -728,6 +761,30 @@ class KeyboardViewModel(
     private fun convertPrecedingSpaceToPeriod() {
         textEditor.deleteCharacterBackward()
         textEditor.commitCharacter('.')
+        textEditor.insertSpace()
+        lastWordBoundarySeparator = " "
+        lastSpaceCommitAtMs = 0L
+        refreshSuggestions(checkContextualCorrection = true)
+        maybeAutoCapitalize()
+    }
+
+    /** Same detection as [shouldConvertDoubleSpaceToPeriod] (same timing window, same "verify the
+     * live text" check), but gated on its own separate preference and triggered by swipe-down
+     * instead of a second space/swipe-right — the two features are independent and either, both,
+     * or neither can be on. */
+    private fun shouldConvertSpaceToCommaOnSwipeDown(): Boolean {
+        if (!autocorrectPreferences.settings.value.doubleSpaceSwipeDownForComma) return false
+        if (lastSpaceCommitAtMs == 0L) return false
+        if (System.currentTimeMillis() - lastSpaceCommitAtMs > DOUBLE_TAP_SPACE_WINDOW_MS) return false
+        return textEditor.textBeforeCursor(1) == " "
+    }
+
+    /** Deletes the space just committed and replaces it with a comma glued directly to the word
+     * before it, then a fresh space — the comma sits right beside the text ("word,"), never
+     * separated from it by whitespace. */
+    private fun convertPrecedingSpaceToComma() {
+        textEditor.deleteCharacterBackward()
+        textEditor.commitCharacter(',')
         textEditor.insertSpace()
         lastWordBoundarySeparator = " "
         lastSpaceCommitAtMs = 0L
@@ -918,6 +975,10 @@ class KeyboardViewModel(
      * open and the previous word's suggestions kept showing, stale, with nothing left to suggest
      * for). */
     internal fun refreshSuggestionsAfterDeletion() {
+        // See tryShowCalculatorResult()'s own doc — backspacing away just the applied result of
+        // "12+7=19" leaves the cursor sitting right after "12+7=" again, which should show the
+        // calculator suggestion again rather than falling through to plain word logic.
+        if (tryShowCalculatorResult()) return
         if (currentWordBuffer.isNotEmpty()) {
             refreshSuggestions()
             return
@@ -927,9 +988,14 @@ class KeyboardViewModel(
             refreshSuggestions()
             return
         }
+        // Set directly (not via refreshSuggestions(), which would immediately overwrite it based
+        // on currentWordBuffer/lastCommittedWord — neither necessarily matches wordBeforeCursor
+        // here, since this whole branch exists precisely for the case where a deletion left the
+        // cursor sitting after a word neither of those is tracking).
+        updateEmojiSuggestions(wordBeforeCursor.word)
         val alternatives = wordAlternatives(wordBeforeCursor.word)
         if (alternatives.isEmpty()) {
-            refreshSuggestions()
+            refreshPlainPrediction()
             return
         }
         activeCorrection = ActiveCorrection(
@@ -1048,6 +1114,21 @@ class KeyboardViewModel(
         _uiState.update { it.copy(activeExtensionId = id) }
     }
 
+    /** Cheap, synchronous static-table lookup (see [WordEmojiSuggestions]) — unlike word
+     * suggestions/predictions, never worth a background [refreshJob] of its own. */
+    private fun updateEmojiSuggestions(word: String?) {
+        val emoji = word?.let(WordEmojiSuggestions::suggest).orEmpty()
+        _uiState.update { it.copy(emojiSuggestions = emoji) }
+    }
+
+    /** Tapping an emoji-suggestion chip (see [KeyboardUiState.emojiSuggestions]) just inserts it
+     * next to whatever's already there — entirely independent of [activeCorrection]/word-cycling
+     * state, since the emoji isn't replacing or completing the word, only riding along with it. */
+    fun onEmojiSuggestionAccepted(emoji: String) {
+        textEditor.insertText(emoji)
+        _uiState.update { it.copy(emojiSuggestions = emptyList()) }
+    }
+
     /** [checkContextualCorrection] is true right after any word-boundary commit that leaves a
      * definite, known separator behind the finished word — space, punctuation, or Enter inserting
      * a literal newline (see [onSpace]/[commitTypedChar]/[onEnter], and [lastWordBoundarySeparator]
@@ -1070,6 +1151,7 @@ class KeyboardViewModel(
         // overwrite the suggestion strip with outdated results.
         refreshJob?.cancel()
         val prefix = currentWordBuffer.toString()
+        updateEmojiSuggestions(prefix.ifEmpty { lastCommittedWord.takeIf { checkContextualCorrection } })
 
         if (prefix.isNotEmpty()) {
             // activeCorrection is set synchronously (cheap — just bookkeeping) so cycling/revert

@@ -3,6 +3,32 @@
 All notable changes to omakey are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.2.1] — 2026-08-21
+
+### Added
+- **"Double space + swipe down for comma"** — off by default — swipe down right after a space to
+  insert a comma instead, the same idea as "Double-tap space for period" but for commas. The comma
+  sits glued directly to the word before it, never separated from it by whitespace.
+- **Emoji suggestions in the suggestion strip** — typing a word like "sad" or "happy" now offers a
+  few matching emoji as extra chips alongside the word suggestions; tapping one inserts it right
+  next to the word without touching the word itself.
+
+### Changed
+- **The inline calculator now shows the full expression, not just the answer** — typing "1+4="
+  offers "1+4=5" in the suggestion strip instead of a bare "5". Tapping it fills in the missing
+  "5" so the field ends up reading "1+4=5".
+
+### Fixed
+- **Backspacing into an already-evaluated calculator expression lost the suggestion entirely**,
+  forcing the whole thing to be retyped from scratch to see a result again — e.g. removing the
+  applied "5" from "1+4=5" left "1+4=" with no suggestion showing. It's now re-derived on every
+  backspace, not just fresh "=" keystrokes.
+- **Select all + Copy could save two copies of the same text to clipboard history** — the explicit
+  "record this copy" step and the system clipboard-change listener's own fallback capture could
+  disagree about what text was actually copied (one trimmed, one not), so if the listener ever
+  fired for the same copy the fallback path's duplicate-detection silently failed. Both paths now
+  trim consistently.
+
 ## [2.2.0] — 2026-08-16
 
 A new keyboard layout style, plus a large batch of autocorrect, gesture, and emoji-panel fixes.

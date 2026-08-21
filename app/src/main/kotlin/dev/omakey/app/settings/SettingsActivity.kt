@@ -311,6 +311,7 @@ private fun SettingsScreen(
                     AutocorrectToggle(autocorrectPreferences)
                     AutoCapitalizeToggle(autocorrectPreferences)
                     DoubleTapSpaceForPeriodToggle(autocorrectPreferences)
+                    DoubleSpaceSwipeDownForCommaToggle(autocorrectPreferences)
                     NextWordPredictionToggle(predictionPreferences)
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     ClickableSettingRow(
@@ -912,6 +913,18 @@ private fun DoubleTapSpaceForPeriodToggle(autocorrectPreferences: AutocorrectPre
             "a period instead of two spaces. Off by default.",
         checked = settings.doubleTapSpaceForPeriod,
         onCheckedChange = autocorrectPreferences::setDoubleTapSpaceForPeriod,
+    )
+}
+
+@Composable
+private fun DoubleSpaceSwipeDownForCommaToggle(autocorrectPreferences: AutocorrectPreferences) {
+    val settings by autocorrectPreferences.settings.collectAsState()
+    SettingToggle(
+        title = "Double space + swipe down for comma",
+        description = "After a space, swipe down quickly to insert a comma instead — same idea " +
+            "as double-tap space for period, but for commas. Off by default.",
+        checked = settings.doubleSpaceSwipeDownForComma,
+        onCheckedChange = autocorrectPreferences::setDoubleSpaceSwipeDownForComma,
     )
 }
 

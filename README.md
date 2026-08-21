@@ -40,7 +40,7 @@ anything you type to leave your phone even by accident.
 
 ## What you won't find in most keyboards
 
-- Inline calculator — type `12+7=` and the answer shows up in the suggestion strip.
+- Inline calculator — type `12+7=` and `12+7=19` shows up in the suggestion strip, ready to tap.
 - Undo/redo — two buttons that step back and forward through your last several typed or deleted
   words.
 - Clipboard history — text and images, several at once, not just whatever you last copied.
@@ -84,7 +84,8 @@ anything you type to leave your phone even by accident.
 - A small preview bubble shows above your finger on every keypress, so you always know what
   landed. Turn it off in Settings if you'd rather not see it.
 - Built to keep up with fast, sloppy typing — fingers overlapping mid-word won't throw it off.
-- Optional double-tap (or double-swipe-right) space for a period, off by default.
+- Optional double-tap (or double-swipe-right) space for a period, off by default. Same idea for a
+  comma — swipe down right after a space instead, if you turn that on too.
 - Keyboard height and position, adjustable in one screen: drag to resize, drag to lift it off the
   bottom edge for easier one-handed reach. Capped so it can never cover what you're typing into.
 
@@ -98,7 +99,7 @@ menus involved:
 | **Swipe left** on any key | Deletes the entire last word, not just a character — its own "swoosh" sound and a shimmer across the home row so it's unmistakably not a normal tap. A trailing emoji or punctuation mark glued to a word with no space (`hahaha😂`) is its own swipe first — the emoji goes, then the word. |
 | **Swipe right** on any key | Inserts a space (off by default, one tap to turn on). Swipe right twice quickly for a period instead, if "Double-tap space for period" is on. |
 | **Swipe up** on the suggestion strip | Accepts the current suggestion — or, on a word you typed yourself, saves it to your personal dictionary so it's never flagged again. Swipe up a second time on an already-learned word to un-learn it. |
-| **Swipe down** on the suggestion strip | Cycles backward through alternatives — the mirror of swipe up. |
+| **Swipe down** on the suggestion strip | Cycles backward through alternatives — the mirror of swipe up. Right after a space, with "Double space + swipe down for comma" on, it inserts a comma instead. |
 | **Swipe up/down repeatedly** | Genuinely cycles through every alternative, as many times as you want, whether the word's still being typed or you've tapped back into something you wrote a minute ago. The one about to be typed stands out; the rest fade. |
 | **Tap and hold Shift** | Locks in caps lock. A quick tap just capitalizes the next letter, then releases. |
 | **Long-press and drag the spacebar** | Moves the cursor without needing to tap precisely inside your text — fixes a typo three words back without losing your place. |
@@ -124,7 +125,10 @@ menus involved:
 - Optional auto-capitalize, off by default.
 - A "Learned words" screen — view, search, edit, or remove anything your typing has taught the
   keyboard, individually or all at once.
-- The inline calculator mentioned above — `12+7=` and the answer's right there.
+- The inline calculator mentioned above — `12+7=` shows `12+7=19` right in the strip, and tapping
+  it fills in the missing `19`.
+- A few matching emoji show up as extra chips next to word suggestions for words like "sad" or
+  "happy" — tap one to insert it without touching the word itself.
 
 ### Undo, redo, and text tools — one tab away
 
@@ -177,7 +181,7 @@ dictionary, your clipboard, your settings all stay local.
 
 ## Status
 
-omakey is on release 2.2.0. Typing, gestures, autocorrect, prediction, both layout styles, the
+omakey is on release 2.2.1. Typing, gestures, autocorrect, prediction, both layout styles, the
 clipboard manager, and the emoji panel are all working today and getting updated regularly — see
 [CHANGELOG.md](CHANGELOG.md) for the full history.
 

@@ -14,6 +14,10 @@ data class AutocorrectSettings(
      * twice quickly when that gesture is enabled) replaces the two spaces with ". " instead.
      * See [KeyboardViewModel.onSpace]'s own doc for the actual detection logic. */
     val doubleTapSpaceForPeriod: Boolean = false,
+    /** Off by default — same idea as [doubleTapSpaceForPeriod] but triggered by swipe-down (which
+     * otherwise cycles suggestions) landing right after a space, instead of a second space/swipe-
+     * right. Independent of [doubleTapSpaceForPeriod]; either, both, or neither can be on. */
+    val doubleSpaceSwipeDownForComma: Boolean = false,
 )
 
 /** Persists the autocorrect on/off preference. Same SharedPreferences + cross-instance-sync
@@ -49,10 +53,16 @@ class AutocorrectPreferences(context: Context) {
         _settings.value = _settings.value.copy(doubleTapSpaceForPeriod = enabled)
     }
 
+    fun setDoubleSpaceSwipeDownForComma(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_DOUBLE_SPACE_SWIPE_DOWN_FOR_COMMA, enabled).apply()
+        _settings.value = _settings.value.copy(doubleSpaceSwipeDownForComma = enabled)
+    }
+
     private fun load() = AutocorrectSettings(
         autocorrectEnabled = prefs.getBoolean(KEY_AUTOCORRECT_ENABLED, true),
         autoCapitalizeEnabled = prefs.getBoolean(KEY_AUTO_CAPITALIZE_ENABLED, false),
         doubleTapSpaceForPeriod = prefs.getBoolean(KEY_DOUBLE_TAP_SPACE_FOR_PERIOD, false),
+        doubleSpaceSwipeDownForComma = prefs.getBoolean(KEY_DOUBLE_SPACE_SWIPE_DOWN_FOR_COMMA, false),
     )
 
     private companion object {
@@ -60,5 +70,6 @@ class AutocorrectPreferences(context: Context) {
         const val KEY_AUTOCORRECT_ENABLED = "autocorrect_enabled"
         const val KEY_AUTO_CAPITALIZE_ENABLED = "auto_capitalize_enabled"
         const val KEY_DOUBLE_TAP_SPACE_FOR_PERIOD = "double_tap_space_for_period"
+        const val KEY_DOUBLE_SPACE_SWIPE_DOWN_FOR_COMMA = "double_space_swipe_down_for_comma"
     }
 }

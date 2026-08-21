@@ -1,0 +1,100 @@
+package dev.omakey.core.emoji
+
+/**
+ * A small, curated word -> emoji lookup for the suggestion strip — typing "sad" offers 😢/😭/☹️
+ * right next to the word suggestions, the same way most mainstream keyboards surface an emoji for
+ * a word you're clearly already committed to. Deliberately just a static map, not a semantic/ML
+ * lookup: exact, case-insensitive word match only, so it never guesses wrong on an unrelated word
+ * that merely shares a prefix or root.
+ */
+object WordEmojiSuggestions {
+    /** Up to 3 emoji for [word], or an empty list if it isn't in the table. */
+    fun suggest(word: String): List<String> = table[word.lowercase()].orEmpty()
+
+    private val table: Map<String, List<String>> = buildMap {
+        fun put(emoji: List<String>, vararg words: String) {
+            words.forEach { this[it] = emoji }
+        }
+
+        put(listOf("😊", "😄", "🙂"), "happy", "glad")
+        put(listOf("😢", "😭", "☹️"), "sad", "unhappy")
+        put(listOf("😍", "❤️", "🥰"), "love", "loved")
+        put(listOf("😡", "🤬", "😠"), "angry", "mad", "furious")
+        put(listOf("😴", "🥱", "💤"), "tired", "sleepy", "exhausted")
+        put(listOf("😋", "🍽️", "🤤"), "hungry", "starving")
+        put(listOf("🥤", "💧"), "thirsty")
+        put(listOf("🥶", "❄️"), "cold", "freezing")
+        put(listOf("🥵", "🔥"), "hot")
+        put(listOf("🤒", "🤢", "🤧"), "sick", "ill")
+        put(listOf("🤩", "🎉", "😃"), "excited", "thrilled")
+        put(listOf("😐", "🥱"), "bored")
+        put(listOf("😱", "😨"), "scared", "afraid", "terrified")
+        put(listOf("😲", "😮"), "surprised", "shocked")
+        put(listOf("😕", "🤔"), "confused")
+        put(listOf("😂", "🤣"), "lol", "haha", "hilarious", "funny")
+        put(listOf("😭"), "crying")
+        put(listOf("🥳", "🎉", "🎊"), "party", "celebrate", "celebration")
+        put(listOf("🎂", "🎈", "🎁"), "birthday")
+        put(listOf("🎉", "👏"), "congrats", "congratulations")
+        put(listOf("🙏", "😊"), "thanks", "thankyou", "thank")
+        put(listOf("😔", "🙏"), "sorry", "apologies")
+        put(listOf("🙏"), "please")
+        put(listOf("👍", "✅"), "yes", "yep", "sure")
+        put(listOf("👎", "❌"), "no", "nope")
+        put(listOf("👌", "✅"), "ok", "okay")
+        put(listOf("😎", "👍"), "cool")
+        put(listOf("🤩", "🔥"), "awesome", "amazing")
+        put(listOf("👍", "💯"), "great", "good")
+        put(listOf("👎", "😬"), "bad", "terrible", "awful")
+        put(listOf("😮", "🤯"), "wow", "omg")
+        put(listOf("🥰", "😍"), "cute", "adorable")
+        put(listOf("😍", "✨"), "beautiful", "gorgeous", "pretty")
+        put(listOf("🤢", "😖"), "ugly")
+        put(listOf("🤪", "😜"), "crazy", "insane")
+        put(listOf("☀️", "🌞"), "sun", "sunny")
+        put(listOf("🌧️", "☔"), "rain", "rainy")
+        put(listOf("❄️", "⛄"), "snow", "snowing")
+        put(listOf("☕"), "coffee")
+        put(listOf("🍵"), "tea")
+        put(listOf("🍕"), "pizza")
+        put(listOf("🎂", "🍰"), "cake")
+        put(listOf("🍺"), "beer")
+        put(listOf("🍷"), "wine")
+        put(listOf("🐶", "🐕"), "dog", "puppy")
+        put(listOf("🐱", "🐈"), "cat", "kitten")
+        put(listOf("🎵", "🎶"), "music")
+        put(listOf("🎬", "🍿"), "movie")
+        put(listOf("🎮"), "game", "gaming")
+        put(listOf("💼", "💻"), "work")
+        put(listOf("😴", "🛏️"), "sleep")
+        put(listOf("🏃"), "run", "running")
+        put(listOf("🚶"), "walk", "walking")
+        put(listOf("🍽️"), "eat", "eating")
+        put(listOf("🏠", "🏡"), "home")
+        put(listOf("🚗"), "car")
+        put(listOf("📱"), "phone")
+        put(listOf("💰", "💵"), "money")
+        put(listOf("⏰", "⏱️"), "time")
+        put(listOf("🔥"), "fire")
+        put(listOf("💧", "🌊"), "water")
+        put(listOf("⭐", "🌟"), "star")
+        put(listOf("🌙"), "moon")
+        put(listOf("❤️", "💕"), "heart")
+        put(listOf("👍", "😊"), "fine")
+        put(listOf("👋", "😊"), "welcome", "hello", "hi", "hey")
+        put(listOf("👋", "😢"), "bye", "goodbye")
+        put(listOf("💔"), "hate")
+        put(listOf("🥺", "💭"), "miss")
+        put(listOf("😌", "🙌"), "proud")
+        put(listOf("😟", "😰"), "worried", "anxious")
+        put(listOf("😬", "😰"), "nervous")
+        put(listOf("😌", "🧘"), "relaxed", "calm")
+        put(listOf("😩", "😫"), "stressed")
+        put(listOf("🎓"), "graduation", "graduated")
+        put(listOf("💪"), "strong", "workout", "gym")
+        put(listOf("🙌", "🎉"), "yay")
+        put(listOf("🤷"), "whatever", "idk")
+        put(listOf("👀"), "look", "looking")
+        put(listOf("💯"), "perfect")
+    }
+}
