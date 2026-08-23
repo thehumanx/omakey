@@ -474,7 +474,8 @@ class KeyboardViewModel(
      * [onKeyTap] stays the path for every ordinary single-codepoint key, unchanged. */
     fun onCharacterKeyTap(key: KeyDefinition) {
         val shiftActive = _uiState.value.shiftOn || _uiState.value.capsLockOn
-        val text = if (shiftActive && key.shiftedText != null) key.shiftedText else (key.text ?: key.label)
+        val shiftedText = key.shiftedText
+        val text = if (shiftActive && shiftedText != null) shiftedText else (key.text ?: key.label)
         commitTypedText(text, fromTransliteratedKey = false)
     }
 

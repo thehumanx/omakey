@@ -1274,8 +1274,9 @@ internal fun KeyRowView(
                 // KeyDefinition's doc) shows that exact string while shift is engaged, not a
                 // Unicode case transform of the unshifted label — shiftedText is never a case
                 // pairing of key.label to begin with (e.g. "q"->त्र vs "Q"->त्त).
-                val label = if (key.shiftedText != null) {
-                    if (shiftOn || capsLockOn) key.shiftedText else key.label
+                val keyShiftedText = key.shiftedText
+                val label = if (keyShiftedText != null) {
+                    if (shiftOn || capsLockOn) keyShiftedText else key.label
                 } else {
                     key.label.let {
                         if (it.length != 1) return@let it
