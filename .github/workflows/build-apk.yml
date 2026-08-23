@@ -1,0 +1,37 @@
+name: Build debug APK
+
+on:
+  push:
+    branches:
+      - claude/keyboard-performance-older-devices-7sunvr
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: Build debug APK
+        # gradle.properties pins org.gradle.java.home to a path specific to whoever committed
+        # it — overridden here to the JDK actions/setup-java just installed so this doesn't
+        # depend on that path existing on the runner.
+        run: ./gradlew assembleDebug -Dorg.gradle.java.home="$JAVA_HOME" --stacktrace
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: omakey-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
