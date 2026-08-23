@@ -25,7 +25,7 @@ class FrequencyNgramPredictionEngineTest {
         db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext(), OmakeyDatabase::class.java)
             .allowMainThreadQueries()
             .build()
-        engine = FrequencyNgramPredictionEngine(db.wordDao(), db.bigramDao())
+        engine = FrequencyNgramPredictionEngine(db.wordDao(), db.bigramDao(), language = "en_us")
     }
 
     @After
@@ -50,7 +50,7 @@ class FrequencyNgramPredictionEngineTest {
         engine.recordAcceptedWord("test", previousWord = null)
         engine.recordAcceptedWord("test", previousWord = null)
 
-        val entity = db.wordDao().findExact("test")
+        val entity = db.wordDao().findExact("en_us", "test")
         assertEquals(3, entity?.frequency)
     }
 

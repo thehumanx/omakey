@@ -4,9 +4,18 @@ import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
-@Entity(tableName = "words")
+// language is a Languages.<X>.id string (e.g. "en_us", "ne_np") — the composite primary key
+// (rather than `word` alone) is what lets the same spelling exist independently per language,
+// and lets every dictionary query stay scoped to whichever language is actually active instead of
+// mixing every enabled language's words together (see OmakeyDatabase's MIGRATION_2_3).
+@Entity(tableName = "words", primaryKeys = ["word", "language"])
 data class WordEntity(
-    @PrimaryKey val word: String,
+    val word: String,
+    // Defaults to English ("en_us", matching Languages.EnglishUS.id — core.db deliberately
+    // doesn't depend on core.language, so this is a literal, not a reference) purely so every
+    // call site that predates multi-language support (most of this module's own tests included)
+    // keeps compiling unchanged; every real caller post-dating it passes this explicitly.
+    val language: String = "en_us",
     val frequency: Int,
     val isUserAdded: Boolean,
     val lastUsedTimestamp: Long,
@@ -14,12 +23,13 @@ data class WordEntity(
 
 @Entity(
     tableName = "bigrams",
-    primaryKeys = ["previousWord", "word"],
+    primaryKeys = ["previousWord", "word", "language"],
     indices = [Index(value = ["previousWord"])],
 )
 data class BigramEntity(
     val previousWord: String,
     val word: String,
+    val language: String = "en_us", // see WordEntity.language's own doc
     val count: Int,
 )
 

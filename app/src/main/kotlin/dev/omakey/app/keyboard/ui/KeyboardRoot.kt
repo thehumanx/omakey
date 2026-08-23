@@ -173,6 +173,11 @@ fun KeyboardRoot(
     viewModel: KeyboardViewModel,
     accessibilityPreferences: AccessibilityPreferences? = null,
     onOpenSettings: () -> Unit = {},
+    // Long-pressing the emoji/extensions key now offers a Settings/Language drag-select menu
+    // (see KeyGrid's long-press-timer branch and its accentDragState reuse) instead of opening
+    // Settings directly — this is the "Language" option's action, threaded down the same way
+    // onOpenSettings already is.
+    onOpenLanguageSettings: () -> Unit = {},
     feedback: KeyboardFeedback = NoOpKeyboardFeedback,
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -250,7 +255,7 @@ fun KeyboardRoot(
     // the main source of typing lag. Memoizing them (stable identity) lets Compose skip the whole
     // key grid on state changes that don't actually affect it, like suggestions or theme.
     val onKeyTapStable = remember(viewModel, feedback) {
-        { code: Int -> feedback.onKeyPress(); viewModel.onKeyTap(code) }
+        { key: KeyDefinition -> feedback.onKeyPress(); dispatchKeyTap(key, viewModel) }
     }
     val ancestorCoordinatesStable = remember { { keysAreaCoordinates } }
 
@@ -402,6 +407,7 @@ fun KeyboardRoot(
                         onPreviewKey = onPreviewKeyStable,
                         previewKey = previewKey,
                         onOpenSettings = onOpenSettings,
+                        onOpenLanguageSettings = onOpenLanguageSettings,
                         feedback = feedback,
                         fontFamily = fontFamily,
                         pressedKeyCode = pressedKeyCode,
@@ -458,7 +464,13 @@ fun KeyboardRoot(
  * [dev.omakey.app.keyboard.KeyboardViewModel.onAccentSelected] on release. [baseOptionCount] is
  * `options.size` at creation time (before any extension) — options at/past that index are the
  * extended overflow tier, which `AccentDragPopup` fades in rather than popping in abruptly, so
- * dragging into "more symbols" territory reads as a subtle mode shift, not a jump cut. */
+ * dragging into "more symbols" territory reads as a subtle mode shift, not a jump cut.
+ *
+ * Also reused, unmodified, for the emoji/extensions key's long-press menu (Settings vs Language)
+ * — same drag-to-select interaction and [SymbolModeOverlay] rendering, just with `options` set to
+ * `["⚙", "🌐"]` instead of character variants, and the UP branch dispatching to
+ * `onOpenSettings`/`onOpenLanguageSettings` instead of `onAccentSelected` when [key]'s code is
+ * [SpecialKeyCode.EXTENSIONS] — see KeyGrid's long-press-timer branch and its UP handling. */
 private data class AccentDragState(
     val key: KeyDefinition,
     val options: List<String>,
@@ -491,12 +503,13 @@ private fun KeyGrid(
     keyLookupByCode: (Int) -> KeyDefinition?,
     keyBoundsState: androidx.compose.runtime.MutableState<Map<Int, Pair<KeyDefinition, Rect>>>,
     scope: kotlinx.coroutines.CoroutineScope,
-    onKeyTapStable: (Int) -> Unit,
+    onKeyTapStable: (KeyDefinition) -> Unit,
     ancestorCoordinatesStable: () -> androidx.compose.ui.layout.LayoutCoordinates?,
     onKeysAreaPositioned: (androidx.compose.ui.layout.LayoutCoordinates) -> Unit,
     onPreviewKey: (Int) -> Unit,
     previewKey: Pair<KeyDefinition, Rect>?,
     onOpenSettings: () -> Unit,
+    onOpenLanguageSettings: () -> Unit,
     feedback: KeyboardFeedback,
     fontFamily: androidx.compose.ui.text.font.FontFamily?,
     pressedKeyCode: Int?,
@@ -628,6 +641,24 @@ private fun KeyGrid(
                                         feedback.onKeyPress()
                                         cursorDragActive = true
                                         cursorDragAnchorX = down.position.x
+                                    } else if (heldKey?.code == SpecialKeyCode.EXTENSIONS) {
+                                        // Reuses the exact same drag-to-select interaction/overlay
+                                        // as an accent popup (see AccentDragState's doc) — "long
+                                        // press should show options like any other key long press"
+                                        // — but the two options are actions (Settings, Language),
+                                        // not characters. Index 0 (finger never leaves the key) is
+                                        // Settings, matching what a plain long-press here used to
+                                        // do unconditionally, before this menu existed — dragging
+                                        // to index 1 reveals Language. See the UP branch below for
+                                        // where that distinction actually dispatches, and the MOVE
+                                        // branch for why this doesn't grow an EXTENDED_POPUP_SYMBOLS
+                                        // overflow tier the way a real accent popup can.
+                                        feedback.onKeyPress()
+                                        accentDragState = AccentDragState(
+                                            key = heldKey,
+                                            options = listOf("⚙", "🌐"),
+                                            highlightedIndex = 0,
+                                        )
                                     } else if (gestureSettings.showKeyPopup && heldKey != null && heldKey.popupChars.isNotEmpty()) {
                                         // Enters accent-drag mode instead of the generic
                                         // KeyLongPress fallback below — see AccentDragState's doc
@@ -697,7 +728,8 @@ private fun KeyGrid(
                                                 }
                                                 feedback.onKeyPress()
                                                 onPreviewKey(code)
-                                                viewModel.onKeyTap(code)
+                                                val rolloverKey = keyLookupByCode(code)
+                                                if (rolloverKey != null) dispatchKeyTap(rolloverKey, viewModel) else viewModel.onKeyTap(code)
                                             }
                                         }
                                     }
@@ -711,13 +743,18 @@ private fun KeyGrid(
                                     if (cursorDragActive) {
                                         settled = true
                                     } else if (dragState != null) {
-                                        // Commits whichever option the finger is currently over —
-                                        // index 0 (the base letter) if the finger never left the
-                                        // key, exactly like a plain long-press-then-release with no
-                                        // popup would type the base character.
-                                        dragState.options.getOrNull(dragState.highlightedIndex)
-                                            ?.firstOrNull()
-                                            ?.let { viewModel.onAccentSelected(it) }
+                                        if (dragState.key.code == SpecialKeyCode.EXTENSIONS) {
+                                            // See the long-press-timer branch's own doc: index 0
+                                            // (no drag) is Settings, index 1 is Language.
+                                            if (dragState.highlightedIndex == 1) onOpenLanguageSettings() else onOpenSettings()
+                                        } else {
+                                            // Commits whichever option the finger is currently over
+                                            // — index 0 (the base letter) if the finger never left
+                                            // the key, exactly like a plain long-press-then-release
+                                            // with no popup would type the base character.
+                                            dragState.options.getOrNull(dragState.highlightedIndex)
+                                                ?.let { viewModel.onAccentSelected(it) }
+                                        }
                                         accentDragState = null
                                         machine.onTouch(TouchSample(change.position.x, change.position.y, now, TouchAction.UP))
                                         settled = true
@@ -761,7 +798,11 @@ private fun KeyGrid(
                                     val distancePx = kotlin.math.abs(change.position.x - down.position.x)
                                     val wantIndex = (distancePx / cellWidthPx).toInt()
                                     var options = dragState.options
-                                    if (wantIndex >= options.size) {
+                                    // The emoji-key Settings/Language menu is a fixed 2-option
+                                    // action list, not a curated-then-overflow character set — it
+                                    // never grows past its own options.size, unlike a real accent
+                                    // popup dragging into EXTENDED_POPUP_SYMBOLS below.
+                                    if (dragState.key.code != SpecialKeyCode.EXTENSIONS && wantIndex >= options.size) {
                                         // Dragged past the last popup character — "keep
                                         // dragging" reveals more special characters beyond the
                                         // curated per-key set, the same idea as Fleksy's drag-
@@ -1059,7 +1100,8 @@ private fun handleGestureEvent(
                     onOpenSettings()
                 } else {
                     onPreviewKey(event.keyCode)
-                    viewModel.onKeyTap(event.keyCode)
+                    val key = keyLookupByCode(event.keyCode)
+                    if (key != null) dispatchKeyTap(key, viewModel) else viewModel.onKeyTap(event.keyCode)
                 }
             }
         }
@@ -1089,18 +1131,18 @@ private fun handleGestureEvent(
         is GestureEvent.KeyLongPress -> {
             val key = keyLookupByCode(event.keyCode)
             when {
-                key?.code == SpecialKeyCode.EXTENSIONS -> onOpenSettings()
-                // A key with popupChars is intercepted earlier, in KeyGrid's own long-press-timer
-                // handling, which enters accent-drag mode directly instead of ever emitting this
-                // KeyLongPress event for it — so by the time one reaches here, it's guaranteed to
-                // be a key with nothing to pop up (or popups disabled in Settings).
+                // A key with popupChars, or the emoji/extensions key, is intercepted earlier, in
+                // KeyGrid's own long-press-timer handling (accent-drag mode, or the Settings/
+                // Language menu reusing that same mechanism) directly instead of ever emitting
+                // this KeyLongPress event for it — so by the time one reaches here, it's
+                // guaranteed to be a key with nothing to pop up (or popups disabled in Settings).
                 event.keyCode != 0 -> {
                     // No accent variants (or popups disabled in Settings): a held key still types
                     // its base character rather than silently doing nothing once the tap-resolution
                     // window has passed.
                     feedback.onKeyPress()
                     onPreviewKey(event.keyCode)
-                    viewModel.onKeyTap(event.keyCode)
+                    if (key != null) dispatchKeyTap(key, viewModel) else viewModel.onKeyTap(event.keyCode)
                 }
             }
         }
@@ -1121,7 +1163,7 @@ internal fun KeyRowView(
     accessibleMode: Boolean,
     showKeyBackgrounds: Boolean,
     isHomeRow: Boolean,
-    onKeyTap: (Int) -> Unit,
+    onKeyTap: (KeyDefinition) -> Unit,
     ancestorCoordinates: () -> androidx.compose.ui.layout.LayoutCoordinates?,
     onBoundsMeasured: (Int, KeyDefinition, Rect) -> Unit,
     fontFamily: androidx.compose.ui.text.font.FontFamily? = null,
@@ -1228,9 +1270,17 @@ internal fun KeyRowView(
         // color regardless of this setting, so it stays visually distinguishable either way.
         Row(Modifier.fillMaxWidth().fillMaxHeight(), verticalAlignment = Alignment.CenterVertically) {
             rowKeys.forEach { key ->
-                val label = key.label.let {
-                    if (it.length != 1) return@let it
-                    if (alwaysShowUppercaseLetters || shiftOn || capsLockOn) it.uppercase() else it.lowercase()
+                // A key with its own shiftedText (Nepali Traditional's conjunct keys — see
+                // KeyDefinition's doc) shows that exact string while shift is engaged, not a
+                // Unicode case transform of the unshifted label — shiftedText is never a case
+                // pairing of key.label to begin with (e.g. "q"->त्र vs "Q"->त्त).
+                val label = if (key.shiftedText != null) {
+                    if (shiftOn || capsLockOn) key.shiftedText else key.label
+                } else {
+                    key.label.let {
+                        if (it.length != 1) return@let it
+                        if (alwaysShowUppercaseLetters || shiftOn || capsLockOn) it.uppercase() else it.lowercase()
+                    }
                 }
                 val fontSize = if (key.label.length == 1) 24.sp else 15.sp
                 val isSpace = key.code == SpecialKeyCode.SPACE
@@ -1284,7 +1334,7 @@ internal fun KeyRowView(
                         .fillMaxHeight()
                         .let { m ->
                             if (accessibleMode) {
-                                m.clickable(onClickLabel = keyDescription) { onKeyTap(key.code) }
+                                m.clickable(onClickLabel = keyDescription) { onKeyTap(key) }
                                     .semantics { contentDescription = keyDescription }
                             } else {
                                 m.semantics { contentDescription = keyDescription }
@@ -1404,9 +1454,15 @@ private fun TopStrip(
             // bug, fixed — reported as "the border above QWERTY is thicker than the others").
             .let { m -> if (isGridMode) m.gridBorderExceptBottom(theme.gridBorderColor.toComposeColor(), theme.gridBorderWidth.toDp()) else m },
     ) {
+        // Only worth showing once there's actually something to switch *to* — with a single
+        // enabled language the button would have no effect, same reasoning as every other
+        // "hidden below 2 enabled languages" spot (see LanguageRow's picker in SettingsActivity).
+        val showLanguageSwitch = uiState.enabledLanguages.size >= 2
         androidx.compose.foundation.pager.HorizontalPager(
             state = pagerState,
-            modifier = Modifier.fillMaxSize(),
+            // Inset so the switch button (aligned CenterEnd below) never sits on top of scrolling
+            // suggestion chips underneath it.
+            modifier = Modifier.fillMaxSize().let { m -> if (showLanguageSwitch) m.padding(end = LANGUAGE_SWITCH_WIDTH) else m },
             // Locked to the current page in clipboard mode — swiping between suggestions/numbers/
             // tools makes no sense while a full-screen clipboard picker is open underneath.
             userScrollEnabled = !clipboardModeActive,
@@ -1436,6 +1492,44 @@ private fun TopStrip(
                 )
             }
         }
+        if (showLanguageSwitch) {
+            LanguageSwitchButton(
+                theme = theme,
+                isGridMode = isGridMode,
+                onClick = {
+                    feedback.onKeyPress()
+                    viewModel.cycleActiveLanguage()
+                },
+                modifier = Modifier.align(Alignment.CenterEnd),
+            )
+        }
+    }
+}
+
+private val LANGUAGE_SWITCH_WIDTH = 44.dp
+
+/** Persistent button anchored to the right edge of the suggestion bar (not a key in the main
+ * grid — keeps the bottom row's tuned `widthWeight` geometry, see Layouts.kt's own comments on
+ * that, completely untouched) — cycles [KeyboardViewModel.cycleActiveLanguage] on tap. Only shown
+ * once 2+ languages are enabled (see [TopStrip]); visible across all three tab pages, not just
+ * Suggestions, since it's a persistent affordance rather than page-specific content. */
+@Composable
+private fun LanguageSwitchButton(
+    theme: OmakeyTheme,
+    isGridMode: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .fillMaxHeight()
+            .width(LANGUAGE_SWITCH_WIDTH)
+            .let { m -> if (isGridMode) m.gridCellBorder(theme.gridBorderColor.toComposeColor(), theme.gridBorderWidth.toDp(), includeBottom = false) else m }
+            .background(theme.keySpecialBackground.toComposeColor())
+            .clickable(onClickLabel = "Switch language", onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(text = "🌐", fontSize = 20.sp)
     }
 }
 
@@ -1750,11 +1844,14 @@ private fun NumbersTabContent(
     val noOpAncestor: () -> androidx.compose.ui.layout.LayoutCoordinates? = remember { { null } }
     // Digits are already the Symbols grid's own first row, so repeating them here while a Symbols
     // layout is active is redundant — extra special characters are more useful in that slot,
-    // reverting to plain digits the instant the user switches back to letters.
-    val rowKeys = if (currentLayoutId == Layouts.Symbols1.id || currentLayoutId == Layouts.Symbols2.id) {
-        Layouts.SymbolsExtraRow.keys
-    } else {
-        Layouts.NumberRow.keys
+    // reverting to plain digits the instant the user switches back to letters. Nepali Traditional
+    // gets its own Devanagari-digit/extra-punctuation counterparts (see NepaliLayouts) rather than
+    // falling back to the Latin ones here — the same split Layouts.QwertyEnUS itself uses.
+    val isNepaliTraditional = currentLayoutId == dev.omakey.core.layout.NepaliLayouts.Traditional.id
+    val rowKeys = when {
+        currentLayoutId == Layouts.Symbols1.id || currentLayoutId == Layouts.Symbols2.id -> Layouts.SymbolsExtraRow.keys
+        isNepaliTraditional -> dev.omakey.core.layout.NepaliLayouts.NumberRow.keys
+        else -> Layouts.NumberRow.keys
     }
     val isGridMode = dev.omakey.core.theme.LocalKeyboardLayoutMode.current == dev.omakey.core.theme.LayoutMode.GRID
     Box(Modifier.fillMaxWidth().fillMaxHeight().let { m -> if (isGridMode) m else m.padding(horizontal = 4.dp) }) {
@@ -1766,7 +1863,7 @@ private fun NumbersTabContent(
             accessibleMode = true,
             showKeyBackgrounds = false,
             isHomeRow = false,
-            onKeyTap = { code -> feedback.onKeyPress(); viewModel.onKeyTap(code) },
+            onKeyTap = { key -> feedback.onKeyPress(); dispatchKeyTap(key, viewModel) },
             ancestorCoordinates = noOpAncestor,
             onBoundsMeasured = { _, _, _ -> },
             fontFamily = fontFamily,
@@ -1774,6 +1871,20 @@ private fun NumbersTabContent(
             // own doc on KeyRowView.
             gridCellBottomBorder = false,
         )
+    }
+}
+
+/** Dispatches a tap on [key] to the ViewModel. Every call site that taps by [KeyDefinition] (not
+ * just the main gesture handler in [handleGestureEvent] — [KeyRowView]'s own accessibility click
+ * action and the Numbers tab's row both do too) needs this, not a raw `viewModel.onKeyTap(code)`:
+ * a key carrying [KeyDefinition.text]/[KeyDefinition.shiftedText] (Nepali Traditional's conjunct
+ * keys — see that layout's own doc) has a synthetic, non-codepoint `code` that only
+ * [KeyboardViewModel.onCharacterKeyTap] knows how to resolve correctly. */
+private fun dispatchKeyTap(key: KeyDefinition, viewModel: KeyboardViewModel) {
+    if (key.text != null || key.shiftedText != null) {
+        viewModel.onCharacterKeyTap(key)
+    } else {
+        viewModel.onKeyTap(key.code)
     }
 }
 

@@ -27,12 +27,11 @@ import dev.omakey.core.emoji.EmojiRecentsPreferences
 import dev.omakey.core.feedback.HapticSoundPreferences
 import dev.omakey.core.gesture.GesturePreferences
 import dev.omakey.core.input.TextEditor
+import dev.omakey.core.language.LanguagePreferences
 import dev.omakey.core.layout.LayoutPreferences
-import dev.omakey.core.predict.AutocorrectIndex
 import dev.omakey.core.predict.AutocorrectPreferences
+import dev.omakey.core.predict.LanguageDictionaries
 import dev.omakey.core.predict.PredictionPreferences
-import dev.omakey.core.predict.DictionarySeeder
-import dev.omakey.core.predict.FrequencyNgramPredictionEngine
 import dev.omakey.core.theme.AccessibilityPreferences
 import dev.omakey.core.theme.FontPreferences
 import dev.omakey.core.theme.LocalOmakeyTheme
@@ -70,8 +69,8 @@ class OmakeyInputMethodService :
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     private lateinit var database: OmakeyDatabase
-    private lateinit var predictionEngine: FrequencyNgramPredictionEngine
-    private lateinit var autocorrectIndex: AutocorrectIndex
+    private lateinit var languageDictionaries: LanguageDictionaries
+    private lateinit var languagePreferences: LanguagePreferences
     private lateinit var autocorrectPreferences: AutocorrectPreferences
     private lateinit var predictionPreferences: PredictionPreferences
     private lateinit var extensionRegistry: LazyExtensionRegistry
@@ -177,8 +176,11 @@ class OmakeyInputMethodService :
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
 
         database = OmakeyDatabase.getInstance(applicationContext)
-        predictionEngine = FrequencyNgramPredictionEngine(database.wordDao(), database.bigramDao())
-        autocorrectIndex = AutocorrectIndex()
+        // Seeding/loading per language (English seeded+loaded eagerly, same as before; any other
+        // enabled language loads lazily the first time it becomes active) now lives inside
+        // LanguageDictionaries/KeyboardViewModel — see either's own doc.
+        languageDictionaries = LanguageDictionaries(applicationContext, database.wordDao(), database.bigramDao())
+        languagePreferences = LanguagePreferences(applicationContext)
         autocorrectPreferences = AutocorrectPreferences(applicationContext)
         predictionPreferences = PredictionPreferences(applicationContext)
         textEditor = TextEditor { currentInputConnection }
@@ -191,18 +193,6 @@ class OmakeyInputMethodService :
         hapticSoundPreferences = HapticSoundPreferences(applicationContext)
         emojiRecentsPreferences = EmojiRecentsPreferences(applicationContext)
         keyboardFeedback = VibratorKeyboardFeedback(applicationContext, hapticSoundPreferences)
-
-        // Async, off the main thread, and a no-op after the first run — must not block
-        // onCreateInputView; the keyboard is typeable immediately and suggestions populate once
-        // this finishes.
-        serviceScope.launch {
-            val seeder = DictionarySeeder(database.wordDao(), database.bigramDao())
-            seeder.seedIfNeeded(applicationContext)
-            seeder.seedBigramsIfNeeded(applicationContext)
-            // Loaded after seeding so a fresh install's very first autocorrect check already has
-            // the full dictionary, not just whatever existed before this coroutine ran.
-            autocorrectIndex.load(database.wordDao().all())
-        }
 
         extensionRegistry = LazyExtensionRegistry(contextProvider = ::buildExtensionContext)
         extensionRegistry.registerFactory(ClipboardHistoryExtension().id) { ClipboardHistoryExtension() }
@@ -280,8 +270,8 @@ class OmakeyInputMethodService :
 
         val viewModel = KeyboardViewModel(
             textEditor = textEditor,
-            predictionEngine = predictionEngine,
-            autocorrectIndex = autocorrectIndex,
+            languageDictionaries = languageDictionaries,
+            languagePreferences = languagePreferences,
             autocorrectPreferences = autocorrectPreferences,
             predictionPreferences = predictionPreferences,
             extensionRegistry = extensionRegistry,
@@ -307,6 +297,7 @@ class OmakeyInputMethodService :
                         viewModel,
                         accessibilityPreferences,
                         onOpenSettings = ::openSettings,
+                        onOpenLanguageSettings = ::openLanguageSettings,
                         feedback = keyboardFeedback,
                     )
                 }
@@ -362,6 +353,16 @@ class OmakeyInputMethodService :
     private fun openSettings() {
         val intent = android.content.Intent(this, dev.omakey.app.settings.SettingsActivity::class.java)
             .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        startActivity(intent)
+    }
+
+    /** The emoji key's long-press menu's "Language" option — opens Settings deep-linked straight
+     * into Manage Languages instead of the top-level list, same "jump straight to the relevant
+     * screen" intent as [openSettings] itself opens the app fresh. */
+    private fun openLanguageSettings() {
+        val intent = android.content.Intent(this, dev.omakey.app.settings.SettingsActivity::class.java)
+            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            .putExtra(dev.omakey.app.settings.SettingsActivity.EXTRA_OPEN_LANGUAGE_SETTINGS, true)
         startActivity(intent)
     }
 

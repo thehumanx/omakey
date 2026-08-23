@@ -5,6 +5,12 @@ import dev.omakey.core.emoji.WordEmojiSuggestions
 import dev.omakey.core.gesture.GesturePreferences
 import dev.omakey.core.gesture.GestureSettings
 import dev.omakey.core.input.TextEditor
+import dev.omakey.core.language.InputMethodKind
+import dev.omakey.core.language.LanguageDefinition
+import dev.omakey.core.language.LanguagePreferences
+import dev.omakey.core.language.Languages
+import dev.omakey.core.language.nepali.NepaliTransliterator
+import dev.omakey.core.layout.KeyDefinition
 import dev.omakey.core.layout.KeyboardLayout
 import dev.omakey.core.layout.LayoutPreferences
 import dev.omakey.core.layout.LayoutSettings
@@ -13,6 +19,7 @@ import dev.omakey.core.layout.SpecialKeyCode
 import dev.omakey.core.predict.AutocorrectIndex
 import dev.omakey.core.predict.AutocorrectPreferences
 import dev.omakey.core.predict.Calculator
+import dev.omakey.core.predict.LanguageDictionaries
 import dev.omakey.core.predict.PredictionEngine
 import dev.omakey.core.predict.PredictionPreferences
 import dev.omakey.core.theme.FontChoices
@@ -51,7 +58,7 @@ data class KeyboardUiState(
     val shiftOn: Boolean = false,
     /** True once shift has been long-pressed into caps-lock — every letter is capitalized until
      * shift is tapped again, unlike plain [shiftOn] which is a one-shot "capitalize just the next
-     * letter" that clears itself after a single character (see [commitTypedChar]). */
+     * letter" that clears itself after a single character (see [commitTypedText]). */
     val capsLockOn: Boolean = false,
     val suggestions: List<String> = emptyList(),
     /** Emoji matching the word currently being typed/just finished (see
@@ -89,6 +96,13 @@ data class KeyboardUiState(
      * whichever extension bar content is currently active, for ~0.5s — see
      * [KeyboardViewModel.showBanner]. */
     val bannerMessage: String? = null,
+    val activeLanguageId: String = Languages.EnglishUS.id,
+    val activeInputMethodId: String = Languages.EnglishUS.defaultInputMethod.id,
+    /** Mirrors [LanguagePreferences]'s enabled set, resolved to full definitions — drives both
+     * the Manage Languages screen and whether the suggestion-bar language-switch button shows at
+     * all (hidden below 2 enabled languages, see [dev.omakey.app.keyboard.ui.KeyboardRoot]'s
+     * `TopStrip`). */
+    val enabledLanguages: List<LanguageDefinition> = listOf(Languages.EnglishUS),
 )
 
 /**
@@ -99,8 +113,8 @@ data class KeyboardUiState(
  */
 class KeyboardViewModel(
     private val textEditor: TextEditor,
-    private val predictionEngine: PredictionEngine,
-    private val autocorrectIndex: AutocorrectIndex,
+    private val languageDictionaries: LanguageDictionaries,
+    private val languagePreferences: LanguagePreferences,
     private val autocorrectPreferences: AutocorrectPreferences,
     private val predictionPreferences: PredictionPreferences,
     val extensionRegistry: ExtensionRegistry,
@@ -116,8 +130,30 @@ class KeyboardViewModel(
     // why avoiding that read is what actually avoids the second "read your clipboard" toast.
     private val onClipboardCopy: (String) -> Unit = {},
 ) {
+    // Resolved synchronously so the very first _uiState (below) already reflects whichever
+    // language/input method was last active, rather than always starting on English and visibly
+    // flipping over once the async subscription in init{} catches up. autocorrectIndex/
+    // predictionEngine start as an *unloaded* placeholder for that same language (see
+    // LanguageDictionaries.placeholderFor's own doc) — real dictionary data arrives moments later
+    // via the init{} coroutine, same as the single English instance always used to.
+    private var activeLanguage: LanguageDefinition =
+        Languages.byId(languagePreferences.settings.value.activeLanguageId) ?: Languages.EnglishUS
+    private var activeInputMethodId: String =
+        languagePreferences.settings.value.inputMethodByLanguage[activeLanguage.id] ?: activeLanguage.defaultInputMethod.id
+    private var autocorrectIndex: AutocorrectIndex
+    private var predictionEngine: PredictionEngine
+
+    init {
+        val (index, engine) = languageDictionaries.placeholderFor(activeLanguage)
+        autocorrectIndex = index
+        predictionEngine = engine
+    }
+
+    private fun activeInputMethod() = activeLanguage.inputMethods.find { it.id == activeInputMethodId } ?: activeLanguage.defaultInputMethod
+
     private val _uiState = MutableStateFlow(
         KeyboardUiState(
+            layout = activeInputMethod().layout,
             theme = themeRepository.currentTheme.value,
             useSystemAccent = themeRepository.useSystemAccent.value,
             layoutMode = themeRepository.layoutMode.value,
@@ -125,6 +161,9 @@ class KeyboardViewModel(
             fontId = fontPreferences.fontId.value,
             gestureSettings = gesturePreferences.settings.value,
             topStripTab = topStripTabPreferences.tab.value,
+            activeLanguageId = activeLanguage.id,
+            activeInputMethodId = activeInputMethodId,
+            enabledLanguages = languagePreferences.settings.value.enabledLanguageIds.mapNotNull { Languages.byId(it) },
         ),
     )
     val uiState: StateFlow<KeyboardUiState> = _uiState.asStateFlow()
@@ -145,6 +184,18 @@ class KeyboardViewModel(
      * "word\n<fix> " (newline replaced by a space). */
     private var lastWordBoundarySeparator: String = " "
     private var currentWordBuffer = StringBuilder()
+
+    /** Raw Latin keystrokes typed so far for the word currently being composed under a
+     * TRANSLITERATED input method (e.g. Nepali Romanized) — parallel to [currentWordBuffer], which
+     * tracks what's actually *committed* (the transliterated Devanagari). Cleared at the same word
+     * boundaries [currentWordBuffer] is. See [onCharacterKeyTap]/[commitTypedText]. */
+    private var romanizedRawBuffer = StringBuilder()
+
+    /** How many UTF-16 chars of [romanizedRawBuffer]'s current transliteration are presently
+     * committed in the text field — what a re-render (typing/backspacing within the same word)
+     * needs to delete before committing the freshly recomputed text. Reset to 0 at the same word
+     * boundaries [romanizedRawBuffer] is. */
+    private var romanizedCommittedLength = 0
 
     /** When the most recent space was actually committed — 0 means "none yet this session, or
      * already consumed by a double-tap conversion." Powers [onSpace]'s double-tap-space-for-
@@ -262,6 +313,63 @@ class KeyboardViewModel(
         gesturePreferences.settings
             .onEach { settings -> _uiState.update { it.copy(gestureSettings = settings) } }
             .launchIn(scope)
+        languagePreferences.settings
+            .onEach { settings -> applyLanguageSettings(settings) }
+            .launchIn(scope)
+    }
+
+    /** Reacts to [LanguagePreferences] changes — which languages are enabled, which is active,
+     * and which input method each uses. Only does real work when the *active* language or its
+     * input method actually changed (an unrelated enable/disable elsewhere in the list still
+     * updates [KeyboardUiState.enabledLanguages], just without touching layout/dictionaries). */
+    private fun applyLanguageSettings(settings: dev.omakey.core.language.LanguageSettings) {
+        val enabled = settings.enabledLanguageIds.mapNotNull { Languages.byId(it) }
+        val language = Languages.byId(settings.activeLanguageId) ?: Languages.EnglishUS
+        val inputMethodId = settings.inputMethodByLanguage[language.id] ?: language.defaultInputMethod.id
+        val languageChanged = language.id != activeLanguage.id
+        val inputMethodChanged = inputMethodId != activeInputMethodId
+        activeLanguage = language
+        activeInputMethodId = inputMethodId
+        _uiState.update {
+            it.copy(
+                enabledLanguages = enabled,
+                activeLanguageId = language.id,
+                activeInputMethodId = inputMethodId,
+                layout = if (languageChanged || inputMethodChanged) activeInputMethod().layout else it.layout,
+            )
+        }
+        if (!languageChanged && !inputMethodChanged) return
+        // Whatever was mid-typing under the old language/input method doesn't carry over — a
+        // half-composed transliteration buffer or an in-progress correction cycle makes no sense
+        // once the input method underneath it has changed. Real committed text and undo history
+        // are untouched (those stay valid regardless of what typed them).
+        currentWordBuffer.clear()
+        romanizedRawBuffer.clear()
+        romanizedCommittedLength = 0
+        suggestionCycleIndex = -1
+        lastAutocorrect = null
+        revertedWord = null
+        activeCorrection = null
+        _uiState.update { it.copy(suggestions = emptyList(), emojiSuggestions = emptyList(), firstSuggestionKind = SuggestionKind.PLAIN) }
+        if (languageChanged) {
+            scope.launch {
+                val (index, engine) = languageDictionaries.forLanguage(language)
+                autocorrectIndex = index
+                predictionEngine = engine
+            }
+        }
+    }
+
+    /** Advances to the next enabled language (wrapping around), in [KeyboardUiState.enabledLanguages]'s
+     * order — the suggestion-bar language-switch button's action (see `KeyboardRoot.kt`'s
+     * `TopStrip`). A no-op with fewer than 2 enabled languages, same as the button being hidden
+     * then. */
+    fun cycleActiveLanguage() {
+        val enabled = _uiState.value.enabledLanguages
+        if (enabled.size < 2) return
+        val currentIndex = enabled.indexOfFirst { it.id == activeLanguage.id }.coerceAtLeast(0)
+        val next = enabled[(currentIndex + 1) % enabled.size]
+        languagePreferences.setActiveLanguage(next.id)
     }
 
     val extensionHost = object : ExtensionHost {
@@ -286,8 +394,11 @@ class KeyboardViewModel(
         }
         _uiState.update {
             it.copy(
-                layout = Layouts.QwertyEnUS,
-                shiftOn = autocorrectPreferences.settings.value.autoCapitalizeEnabled && textEditor.textBeforeCursor(1).isEmpty(),
+                layout = activeInputMethod().layout,
+                // See maybeAutoCapitalize's doc — auto-capitalize doesn't apply under a
+                // TRANSLITERATED input method, where shift means something else entirely.
+                shiftOn = activeInputMethod().kind != InputMethodKind.TRANSLITERATED &&
+                    autocorrectPreferences.settings.value.autoCapitalizeEnabled && textEditor.textBeforeCursor(1).isEmpty(),
                 capsLockOn = false,
                 suggestions = emptyList(),
                 emojiSuggestions = emptyList(),
@@ -304,6 +415,8 @@ class KeyboardViewModel(
         lastCommittedWord = null
         previousToLastCommittedWord = null
         currentWordBuffer.clear()
+        romanizedRawBuffer.clear()
+        romanizedCommittedLength = 0
         suggestionCycleIndex = -1
         lastAutocorrect = null
         revertedWord = null
@@ -346,10 +459,23 @@ class KeyboardViewModel(
                     else -> Layouts.Symbols1
                 },
             )
-            SpecialKeyCode.LETTERS -> switchLayout(Layouts.QwertyEnUS)
+            SpecialKeyCode.LETTERS -> switchLayout(activeInputMethod().layout)
             SpecialKeyCode.EXTENSIONS -> toggleExtensionPanel()
             else -> onCharacter(code)
         }
+    }
+
+    /** Tap (or held-with-no-popup long-press) on a CHARACTER key whose output isn't a plain
+     * single Unicode codepoint transformable via `Char.uppercaseChar()` — either a multi-
+     * codepoint cluster ([KeyDefinition.text], e.g. Nepali Traditional's conjunct keys) or a real
+     * independent shift-layer value ([KeyDefinition.shiftedText]) rather than a case mapping.
+     * Resolved once at the UI dispatch layer (see `KeyboardRoot.handleGestureEvent`) since that's
+     * the only place the full [KeyDefinition] — not just its bare `Int` code — is available;
+     * [onKeyTap] stays the path for every ordinary single-codepoint key, unchanged. */
+    fun onCharacterKeyTap(key: KeyDefinition) {
+        val shiftActive = _uiState.value.shiftOn || _uiState.value.capsLockOn
+        val text = if (shiftActive && key.shiftedText != null) key.shiftedText else (key.text ?: key.label)
+        commitTypedText(text, fromTransliteratedKey = false)
     }
 
     fun onSwipeLeft() = onDeleteWord()
@@ -662,35 +788,116 @@ class KeyboardViewModel(
         }
     }
 
-    private fun onCharacter(code: Int) = commitTypedChar(Character.toChars(code)[0])
+    private fun onCharacter(code: Int) {
+        // Defensive no-op: `code` should always be a real Unicode codepoint here (every ordinary
+        // English/Symbols key, plus Nepali Romanized's plain QwertyEnUS letters), but Nepali
+        // Traditional's multi-codepoint keys use synthetic negative codes that are never meant to
+        // reach this path (see NepaliLayouts's doc — they route through onCharacterKeyTap
+        // instead). Guards against a missed dispatch site crashing Character.toChars rather than
+        // just silently dropping the tap.
+        if (!Character.isValidCodePoint(code)) return
+        val char = Character.toChars(code)[0]
+        if (activeInputMethod().kind == InputMethodKind.TRANSLITERATED) {
+            if (char.isLetter()) {
+                onRomanizedLetterKey(char)
+            } else {
+                flushRomanizedWord()
+                commitTypedText(char.toString(), fromTransliteratedKey = true)
+            }
+        } else {
+            commitTypedText(char.toString(), fromTransliteratedKey = false)
+        }
+    }
 
     /** Also used for accent-popup selections (long-press on a key with popupChars), which arrive
-     * as a Char rather than a key code since accent variants aren't part of the base layout. */
-    fun onAccentSelected(char: Char) = commitTypedChar(char)
+     * as the selected option's own text rather than a key code since accent/punctuation variants
+     * aren't part of the base layout — usually one character, but not always (e.g. Nepali
+     * Traditional's danda key offers "रु," a 2-codepoint popup option). */
+    fun onAccentSelected(text: String) {
+        if (text.isEmpty()) return
+        if (activeInputMethod().kind == InputMethodKind.TRANSLITERATED && text.length == 1 && text[0].isLetter()) {
+            onRomanizedLetterKey(text[0])
+        } else {
+            commitTypedText(text, fromTransliteratedKey = false)
+        }
+    }
 
-    private fun commitTypedChar(rawChar: Char) {
+    /** One Latin keystroke while a TRANSLITERATED input method (Nepali Romanized) is composing a
+     * word: appends to [romanizedRawBuffer], re-renders the *whole* buffer through
+     * [NepaliTransliterator] (never incremental — see its own doc for why), and swaps whatever was
+     * previously committed for this word for the fresh rendering — the same delete-then-recommit
+     * idiom [applyActiveCorrection]'s `LIVE_BUFFER` mode already uses elsewhere in this file.
+     * [currentWordBuffer] is kept mirroring the *committed* (Devanagari) text throughout, exactly
+     * the role it already plays for a [InputMethodKind.DIRECT] input method — undo/suggestion
+     * machinery downstream doesn't need to know transliteration happened at all. */
+    private fun onRomanizedLetterKey(rawChar: Char) {
         suggestionCycleIndex = -1
         deleteCoalesceActive = false
-        var char = rawChar
-        if (_uiState.value.shiftOn) char = char.uppercaseChar()
+        val char = if (_uiState.value.shiftOn) rawChar.uppercaseChar() else rawChar
+        romanizedRawBuffer.append(char)
+        val rendered = NepaliTransliterator.transliterate(romanizedRawBuffer.toString())
+        repeat(romanizedCommittedLength) { textEditor.deleteCharacterBackward() }
+        textEditor.insertText(rendered)
+        romanizedCommittedLength = rendered.length
+        currentWordBuffer.clear()
+        currentWordBuffer.append(rendered)
+        refreshSuggestions()
+        if (_uiState.value.shiftOn && !_uiState.value.capsLockOn) {
+            _uiState.update { it.copy(shiftOn = false) }
+        }
+    }
+
+    /** Word-boundary equivalent of [flushWordBuffer] for the Romanized buffering state — resets
+     * [romanizedRawBuffer]/[romanizedCommittedLength] and then defers to the ordinary
+     * [flushWordBuffer] (fed by [currentWordBuffer], which already mirrors whatever Devanagari
+     * text is actually committed) for the shared undo/`lastCommittedWord` bookkeeping. */
+    private fun flushRomanizedWord() {
+        romanizedRawBuffer.clear()
+        romanizedCommittedLength = 0
+        flushWordBuffer(separator = "")
+    }
+
+    /** Commits [text] (one or more Unicode codepoints — a single Latin letter for English, or a
+     * whole Devanagari cluster for a Nepali Traditional key) at the cursor and updates word-
+     * buffer/suggestion/undo state accordingly. Whether [text] continues the current word or ends
+     * it (like `.isLetter()` used to decide for a single Latin `Char`) is judged per-codepoint by
+     * Unicode general category instead — letters *and* combining marks (Devanagari matras/virama)
+     * both continue a word, matching `.isLetter()` exactly for every existing English/Symbols key
+     * while correctly extending to Nepali Traditional's clusters, which `.isLetter()` alone would
+     * wrongly treat as punctuation (a bare virama's category is "mark," not "letter"). */
+    private fun commitTypedText(text: String, fromTransliteratedKey: Boolean) {
+        suggestionCycleIndex = -1
+        deleteCoalesceActive = false
+        val shifted = if (_uiState.value.shiftOn && text.length == 1) text.uppercase() else text
+        val isWordContinuing = shifted.isNotEmpty() && shifted.codePoints().allMatch { cp -> isWordContinuingCodepoint(cp) }
         // Punctuation typed directly after a word (no space) is a word boundary too — correct
-        // before committing the punctuation itself, so it lands after the fixed word.
-        if (!char.isLetter()) {
+        // before committing it, so it lands after the fixed word. Not meaningful mid-transliteration
+        // (Nepali has no autocorrect dictionary yet — see LanguageDefinition.dictionaryAsset).
+        if (!isWordContinuing && !fromTransliteratedKey) {
             maybeAutocorrectBufferedWord()
         }
-        textEditor.commitCharacter(char)
-        if (char.isLetter()) {
-            currentWordBuffer.append(char)
+        textEditor.insertText(shifted)
+        if (isWordContinuing) {
+            currentWordBuffer.append(shifted)
             refreshSuggestions()
         } else {
-            flushWordBuffer(separator = char.toString())
-            lastWordBoundarySeparator = char.toString()
+            flushWordBuffer(separator = shifted)
+            lastWordBoundarySeparator = shifted
             refreshSuggestions(checkContextualCorrection = true)
-            if (char == '=') tryShowCalculatorResult()
+            if (shifted == "=") tryShowCalculatorResult()
         }
         if (_uiState.value.shiftOn && !_uiState.value.capsLockOn) {
             _uiState.update { it.copy(shiftOn = false) } // one-shot shift, matches typical mobile keyboard behavior
         }
+    }
+
+    private fun isWordContinuingCodepoint(codePoint: Int): Boolean = when (Character.getType(codePoint)) {
+        Character.UPPERCASE_LETTER.toInt(), Character.LOWERCASE_LETTER.toInt(), Character.TITLECASE_LETTER.toInt(),
+        Character.MODIFIER_LETTER.toInt(), Character.OTHER_LETTER.toInt(),
+        Character.NON_SPACING_MARK.toInt(), Character.COMBINING_SPACING_MARK.toInt(),
+        Character.DECIMAL_DIGIT_NUMBER.toInt(),
+        -> true
+        else -> false
     }
 
     /** Inline calculator — typing "12+7=" offers the full "12+7=19" in the suggestion strip
@@ -701,7 +908,7 @@ class KeyboardViewModel(
      * effect is just the missing "19" getting appended.
      *
      * Called right after '=' itself has already been committed as ordinary punctuation (see
-     * [commitTypedChar]), so [textBeforeCursor] already includes it — but also re-derived from
+     * [commitTypedText]), so [textBeforeCursor] already includes it — but also re-derived from
      * [refreshSuggestionsAfterDeletion] on every backspace, not just fresh '=' keystrokes. Real
      * bug, fixed: this used to be a one-shot side effect of typing '=', with nothing re-running
      * it afterward — backspacing away just the applied result (leaving the cursor sitting right
@@ -804,9 +1011,15 @@ class KeyboardViewModel(
     }
 
     /** Off by default (per user request) — only capitalizes the very start of a field or right
-     * after sentence-ending punctuation, never mid-sentence. Caps lock always wins over this. */
+     * after sentence-ending punctuation, never mid-sentence. Caps lock always wins over this.
+     * Skipped entirely under a TRANSLITERATED input method (Nepali Romanized): shift there means
+     * "type the retroflex/long-vowel variant" (see NepaliTransliterator's doc), not real
+     * capitalization — auto-shifting a word's first letter would silently misspell it (e.g.
+     * "dhanyabad" auto-capitalized to "Dhanyabad" reads as retroflex ढ, not dental ध, producing
+     * ढन्यवाद instead of the correct धन्यवाद). Devanagari has no case to capitalize regardless. */
     private fun maybeAutoCapitalize() {
         if (!autocorrectPreferences.settings.value.autoCapitalizeEnabled) return
+        if (activeInputMethod().kind == InputMethodKind.TRANSLITERATED) return
         if (_uiState.value.capsLockOn) return
         val before = textEditor.textBeforeCursor(3).trimEnd { it == ' ' }
         val shouldCapitalize = before.isEmpty() || before.last() in ".!?"
@@ -881,6 +1094,8 @@ class KeyboardViewModel(
             suggestionCycleIndex = -1
             deleteCoalesceActive = false
             currentWordBuffer.clear()
+            romanizedRawBuffer.clear()
+            romanizedCommittedLength = 0
             textEditor.deleteSelection()
             refreshSuggestions()
             return
@@ -905,6 +1120,23 @@ class KeyboardViewModel(
         lastAutocorrect = null
         revertedWord = null
         suggestionCycleIndex = -1
+        if (romanizedRawBuffer.isNotEmpty()) {
+            // Pops one *raw Latin keystroke*, not one committed Devanagari character — removing a
+            // single Latin letter can change multiple trailing codepoints of the rendering (e.g.
+            // "sh" -> "s" changes श back to स), so this re-renders the whole remaining buffer and
+            // swaps it in, the same delete-then-recommit idiom onRomanizedLetterKey uses to type
+            // forward.
+            romanizedRawBuffer.deleteCharAt(romanizedRawBuffer.length - 1)
+            val rendered = NepaliTransliterator.transliterate(romanizedRawBuffer.toString())
+            repeat(romanizedCommittedLength) { textEditor.deleteCharacterBackward() }
+            textEditor.insertText(rendered)
+            romanizedCommittedLength = rendered.length
+            currentWordBuffer.clear()
+            currentWordBuffer.append(rendered)
+            deleteCoalesceActive = false
+            refreshSuggestionsAfterDeletion()
+            return
+        }
         if (currentWordBuffer.isNotEmpty()) {
             // Backspacing within a word still open for editing — absorbed into whichever
             // Inserted undo step that word eventually becomes on its own word boundary; not
@@ -1149,7 +1381,7 @@ class KeyboardViewModel(
 
     /** [checkContextualCorrection] is true right after any word-boundary commit that leaves a
      * definite, known separator behind the finished word — space, punctuation, or Enter inserting
-     * a literal newline (see [onSpace]/[commitTypedChar]/[onEnter], and [lastWordBoundarySeparator]
+     * a literal newline (see [onSpace]/[commitTypedText]/[onEnter], and [lastWordBoundarySeparator]
      * for why an editor action like "Go"/"Send" doesn't qualify).
      *
      * Three distinct outcomes, in priority order:

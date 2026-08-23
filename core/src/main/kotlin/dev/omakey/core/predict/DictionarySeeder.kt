@@ -8,6 +8,7 @@ import dev.omakey.core.db.WordEntity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.BufferedReader
+import java.io.FileNotFoundException
 import java.io.InputStreamReader
 
 /**
@@ -41,20 +42,27 @@ import java.io.InputStreamReader
  */
 class DictionarySeeder(private val wordDao: WordDao, private val bigramDao: BigramDao) {
 
-    suspend fun seedIfNeeded(context: Context, assetFileName: String = "wordlist_en_us.txt") {
+    /** [language] is a [dev.omakey.core.language.LanguageDefinition.id] — every seeded row is
+     * tagged with it (see [dev.omakey.core.db.WordEntity.language]), and the "already fully
+     * seeded" resume-state below is tracked per language too, so seeding one language's corpus
+     * never marks another's as done. Call this only for a language whose
+     * [dev.omakey.core.language.LanguageDefinition.dictionaryAsset] is non-null — for one that's
+     * null (no bundled corpus yet, e.g. Nepali today), skip the call entirely rather than passing
+     * a made-up file name. As a second line of defense, a bundled asset that's missing/unreadable
+     * for any other reason is also just skipped (logged via the return value being a no-op),
+     * never a crash — seeding failing shouldn't take the keyboard down with it. */
+    suspend fun seedIfNeeded(context: Context, language: String, assetFileName: String) {
         withContext(Dispatchers.IO) {
+            val lines = readAssetLines(context, assetFileName) ?: return@withContext
             val prefs = seedStatePrefs(context)
-            val lines = context.assets.open(assetFileName).use { stream ->
-                BufferedReader(InputStreamReader(stream)).readLines()
-            }
             val total = lines.size
             // Gated on the bundled list's line count, not a plain boolean: an app update that
-            // adds new words to wordlist_en_us.txt (e.g. "autocorrect", "emoji") needs already-
-            // seeded installs to pick them up too, not just fresh installs. Safe to just rerun the
-            // whole loop when the count grows — insertSeedBatch's OnConflictStrategy.IGNORE means
+            // adds new words to the wordlist (e.g. "autocorrect", "emoji") needs already-seeded
+            // installs to pick them up too, not just fresh installs. Safe to just rerun the whole
+            // loop when the count grows — insertSeedBatch's OnConflictStrategy.IGNORE means
             // already-present words (and any frequency/rank drift among them) are left untouched,
             // only genuinely new words get inserted.
-            if (prefs.getInt(KEY_WORDS_SEEDED_COUNT, 0) >= total) return@withContext
+            if (prefs.getInt(wordsSeededKey(language), 0) >= total) return@withContext
 
             val now = System.currentTimeMillis()
 
@@ -63,6 +71,7 @@ class DictionarySeeder(private val wordDao: WordDao, private val bigramDao: Bigr
                     val globalIndex = batchIndex * BATCH_SIZE + indexInBatch
                     WordEntity(
                         word = word.trim().lowercase(),
+                        language = language,
                         frequency = total - globalIndex,
                         isUserAdded = false,
                         lastUsedTimestamp = now,
@@ -73,18 +82,17 @@ class DictionarySeeder(private val wordDao: WordDao, private val bigramDao: Bigr
             // Only recorded once every batch above has actually committed — if the process dies
             // partway through the loop, this line never runs, so the next launch retries the
             // whole thing (safely, per the class doc) instead of being stuck at a partial table.
-            prefs.edit().putInt(KEY_WORDS_SEEDED_COUNT, total).apply()
+            prefs.edit().putInt(wordsSeededKey(language), total).apply()
         }
     }
 
-    suspend fun seedBigramsIfNeeded(context: Context, assetFileName: String = "bigrams_en_us.txt") {
+    /** See [seedIfNeeded]'s doc — same per-language scoping and missing-asset handling. */
+    suspend fun seedBigramsIfNeeded(context: Context, language: String, assetFileName: String) {
         withContext(Dispatchers.IO) {
+            val lines = readAssetLines(context, assetFileName) ?: return@withContext
             val prefs = seedStatePrefs(context)
-            val lines = context.assets.open(assetFileName).use { stream ->
-                BufferedReader(InputStreamReader(stream)).readLines()
-            }
             val total = lines.size
-            if (prefs.getInt(KEY_BIGRAMS_SEEDED_COUNT, 0) >= total) return@withContext
+            if (prefs.getInt(bigramsSeededKey(language), 0) >= total) return@withContext
 
             // Frequency counts from the source corpus range into the billions for common pairs
             // ("of the") — far past Int range for BigramEntity.count. Only relative order matters
@@ -98,22 +106,32 @@ class DictionarySeeder(private val wordDao: WordDao, private val bigramDao: Bigr
                     BigramEntity(
                         previousWord = line.substring(0, spaceIndex).trim().lowercase(),
                         word = line.substring(spaceIndex + 1).trim().lowercase(),
+                        language = language,
                         count = total - globalIndex,
                     )
                 }
                 bigramDao.insertSeedBatch(entities)
             }
-            prefs.edit().putInt(KEY_BIGRAMS_SEEDED_COUNT, total).apply()
+            prefs.edit().putInt(bigramsSeededKey(language), total).apply()
         }
+    }
+
+    private fun readAssetLines(context: Context, assetFileName: String): List<String>? = try {
+        context.assets.open(assetFileName).use { stream ->
+            BufferedReader(InputStreamReader(stream)).readLines()
+        }
+    } catch (e: FileNotFoundException) {
+        null
     }
 
     private fun seedStatePrefs(context: Context) =
         context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
+    private fun wordsSeededKey(language: String) = "words_seeded_count_$language"
+    private fun bigramsSeededKey(language: String) = "bigrams_seeded_count_$language"
+
     companion object {
         private const val BATCH_SIZE = 500
         private const val PREFS_NAME = "omakey_seed_state"
-        private const val KEY_WORDS_SEEDED_COUNT = "words_seeded_count"
-        private const val KEY_BIGRAMS_SEEDED_COUNT = "bigrams_seeded_count"
     }
 }

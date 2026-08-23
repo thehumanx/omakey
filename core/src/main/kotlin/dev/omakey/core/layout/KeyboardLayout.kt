@@ -34,6 +34,20 @@ data class KeyDefinition(
     val popupChars: List<String> = emptyList(),
     val widthWeight: Float = 1f,
     val keyType: KeyType = KeyType.CHARACTER,
+    /** Overrides what actually gets committed on tap when it's more than [code]'s single Unicode
+     * codepoint can represent — e.g. a Devanagari conjunct cluster ("त्र", 3 codepoints) assigned
+     * to one key on the Nepali Traditional layout. Null (true for every English/Symbols key)
+     * means "commit Character.toChars(code)" exactly as before — [code] still serves as this
+     * key's unique hit-test/identity value either way, it just isn't necessarily what gets typed
+     * once [text] is set. */
+    val text: String? = null,
+    /** Overrides both this key's rendered label and its committed output while shift is engaged,
+     * for layouts (like Nepali Traditional) where the shifted character isn't a Unicode case
+     * mapping of the unshifted one (e.g. "q"->त्र vs "Q"->त्त — unrelated conjuncts, not a
+     * lower/uppercase pair). Null (true for every English/Symbols key) preserves the existing
+     * behavior: shift is applied generically at commit time via Char.uppercaseChar()/the key's
+     * own label case, not per-key data. */
+    val shiftedText: String? = null,
 )
 
 @Immutable

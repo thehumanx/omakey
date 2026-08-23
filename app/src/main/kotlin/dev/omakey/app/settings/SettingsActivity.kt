@@ -93,6 +93,9 @@ import dev.omakey.core.feedback.HapticSoundPreferences
 import dev.omakey.core.feedback.HapticSoundSettings
 import dev.omakey.core.gesture.GesturePreferences
 import dev.omakey.core.gesture.GestureSettings
+import dev.omakey.core.language.LanguageDefinition
+import dev.omakey.core.language.LanguagePreferences
+import dev.omakey.core.language.Languages
 import dev.omakey.core.layout.LayoutPreferences
 import dev.omakey.core.layout.LayoutSettings
 import dev.omakey.core.layout.Layouts
@@ -125,8 +128,14 @@ class SettingsActivity : ComponentActivity() {
         val hapticSoundPreferences = HapticSoundPreferences(applicationContext)
         val autocorrectPreferences = AutocorrectPreferences(applicationContext)
         val predictionPreferences = PredictionPreferences(applicationContext)
+        val languagePreferences = LanguagePreferences(applicationContext)
         val feedback = VibratorKeyboardFeedback(applicationContext, hapticSoundPreferences)
         val wordDao = OmakeyDatabase.getInstance(applicationContext).wordDao()
+        // Set by the emoji key's long-press menu ("Language" option — see KeyboardRoot.kt's
+        // handleGestureEvent) so Settings opens straight into language management instead of the
+        // top-level list — same "jump straight to the relevant screen" intent as
+        // ACTION_INPUT_METHOD_SETTINGS deep-links into the system's own IME picker.
+        val openLanguageSettings = intent?.getBooleanExtra(EXTRA_OPEN_LANGUAGE_SETTINGS, false) ?: false
         setContent {
             OmakeySettingsTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
@@ -140,8 +149,10 @@ class SettingsActivity : ComponentActivity() {
                         hapticSoundPreferences = hapticSoundPreferences,
                         autocorrectPreferences = autocorrectPreferences,
                         predictionPreferences = predictionPreferences,
+                        languagePreferences = languagePreferences,
                         wordDao = wordDao,
                         feedback = feedback,
+                        initialShowManageLanguages = openLanguageSettings,
                         onOpenSystemSettings = {
                             startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS))
                         },
@@ -154,6 +165,10 @@ class SettingsActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    companion object {
+        const val EXTRA_OPEN_LANGUAGE_SETTINGS = "open_language_settings"
     }
 }
 
@@ -211,8 +226,10 @@ private fun SettingsScreen(
     hapticSoundPreferences: HapticSoundPreferences,
     autocorrectPreferences: AutocorrectPreferences,
     predictionPreferences: PredictionPreferences,
+    languagePreferences: LanguagePreferences,
     wordDao: WordDao,
     feedback: VibratorKeyboardFeedback,
+    initialShowManageLanguages: Boolean = false,
     onOpenSystemSettings: () -> Unit,
     onSwitchKeyboard: () -> Unit,
 ) {
@@ -226,6 +243,7 @@ private fun SettingsScreen(
     val currentFontId by fontPreferences.fontId.collectAsState()
     var showTestOverlay by remember { mutableStateOf(false) }
     var showLearnedWordsOverlay by remember { mutableStateOf(false) }
+    var showManageLanguagesOverlay by remember { mutableStateOf(initialShowManageLanguages) }
     var showSizePositionOverlay by remember { mutableStateOf(false) }
     // Hoisted up from ThemePicker (which lives inside a LazyColumn item) rather than kept local
     // there — ThemeEditorOverlay's Modifier.verticalScroll() crashes with "measured with an
@@ -315,6 +333,13 @@ private fun SettingsScreen(
                     NextWordPredictionToggle(predictionPreferences)
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     ClickableSettingRow(
+                        title = "Languages",
+                        description = "Turn on languages to type in, and pick how each one " +
+                            "types (e.g. Nepali's Romanized or Traditional input).",
+                        onClick = { showManageLanguagesOverlay = true },
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    ClickableSettingRow(
                         title = "Learned words",
                         description = "Words your own typing has taught the keyboard — view, " +
                             "search, or remove any that shouldn't have been learned.",
@@ -372,7 +397,10 @@ private fun SettingsScreen(
         TestKeyboardOverlay(onClose = { showTestOverlay = false }, onSwitchKeyboard = onSwitchKeyboard)
     }
     if (showLearnedWordsOverlay) {
-        LearnedWordsOverlay(wordDao = wordDao, onClose = { showLearnedWordsOverlay = false })
+        LearnedWordsOverlay(wordDao = wordDao, languagePreferences = languagePreferences, onClose = { showLearnedWordsOverlay = false })
+    }
+    if (showManageLanguagesOverlay) {
+        ManageLanguagesOverlay(languagePreferences = languagePreferences, onClose = { showManageLanguagesOverlay = false })
     }
     if (showSizePositionOverlay) {
         KeyboardSizePositionOverlay(
@@ -562,18 +590,29 @@ private fun KeyboardSizePositionOverlay(
  * from Room at its own next startup rather than being live-notified, same load-once-at-startup
  * design as the rest of the dictionary (see AGENTS.md §6). */
 @Composable
-private fun LearnedWordsOverlay(wordDao: WordDao, onClose: () -> Unit) {
+private fun LearnedWordsOverlay(wordDao: WordDao, languagePreferences: LanguagePreferences, onClose: () -> Unit) {
     BackHandler(onBack = onClose)
     val scope = rememberCoroutineScope()
+    val languageSettings by languagePreferences.settings.collectAsState()
+    val enabledLanguages = remember(languageSettings.enabledLanguageIds) {
+        languageSettings.enabledLanguageIds.mapNotNull { Languages.byId(it) }
+    }
+    // Defaults to whichever language is currently active for typing — the most likely one to
+    // have recently-learned words worth reviewing — but only ever the *language list*, not
+    // per-input-method (Nepali's Romanized and Traditional both learn into the same language-
+    // scoped word list, since a learned word is a fact about the language, not which keys typed it).
+    var selectedLanguage by remember(enabledLanguages) {
+        mutableStateOf(Languages.byId(languageSettings.activeLanguageId) ?: enabledLanguages.firstOrNull() ?: Languages.EnglishUS)
+    }
     var query by remember { mutableStateOf("") }
     var words by remember { mutableStateOf<List<WordEntity>>(emptyList()) }
     var showDeleteAllConfirm by remember { mutableStateOf(false) }
     var wordBeingEdited by remember { mutableStateOf<WordEntity?>(null) }
 
     suspend fun reload() {
-        words = wordDao.findUserAdded(query.trim().lowercase())
+        words = wordDao.findUserAdded(selectedLanguage.id, query.trim().lowercase())
     }
-    LaunchedEffect(query) { reload() }
+    LaunchedEffect(query, selectedLanguage) { reload() }
 
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(
@@ -591,6 +630,22 @@ private fun LearnedWordsOverlay(wordDao: WordDao, onClose: () -> Unit) {
             ) {
                 Text(text = "Learned words", style = MaterialTheme.typography.titleMedium)
                 TextButton(onClick = onClose) { Text(text = "Close") }
+            }
+
+            // Only worth showing once there's an actual choice to make — a single-language setup
+            // (the default) would just be one permanently-selected, unnecessary segment.
+            if (enabledLanguages.size > 1) {
+                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                    enabledLanguages.forEachIndexed { index, language ->
+                        SegmentedButton(
+                            selected = language.id == selectedLanguage.id,
+                            onClick = { selectedLanguage = language },
+                            shape = SegmentedButtonDefaults.itemShape(index = index, count = enabledLanguages.size),
+                            icon = {},
+                            label = { Text(text = language.displayName) },
+                        )
+                    }
+                }
             }
 
             OutlinedTextField(
@@ -634,7 +689,7 @@ private fun LearnedWordsOverlay(wordDao: WordDao, onClose: () -> Unit) {
                         TextButton(
                             onClick = {
                                 scope.launch {
-                                    wordDao.delete(entry.word)
+                                    wordDao.delete(selectedLanguage.id, entry.word)
                                     reload()
                                 }
                             },
@@ -655,7 +710,7 @@ private fun LearnedWordsOverlay(wordDao: WordDao, onClose: () -> Unit) {
                     onClick = {
                         showDeleteAllConfirm = false
                         scope.launch {
-                            wordDao.deleteAllUserAdded()
+                            wordDao.deleteAllUserAdded(selectedLanguage.id)
                             reload()
                         }
                     },
@@ -686,7 +741,7 @@ private fun LearnedWordsOverlay(wordDao: WordDao, onClose: () -> Unit) {
                         wordBeingEdited = null
                         if (newWord.isNotEmpty() && newWord != entry.word) {
                             scope.launch {
-                                wordDao.rename(entry.word, newWord)
+                                wordDao.rename(selectedLanguage.id, entry.word, newWord)
                                 reload()
                             }
                         }
@@ -697,6 +752,100 @@ private fun LearnedWordsOverlay(wordDao: WordDao, onClose: () -> Unit) {
                 TextButton(onClick = { wordBeingEdited = null }) { Text(text = "Cancel") }
             },
         )
+    }
+}
+
+/** Full-screen overlay listing every bundled language ([Languages.all]) with a toggle to enable/
+ * disable it for typing, and — for one with more than one input method (Nepali: Romanized vs
+ * Traditional) — a picker for which one it currently uses. Mirrors [LearnedWordsOverlay]'s overall
+ * shape (full-screen, `BackHandler`-backed, opened from a `ClickableSettingRow`), but reads/writes
+ * [LanguagePreferences] directly rather than a Room DAO — there's no list of rows to page through,
+ * just the same small fixed set of bundled languages every time. English can't be disabled here
+ * (see [LanguagePreferences.setEnabled]'s own doc for why) — its switch renders on and inert
+ * rather than a toggle that would silently no-op if tapped. */
+@Composable
+private fun ManageLanguagesOverlay(languagePreferences: LanguagePreferences, onClose: () -> Unit) {
+    BackHandler(onBack = onClose)
+    val settings by languagePreferences.settings.collectAsState()
+
+    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .padding(16.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(text = "Languages", style = MaterialTheme.typography.titleMedium)
+                TextButton(onClick = onClose) { Text(text = "Close") }
+            }
+            Text(
+                text = "Turn on the languages you want to type in. New languages ship off by " +
+                    "default — nothing changes for existing typing until you enable one here.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            Languages.all.forEach { language ->
+                LanguageRow(
+                    language = language,
+                    enabled = language.id in settings.enabledLanguageIds,
+                    isOnlyEnabled = language.id == Languages.EnglishUS.id,
+                    selectedInputMethodId = settings.inputMethodByLanguage[language.id] ?: language.defaultInputMethod.id,
+                    onEnabledChange = { languagePreferences.setEnabled(language.id, it) },
+                    onInputMethodSelected = { languagePreferences.setInputMethodForLanguage(language.id, it) },
+                )
+                if (language.id != Languages.all.last().id) {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LanguageRow(
+    language: LanguageDefinition,
+    enabled: Boolean,
+    isOnlyEnabled: Boolean,
+    selectedInputMethodId: String,
+    onEnabledChange: (Boolean) -> Unit,
+    onInputMethodSelected: (String) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(text = language.displayName, style = MaterialTheme.typography.bodyLarge)
+                if (language.nativeName != language.displayName) {
+                    Text(text = language.nativeName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            Switch(checked = enabled, onCheckedChange = onEnabledChange, enabled = !isOnlyEnabled)
+        }
+        if (enabled && language.inputMethods.size > 1) {
+            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                language.inputMethods.forEachIndexed { index, method ->
+                    SegmentedButton(
+                        selected = method.id == selectedInputMethodId,
+                        onClick = { onInputMethodSelected(method.id) },
+                        shape = SegmentedButtonDefaults.itemShape(index = index, count = language.inputMethods.size),
+                        icon = {},
+                        label = { Text(text = method.displayName) },
+                    )
+                }
+            }
+        }
     }
 }
 
