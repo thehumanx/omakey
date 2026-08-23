@@ -632,23 +632,34 @@ class KeyboardViewModel(
         // automatic correction in maybeAutocorrectBufferedWord(). Every suggestion-strip
         // alternative (this one included) is manually swipe/tap-accepted, so it stays available
         // regardless of whether auto-apply is on.
-        val alternatives = wordAlternatives(wordAtCursor.word)
-        if (alternatives.isEmpty()) {
-            if (activeCorrection?.mode == CorrectionApplyMode.CURSOR) {
-                activeCorrection = null
-                refreshSuggestions()
+        //
+        // wordAlternatives runs a Damerau-Levenshtein scan (see AutocorrectIndex.alternatives) —
+        // cheap on modern hardware but not free, and onCursorMoved fires synchronously on the IME's
+        // main thread for *every* selection change, including our own commits while cycling
+        // suggestions via swipe up/down (each cycle step moves the cursor, which re-triggers this).
+        // Running the scan inline here was blocking the UI thread on every one of those moves and
+        // made correction-cycling visibly hang on slower/older devices — offloaded the same way
+        // refreshSuggestions() already does for the typing path.
+        refreshJob?.cancel()
+        refreshJob = scope.launch {
+            val alternatives = withContext(Dispatchers.Default) { wordAlternatives(wordAtCursor.word) }
+            if (alternatives.isEmpty()) {
+                if (activeCorrection?.mode == CorrectionApplyMode.CURSOR) {
+                    activeCorrection = null
+                    refreshSuggestions()
+                }
+                return@launch
             }
-            return
+            activeCorrection = ActiveCorrection(
+                mode = CorrectionApplyMode.CURSOR,
+                originalWord = wordAtCursor.word,
+                occupiedBefore = wordAtCursor.charsBeforeCursor,
+                occupiedAfter = wordAtCursor.charsAfterCursor,
+                separator = "",
+            )
+            suggestionCycleIndex = -1
+            _uiState.update { it.copy(suggestions = alternatives, firstSuggestionKind = SuggestionKind.CORRECTION) }
         }
-        activeCorrection = ActiveCorrection(
-            mode = CorrectionApplyMode.CURSOR,
-            originalWord = wordAtCursor.word,
-            occupiedBefore = wordAtCursor.charsBeforeCursor,
-            occupiedAfter = wordAtCursor.charsAfterCursor,
-            separator = "",
-        )
-        suggestionCycleIndex = -1
-        _uiState.update { it.copy(suggestions = alternatives, firstSuggestionKind = SuggestionKind.CORRECTION) }
     }
 
     private fun onCharacter(code: Int) = commitTypedChar(Character.toChars(code)[0])
@@ -993,21 +1004,28 @@ class KeyboardViewModel(
         // here, since this whole branch exists precisely for the case where a deletion left the
         // cursor sitting after a word neither of those is tracking).
         updateEmojiSuggestions(wordBeforeCursor.word)
-        val alternatives = wordAlternatives(wordBeforeCursor.word)
-        if (alternatives.isEmpty()) {
-            refreshPlainPrediction()
-            return
-        }
-        activeCorrection = ActiveCorrection(
-            mode = CorrectionApplyMode.RETROACTIVE,
-            originalWord = wordBeforeCursor.word,
-            occupiedBefore = wordBeforeCursor.word.length,
-            occupiedAfter = 0,
-            separator = wordBeforeCursor.separator,
-        )
         lastCommittedWord = wordBeforeCursor.word.lowercase()
         suggestionCycleIndex = -1
-        _uiState.update { it.copy(suggestions = alternatives, firstSuggestionKind = SuggestionKind.CORRECTION) }
+        // wordAlternatives' Damerau-Levenshtein scan is too expensive to run inline here — this
+        // runs on every single backspace once the buffer is empty (i.e. every delete into
+        // already-committed text), and on slower/older devices that was enough to stall the UI
+        // thread mid-backspace. Offloaded the same way refreshSuggestions() already does.
+        refreshJob?.cancel()
+        refreshJob = scope.launch {
+            val alternatives = withContext(Dispatchers.Default) { wordAlternatives(wordBeforeCursor.word) }
+            if (alternatives.isEmpty()) {
+                refreshPlainPrediction()
+                return@launch
+            }
+            activeCorrection = ActiveCorrection(
+                mode = CorrectionApplyMode.RETROACTIVE,
+                originalWord = wordBeforeCursor.word,
+                occupiedBefore = wordBeforeCursor.word.length,
+                occupiedAfter = 0,
+                separator = wordBeforeCursor.separator,
+            )
+            _uiState.update { it.copy(suggestions = alternatives, firstSuggestionKind = SuggestionKind.CORRECTION) }
+        }
     }
 
     private fun pushUndo(event: UndoEvent) {
