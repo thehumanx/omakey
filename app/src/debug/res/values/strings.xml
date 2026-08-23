@@ -1,0 +1,7 @@
+<resources>
+    <!-- Overlays main's app_name for debug builds only (Android Gradle's src/debug/ source-set
+         convention) — paired with the debug-only applicationIdSuffix in app/build.gradle.kts, so
+         a debug build both installs alongside a real release build on the same device and is
+         visually distinguishable from it in the launcher/app list, not just by package name. -->
+    <string name="app_name">omakey (debug)</string>
+</resources>

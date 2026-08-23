@@ -203,6 +203,17 @@ class KeyboardViewModel(
      * doc for why this is time-based rather than counting taps. */
     private var lastSpaceCommitAtMs: Long = 0L
 
+    /** -1 = not currently cycling the period key's punctuation sequence (see [onPeriodKeySwipe]);
+     * >=0 = index into [PERIOD_CYCLE_CHARS] currently inserted. Declared before
+     * [suggestionCycleIndex] so it's already initialized by the time that property's setter (which
+     * resets this one) runs during construction. Reset there rather than at each of
+     * [suggestionCycleIndex]'s many individual assignment sites — every one of them already marks
+     * "something other than period-cycling just happened," the same condition that should
+     * invalidate an in-progress period cycle, so hooking into that single existing choke point
+     * keeps the two concepts from silently coupling anywhere else while still resetting on every
+     * unrelated action, not just some of them. */
+    private var periodCycleIndex = -1
+
     /** -1 = not currently cycling (buffer holds what was actually typed, or nothing's been
      * cycled yet); >=0 = index into the frozen suggestions snapshot currently applied, via swipe
      * up/down. Kept in sync with [KeyboardUiState.activeSuggestionIndex] via
@@ -214,6 +225,7 @@ class KeyboardViewModel(
     private var suggestionCycleIndex = -1
         set(value) {
             field = value
+            periodCycleIndex = -1
             _uiState.update { it.copy(activeSuggestionIndex = value) }
         }
     private var refreshJob: Job? = null
@@ -531,6 +543,36 @@ class KeyboardViewModel(
         val suggestions = _uiState.value.suggestions
         if (suggestions.isEmpty()) return
         applySuggestion((suggestionCycleIndex + 1).coerceIn(0, suggestions.size - 1))
+    }
+
+    /** Fleksy-style: swipe down/up starting on the period key cycles through a fixed punctuation
+     * sequence instead of the ordinary suggestion-strip cycling every other key's swipe does — see
+     * `KeyboardRoot.handleGestureEvent`, which special-cases this key by its swipe's `downKeyCode`
+     * before ever calling [onSwipeUp]/[onSwipeDown]. The first swipe in a fresh cycle types the
+     * sequence's own first character (".") exactly like a plain tap would, via the same
+     * [commitTypedText] path (autocorrect-before-punctuation, undo, suggestions — all identical to
+     * an ordinary tap); each further swipe right after it — with nothing else happening in
+     * between, see [periodCycleIndex]'s own doc on what resets that — swaps the previously-cycled
+     * character for the next/previous one in [PERIOD_CYCLE_CHARS] instead (forward = swipe down,
+     * backward = swipe up), wrapping at either end, and patches the undo stack's top entry to
+     * match so undo/redo replays the character actually on screen, not always the first one. */
+    fun onPeriodKeySwipe(forward: Boolean) {
+        if (periodCycleIndex == -1) {
+            commitTypedText(PERIOD_CYCLE_CHARS[0], fromTransliteratedKey = false)
+            periodCycleIndex = 0
+            return
+        }
+        val delta = if (forward) 1 else -1
+        val nextIndex = ((periodCycleIndex + delta) % PERIOD_CYCLE_CHARS.size + PERIOD_CYCLE_CHARS.size) % PERIOD_CYCLE_CHARS.size
+        val nextChar = PERIOD_CYCLE_CHARS[nextIndex]
+        textEditor.deleteCharacterBackward()
+        textEditor.insertText(nextChar)
+        lastWordBoundarySeparator = nextChar
+        val topUndo = undoStack.lastOrNull()
+        if (topUndo is UndoEvent.Inserted && topUndo.text.isNotEmpty()) {
+            undoStack[undoStack.lastIndex] = UndoEvent.Inserted(topUndo.text.dropLast(1) + nextChar)
+        }
+        periodCycleIndex = nextIndex
     }
 
     private fun applySuggestion(index: Int) {
@@ -1504,5 +1546,7 @@ class KeyboardViewModel(
         const val UNDO_STACK_LIMIT = 50
         // Matches the ~500ms window most mainstream keyboards use for double-tap-space-for-period.
         const val DOUBLE_TAP_SPACE_WINDOW_MS = 500L
+        // Fleksy-style period-key swipe-cycle order — see onPeriodKeySwipe.
+        val PERIOD_CYCLE_CHARS = listOf(".", ",", "?", "!", ":", ";", "'", "\"", "*")
     }
 }

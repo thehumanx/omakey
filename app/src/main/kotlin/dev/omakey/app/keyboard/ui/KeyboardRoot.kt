@@ -1121,11 +1121,17 @@ private fun handleGestureEvent(
             } else {
                 feedback.onSwipe()
             }
+            // A swipe up/down starting on the period key cycles Fleksy-style through a fixed
+            // punctuation sequence (see onPeriodKeySwipe's own doc) instead of the ordinary
+            // suggestion-strip cycling every other key's up/down swipe does. English/Symbols'
+            // period key is always the literal '.' codepoint (see Layouts.kt's charKey), so this
+            // never fires for e.g. Nepali Traditional's danda key, which uses a synthetic code.
+            val isPeriodKey = event.downKeyCode == '.'.code
             when (event.direction) {
                 SwipeDirection.LEFT -> viewModel.onSwipeLeft()
                 SwipeDirection.RIGHT -> viewModel.onSwipeRight()
-                SwipeDirection.UP -> viewModel.onSwipeUp()
-                SwipeDirection.DOWN -> viewModel.onSwipeDown()
+                SwipeDirection.UP -> if (isPeriodKey) viewModel.onPeriodKeySwipe(forward = false) else viewModel.onSwipeUp()
+                SwipeDirection.DOWN -> if (isPeriodKey) viewModel.onPeriodKeySwipe(forward = true) else viewModel.onSwipeDown()
             }
         }
         is GestureEvent.KeyLongPress -> {

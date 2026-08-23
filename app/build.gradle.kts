@@ -23,8 +23,8 @@ android {
         applicationId = "dev.omakey.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 11
-        versionName = "2.2.1"
+        versionCode = 12
+        versionName = "2.2.2"
     }
 
     signingConfigs {
@@ -44,6 +44,14 @@ android {
             if (keystorePropertiesFile.exists()) {
                 signingConfig = signingConfigs.getByName("release")
             }
+        }
+        // Distinct applicationId (and app label, via src/debug/res — see that overlay's own
+        // strings.xml) so a debug build installs alongside a real release build already on the
+        // same device instead of overwriting it — useful for trying an in-progress change before
+        // it's been through a real signed release build.
+        debug {
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
         }
     }
 
