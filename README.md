@@ -79,13 +79,14 @@ anything you type to leave your phone even by accident.
 
 - Full QWERTY with shift, caps lock, two pages of symbols, and long-press accents (à, é, ñ, and
   more — hold a key like `e` or `a` to see its variants).
+- Type a symbol, then hit space — it drops you straight back into letters, no manual switch back
+  needed.
 - The Enter key adapts to what you're typing into — "Go," "Search," "Send," "Next," "Done" —
   instead of always being a plain return key.
 - A small preview bubble shows above your finger on every keypress, so you always know what
   landed. Turn it off in Settings if you'd rather not see it.
 - Built to keep up with fast, sloppy typing — fingers overlapping mid-word won't throw it off.
-- Optional double-tap (or double-swipe-right) space for a period, off by default. Same idea for a
-  comma — swipe down right after a space instead, if you turn that on too.
+- Optional double-tap (or double-swipe-right) space for a period, off by default.
 - Keyboard height and position, adjustable in one screen: drag to resize, drag to lift it off the
   bottom edge for easier one-handed reach. Capped so it can never cover what you're typing into.
 
@@ -96,11 +97,12 @@ menus involved:
 
 | Gesture | What it does |
 |---|---|
-| **Swipe left** on any key | Deletes the entire last word, not just a character — its own "swoosh" sound and a shimmer across the home row so it's unmistakably not a normal tap. A trailing emoji or punctuation mark glued to a word with no space (`hahaha😂`) is its own swipe first — the emoji goes, then the word. |
+| **Swipe left** on any key | Deletes the entire last word, not just a character — its own "swoosh" sound and a shimmer across the home row so it's unmistakably not a normal tap. A trailing space is its own swipe first, then a trailing emoji or punctuation mark glued to a word with no space (`hahaha😂`), then the word itself — nothing bundles into the same swipe. |
 | **Swipe right** on any key | Inserts a space (off by default, one tap to turn on). Swipe right twice quickly for a period instead, if "Double-tap space for period" is on. |
 | **Swipe up** on the suggestion strip | Accepts the current suggestion — or, on a word you typed yourself, saves it to your personal dictionary so it's never flagged again. Swipe up a second time on an already-learned word to un-learn it. |
-| **Swipe down** on the suggestion strip | Cycles backward through alternatives — the mirror of swipe up. Right after a space, with "Double space + swipe down for comma" on, it inserts a comma instead. |
+| **Swipe down** on the suggestion strip | Cycles backward through alternatives — the mirror of swipe up. |
 | **Swipe up/down repeatedly** | Genuinely cycles through every alternative, as many times as you want, whether the word's still being typed or you've tapped back into something you wrote a minute ago. The one about to be typed stands out; the rest fade. |
+| **Swipe up/down right after a `. , ! ? ; : ' "`** | Cycles through that whole set of punctuation instead of word suggestions — turn "." into "," into "!" and so on with repeated swipes, without retyping. Works whether the cursor sits right against the mark or one space past it, so it chains naturally off double-tap-space-for-period. |
 | **Tap and hold Shift** | Locks in caps lock. A quick tap just capitalizes the next letter, then releases. |
 | **Long-press and drag the spacebar** | Moves the cursor without needing to tap precisely inside your text — fixes a typo three words back without losing your place. |
 | **Long-press a letter key** with accent variants | Fades into a full-width picker for that key's variants (à, á, â, ä...) — keep holding and drag to browse, lift to select. Drag further for a few extra everyday symbols. |
