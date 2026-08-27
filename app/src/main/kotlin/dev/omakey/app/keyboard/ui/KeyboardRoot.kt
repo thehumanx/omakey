@@ -810,8 +810,10 @@ private fun KeyGrid(
         ) {
             effectiveRows.forEachIndexed { rowIndex, row ->
                 val onBoundsMeasuredStable = remember(rowIndex) {
-                    { keyIndex: Int, key: KeyDefinition, rect: Rect ->
-                        keyBoundsState.value = keyBoundsState.value + (rowIndex * 1000 + keyIndex to (key to rect))
+                    { measured: List<Triple<Int, KeyDefinition, Rect>> ->
+                        keyBoundsState.value = keyBoundsState.value + measured.associate { (keyIndex, key, rect) ->
+                            rowIndex * 1000 + keyIndex to (key to rect)
+                        }
                     }
                 }
                 KeyRowView(
@@ -1123,7 +1125,7 @@ internal fun KeyRowView(
     isHomeRow: Boolean,
     onKeyTap: (Int) -> Unit,
     ancestorCoordinates: () -> androidx.compose.ui.layout.LayoutCoordinates?,
-    onBoundsMeasured: (Int, KeyDefinition, Rect) -> Unit,
+    onBoundsMeasured: (List<Triple<Int, KeyDefinition, Rect>>) -> Unit,
     fontFamily: androidx.compose.ui.text.font.FontFamily? = null,
     pressedKeyCode: Int? = null,
     capsLockOn: Boolean = false,
@@ -1216,11 +1218,19 @@ internal fun KeyRowView(
                 var x = originInAncestor.x
                 val top = originInAncestor.y
                 val bottom = top + coordinates.size.height.toFloat()
+                // Collected into one list and reported in a single onBoundsMeasured call rather
+                // than once per key — the caller folds this into keyBoundsState with one map
+                // copy per row instead of one per key (was O(keysInRow) separate MutableState
+                // writes + map copies per row layout pass, each copy O(current map size); real
+                // cost on rotation/keyboard-resize/first show, not per-keystroke, but still
+                // avoidable work on slower devices).
+                val measured = ArrayList<Triple<Int, KeyDefinition, Rect>>(rowKeys.size)
                 rowKeys.forEachIndexed { index, key ->
                     val w = widths[index]
-                    onBoundsMeasured(index, key, Rect(x, top, x + w, bottom))
+                    measured += Triple(index, key, Rect(x, top, x + w, bottom))
                     x += w
                 }
+                onBoundsMeasured(measured)
             },
     ) {
         // Borderless/flat is the default (matches Fleksy's style); showKeyBackgrounds opts back
@@ -1768,7 +1778,7 @@ private fun NumbersTabContent(
             isHomeRow = false,
             onKeyTap = { code -> feedback.onKeyPress(); viewModel.onKeyTap(code) },
             ancestorCoordinates = noOpAncestor,
-            onBoundsMeasured = { _, _, _ -> },
+            onBoundsMeasured = {},
             fontFamily = fontFamily,
             // This row sits directly above KeyGrid inside TopStrip — see gridCellBottomBorder's
             // own doc on KeyRowView.

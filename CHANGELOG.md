@@ -3,6 +3,36 @@
 All notable changes to omakey are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.2.2] — 2026-08-27
+
+### Added
+- **Swipe up/down now cycles through punctuation** (`. , ! ? ; : ' "`) when the cursor sits right
+  after one of them, instead of cycling word suggestions — pairs naturally with double-tap-space
+  for period, so you can swipe straight from "." to "," or "!" without retyping. Works with one
+  trailing space too — e.g. right after double-tap-space-for-period commits ". ", swiping down
+  still cycles the period even though the cursor sits one space past it, not just when directly
+  touching it.
+- **Space now returns to the letters layout automatically** after typing a symbol on the symbols
+  keyboard, matching how most keyboards behave.
+
+### Removed
+- **"Double space + swipe down for comma"** — removed. It could insert a comma after an ordinary
+  space with no punctuation involved, and cycling further after that could corrupt the word
+  itself. Swiping down on a period (including right after double-tap-space-for-period) already
+  cycles to a comma via the punctuation-cycling gesture above, which doesn't have either problem.
+
+### Fixed
+- **Swipe-left to delete a word no longer eats the trailing space with it** — typing a word then a
+  space (typed or via swipe-right) and swiping left now deletes just that space first; the word
+  itself is a separate, following swipe. Multiple trailing spaces are removed one swipe at a time.
+- **Autocorrect suggestions now respect the word's original capitalization** — typing "Hwllo" now
+  suggests "Hello", not "hello".
+- **Repeated swipe-down cycling after a period could corrupt the word** (e.g. "hello" turning into
+  "hhell", then "hhelp", then "hheld") — a bookkeeping bug that miscounted how many characters sit
+  between the word and the cursor after double-tap-space-for-period, causing one stray character
+  to survive each cycle.
+- Minor performance improvements to keyboard layout/resize handling.
+
 ## [2.2.1] — 2026-08-21
 
 ### Added

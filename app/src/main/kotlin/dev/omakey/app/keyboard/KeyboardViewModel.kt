@@ -131,6 +131,17 @@ class KeyboardViewModel(
 
     private var lastCommittedWord: String? = null
 
+    /** Same word as [lastCommittedWord], exactly as typed (mixed case preserved) rather than
+     * forced to lowercase — [lastCommittedWord] is lowercased everywhere it's set because that's
+     * what bigram lookups ([predictionEngine.bigramRank]/[PredictionEngine.suggestNext]) key on,
+     * but [wordAlternatives]/[matchCase] need the *actual* casing to offer "Hello" instead of
+     * "hello" for a word typed as "Hwllo" — real bug, fixed: the RETROACTIVE contextual-correction
+     * branch of [refreshSuggestions] used to pass the already-lowercased [lastCommittedWord] as
+     * both the correction target *and* the case template, so [matchCase] saw an all-lowercase
+     * "typed" word and had nothing to restore capitalization from. Mirrored at every
+     * [lastCommittedWord] assignment site. */
+    private var lastCommittedWordCased: String? = null
+
     /** Whatever [lastCommittedWord] was immediately *before* the current [lastCommittedWord] —
      * i.e. the bigram context for the word that was just finished. Needed to rank real-word
      * alternatives by what actually fits the surrounding sentence (see [refreshSuggestions]).
@@ -151,6 +162,13 @@ class KeyboardViewModel(
      * period detection (`AutocorrectSettings.doubleTapSpaceForPeriod`); see that function's own
      * doc for why this is time-based rather than counting taps. */
     private var lastSpaceCommitAtMs: Long = 0L
+
+    /** True once a symbol/digit has actually been typed while on `Symbols1`/`Symbols2` (set in
+     * [commitTypedChar]) — the *next* [onSpace] then switches back to the letters layout after
+     * inserting the space, matching how the space bar behaves on mainstream keyboards after
+     * punctuation. Reset on entering symbols mode fresh or leaving it (see [onKeyTap]'s
+     * `SYMBOLS`/`LETTERS` branches) so a plain page-switch with nothing typed doesn't trigger it. */
+    private var symbolTypedInSymbolsMode = false
 
     /** -1 = not currently cycling (buffer holds what was actually typed, or nothing's been
      * cycled yet); >=0 = index into the frozen suggestions snapshot currently applied, via swipe
@@ -302,8 +320,10 @@ class KeyboardViewModel(
             )
         }
         lastCommittedWord = null
+        lastCommittedWordCased = null
         previousToLastCommittedWord = null
         currentWordBuffer.clear()
+        symbolTypedInSymbolsMode = false
         suggestionCycleIndex = -1
         lastAutocorrect = null
         revertedWord = null
@@ -339,14 +359,23 @@ class KeyboardViewModel(
             SpecialKeyCode.BACKSPACE -> onDeleteCharacter()
             SpecialKeyCode.SPACE -> onSpace()
             SpecialKeyCode.ENTER -> onEnter()
-            SpecialKeyCode.SYMBOLS -> switchLayout(
-                when (_uiState.value.layout.id) {
-                    Layouts.Symbols1.id -> Layouts.Symbols2
-                    Layouts.Symbols2.id -> Layouts.Symbols1
-                    else -> Layouts.Symbols1
-                },
-            )
-            SpecialKeyCode.LETTERS -> switchLayout(Layouts.QwertyEnUS)
+            SpecialKeyCode.SYMBOLS -> {
+                // Entering symbols mode fresh (from letters) starts a new "haven't typed a
+                // symbol yet this visit" session for symbolTypedInSymbolsMode; toggling between
+                // the two symbols pages is still the same visit, so the flag survives that.
+                if (_uiState.value.layout.id !in SYMBOLS_LAYOUT_IDS) symbolTypedInSymbolsMode = false
+                switchLayout(
+                    when (_uiState.value.layout.id) {
+                        Layouts.Symbols1.id -> Layouts.Symbols2
+                        Layouts.Symbols2.id -> Layouts.Symbols1
+                        else -> Layouts.Symbols1
+                    },
+                )
+            }
+            SpecialKeyCode.LETTERS -> {
+                symbolTypedInSymbolsMode = false
+                switchLayout(Layouts.QwertyEnUS)
+            }
             SpecialKeyCode.EXTENSIONS -> toggleExtensionPanel()
             else -> onCharacter(code)
         }
@@ -354,6 +383,45 @@ class KeyboardViewModel(
 
     fun onSwipeLeft() = onDeleteWord()
     fun onSwipeRight() = onSpace()
+
+    /** Sentence-ending/quoting punctuation, in the fixed cycle order swipe up/down rotates
+     * through once one of these sits immediately left of the cursor — e.g. double-tap-space
+     * commits ". ", cursor ends up right after it, and a swipe down/up should turn that "."
+     * into "," / "!" / etc. rather than cycling word suggestions (which is what swipe up/down
+     * normally does — see [onSwipeUp]/[onSwipeDown]). */
+    private val punctuationCycle = listOf('.', ',', '!', '?', ';', ':', '\'', '"')
+
+    /** Only fires when the cursor isn't inside a word-in-progress ([currentWordBuffer] empty —
+     * a live word is what "cursor is inside the word" means here, since a mid-word cursor from
+     * navigation is otherwise indistinguishable from "just finished typing") and one of
+     * [punctuationCycle]'s characters sits immediately left of the cursor, *or* exactly one space
+     * left of it (e.g. double-tap-space-for-period commits ". " and moves the cursor past the
+     * space — the period itself, not the space, is what should cycle; real bug report, fixed:
+     * this used to require the cursor to be touching the punctuation directly, missing the single-
+     * trailing-space case that's actually the common one). Replaces just the punctuation character
+     * with the next/previous entry (wrapping), leaving any trailing space untouched, and returns
+     * true; returns false (no-op) otherwise so the caller falls through to its normal suggestion-
+     * cycling behavior. */
+    private fun tryCyclePunctuation(forward: Boolean): Boolean {
+        if (currentWordBuffer.isNotEmpty()) return false
+        val before = textEditor.textBeforeCursor(2)
+        val last = before.lastOrNull() ?: return false
+        val trailingSpace = last == ' ' && before.length >= 2
+        val char = if (trailingSpace) before[before.length - 2] else last
+        val index = punctuationCycle.indexOf(char)
+        if (index == -1) return false
+        val next = punctuationCycle[(index + if (forward) 1 else -1).mod(punctuationCycle.size)]
+        if (trailingSpace) {
+            textEditor.deleteCharacterBackward() // the space
+            textEditor.deleteCharacterBackward() // the punctuation
+            textEditor.commitCharacter(next)
+            textEditor.insertSpace()
+        } else {
+            textEditor.deleteCharacterBackward()
+            textEditor.commitCharacter(next)
+        }
+        return true
+    }
 
     /** Long-press-and-drag on the spacebar (see `KeyGrid`'s gesture loop in `KeyboardRoot.kt`) —
      * synthesizes a DPAD key event rather than tracking an absolute cursor position, which works
@@ -378,6 +446,7 @@ class KeyboardViewModel(
      * cycle at all — restores the original word and, if it's still actively being typed and not
      * already a known word, saves it to the local dictionary (see [revertAndMaybeSave]). */
     fun onSwipeUp() {
+        if (tryCyclePunctuation(forward = false)) return
         val suggestions = _uiState.value.suggestions
         when {
             suggestions.isEmpty() -> revertAndMaybeSave()
@@ -392,15 +461,20 @@ class KeyboardViewModel(
     }
 
     /** Cycles right through the frozen suggestions snapshot; clamps at the last candidate. Unless
-     * "Double space + swipe down for comma" is on and this swipe-down lands right after a space
-     * (the same timing window [shouldConvertDoubleSpaceToPeriod] uses), in which case it converts
-     * that space into a comma instead — the comma-equivalent of double-tap-space-for-period, just
-     * triggered by a different second action. */
+     * [tryCyclePunctuation] claims this swipe first (cursor sitting right after one of
+     * [punctuationCycle]'s characters) — that's the *only* way a swipe down turns into a comma
+     * now. A previous "double space + swipe down for comma" feature used to trigger a comma from
+     * *any* space within the double-tap window, with no punctuation involved at all — real bug
+     * report: swiping down after an ordinary "hello " (just a plain space, no period anywhere)
+     * inserted a comma the user never asked for, and doing it again could corrupt the word itself
+     * (see [convertPrecedingSpaceToPeriod]'s doc on the separator-bookkeeping bug the equivalent
+     * comma path shared and that this removal sidesteps entirely). Removed outright rather than
+     * gated further — [punctuationCycle] already covers both of that
+     * feature's intended uses (double-tap-space-for-period, then swipe to cycle onward to a
+     * comma; or swiping on a period typed directly) without the false-positive-on-plain-space
+     * behavior. */
     fun onSwipeDown() {
-        if (shouldConvertSpaceToCommaOnSwipeDown()) {
-            convertPrecedingSpaceToComma()
-            return
-        }
+        if (tryCyclePunctuation(forward = true)) return
         val suggestions = _uiState.value.suggestions
         if (suggestions.isEmpty()) return
         applySuggestion((suggestionCycleIndex + 1).coerceIn(0, suggestions.size - 1))
@@ -506,6 +580,7 @@ class KeyboardViewModel(
                     currentWordBuffer.clear()
                     previousToLastCommittedWord = lastCommittedWord
                     lastCommittedWord = finished.lowercase()
+                    lastCommittedWordCased = finished
                 }
             }
             suggestionCycleIndex = -1
@@ -518,6 +593,7 @@ class KeyboardViewModel(
         currentWordBuffer.clear()
         previousToLastCommittedWord = lastCommittedWord
         lastCommittedWord = finished.lowercase()
+        lastCommittedWordCased = finished
         refreshSuggestions()
     }
 
@@ -548,6 +624,7 @@ class KeyboardViewModel(
                     textEditor.commitCharacter(' ')
                     previousToLastCommittedWord = lastCommittedWord
                     lastCommittedWord = firstWord.lowercase()
+                    lastCommittedWordCased = firstWord
                     secondWord.forEach { textEditor.commitCharacter(it) }
                     currentWordBuffer.clear()
                     currentWordBuffer.append(secondWord)
@@ -559,6 +636,7 @@ class KeyboardViewModel(
                 replacement.forEach { textEditor.commitCharacter(it) }
                 active.separator.forEach { textEditor.commitCharacter(it) }
                 lastCommittedWord = replacement.lowercase()
+                lastCommittedWordCased = replacement
                 active.occupiedBefore = replacement.length
             }
             CorrectionApplyMode.CURSOR -> {
@@ -599,6 +677,7 @@ class KeyboardViewModel(
         textEditor.commitCharacter(' ')
         previousToLastCommittedWord = lastCommittedWord
         lastCommittedWord = firstWord.lowercase()
+        lastCommittedWordCased = firstWord
         secondWord.forEach { textEditor.commitCharacter(it) }
         currentWordBuffer.append(secondWord)
         return true
@@ -668,6 +747,7 @@ class KeyboardViewModel(
             maybeAutocorrectBufferedWord()
         }
         textEditor.commitCharacter(char)
+        if (_uiState.value.layout.id in SYMBOLS_LAYOUT_IDS) symbolTypedInSymbolsMode = true
         if (char.isLetter()) {
             currentWordBuffer.append(char)
             refreshSuggestions()
@@ -734,6 +814,10 @@ class KeyboardViewModel(
         textEditor.insertSpace()
         lastWordBoundarySeparator = " "
         lastSpaceCommitAtMs = System.currentTimeMillis()
+        if (symbolTypedInSymbolsMode) {
+            symbolTypedInSymbolsMode = false
+            switchLayout(Layouts.QwertyEnUS)
+        }
         refreshSuggestions(checkContextualCorrection = true)
         maybeAutoCapitalize()
     }
@@ -762,31 +846,14 @@ class KeyboardViewModel(
         textEditor.deleteCharacterBackward()
         textEditor.commitCharacter('.')
         textEditor.insertSpace()
-        lastWordBoundarySeparator = " "
-        lastSpaceCommitAtMs = 0L
-        refreshSuggestions(checkContextualCorrection = true)
-        maybeAutoCapitalize()
-    }
-
-    /** Same detection as [shouldConvertDoubleSpaceToPeriod] (same timing window, same "verify the
-     * live text" check), but gated on its own separate preference and triggered by swipe-down
-     * instead of a second space/swipe-right — the two features are independent and either, both,
-     * or neither can be on. */
-    private fun shouldConvertSpaceToCommaOnSwipeDown(): Boolean {
-        if (!autocorrectPreferences.settings.value.doubleSpaceSwipeDownForComma) return false
-        if (lastSpaceCommitAtMs == 0L) return false
-        if (System.currentTimeMillis() - lastSpaceCommitAtMs > DOUBLE_TAP_SPACE_WINDOW_MS) return false
-        return textEditor.textBeforeCursor(1) == " "
-    }
-
-    /** Deletes the space just committed and replaces it with a comma glued directly to the word
-     * before it, then a fresh space — the comma sits right beside the text ("word,"), never
-     * separated from it by whitespace. */
-    private fun convertPrecedingSpaceToComma() {
-        textEditor.deleteCharacterBackward()
-        textEditor.commitCharacter(',')
-        textEditor.insertSpace()
-        lastWordBoundarySeparator = " "
+        // Real bug, fixed: this used to record just " " here, but the actual text sitting
+        // between the word and the cursor is ". " (period *and* space, 2 characters) — the very
+        // next RETROACTIVE correction (whether swiped or tapped) would then delete only
+        // originalWord.length + 1 characters instead of + 2, leaving one stray leading character
+        // of the old word behind every time (e.g. "hello. " cycling to "hhell. "). See
+        // [ActiveCorrection.separator]'s doc — it's retyped verbatim after the replacement on
+        // every cycle step, so it must match the real on-screen separator exactly.
+        lastWordBoundarySeparator = ". "
         lastSpaceCommitAtMs = 0L
         refreshSuggestions(checkContextualCorrection = true)
         maybeAutoCapitalize()
@@ -946,6 +1013,21 @@ class KeyboardViewModel(
             refreshSuggestions()
             return
         }
+        // A single trailing whitespace character (almost always a space — typed, tapped, or via
+        // swipe-right) is its own swipe-left now, not bundled into the same swipe as the word
+        // before it — real bug report: typing "hellow" then a space and swiping left deleted the
+        // whole word *and* the space together in one gesture, with no way to just undo the space.
+        // Matches how a punctuation/emoji run glued to the cursor is already its own swipe (see
+        // wordBackwardDeletionParts's own doc) — whitespace is the same idea, just the opposite
+        // direction (skipped *past* to find the word today; now consumed on its own first).
+        // Multiple consecutive spaces are consumed one swipe at a time for the same reason.
+        if (textEditor.textBeforeCursor(1).lastOrNull()?.isWhitespace() == true) {
+            val deletedChar = textEditor.textBeforeCursor(1)
+            textEditor.deleteCharacterBackward()
+            pushUndo(UndoEvent.Deleted(deletedChar))
+            refreshSuggestionsAfterDeletion()
+            return
+        }
         // Read before deleting — deleteWordBackward() doesn't report what it removed, and undo
         // needs the *exact* text back (including whatever whitespace deleteWordBackward's own
         // scan consumes with it — a plain wordAtCursor().word would silently drop that on undo,
@@ -1006,6 +1088,7 @@ class KeyboardViewModel(
             separator = wordBeforeCursor.separator,
         )
         lastCommittedWord = wordBeforeCursor.word.lowercase()
+        lastCommittedWordCased = wordBeforeCursor.word
         suggestionCycleIndex = -1
         _uiState.update { it.copy(suggestions = alternatives, firstSuggestionKind = SuggestionKind.CORRECTION) }
     }
@@ -1074,6 +1157,7 @@ class KeyboardViewModel(
         if (word.isNotEmpty()) {
             previousToLastCommittedWord = lastCommittedWord
             lastCommittedWord = word.lowercase()
+            lastCommittedWordCased = word
             currentWordBuffer.clear()
             pushUndo(UndoEvent.Inserted(word + separator))
         }
@@ -1179,7 +1263,7 @@ class KeyboardViewModel(
             return
         }
 
-        val target = lastCommittedWord.takeIf { checkContextualCorrection }
+        val target = lastCommittedWordCased.takeIf { checkContextualCorrection }
         if (target != null) {
             val context = previousToLastCommittedWord
             refreshJob = scope.launch {
@@ -1253,5 +1337,6 @@ class KeyboardViewModel(
         const val UNDO_STACK_LIMIT = 50
         // Matches the ~500ms window most mainstream keyboards use for double-tap-space-for-period.
         const val DOUBLE_TAP_SPACE_WINDOW_MS = 500L
+        val SYMBOLS_LAYOUT_IDS = setOf(Layouts.Symbols1.id, Layouts.Symbols2.id)
     }
 }

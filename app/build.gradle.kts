@@ -23,8 +23,13 @@ android {
         applicationId = "dev.omakey.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 11
-        versionName = "2.2.1"
+        // versionName intentionally stays fixed across iterative dev-build installs within a
+        // release cycle (per user preference) — only versionCode increments, since adb install -r
+        // refuses same-or-lower versionCode as a downgrade and uninstalling first would wipe local
+        // app data (learned words, settings, clipboard history). Bump versionName only when
+        // actually cutting a release.
+        versionCode = 15
+        versionName = "2.2.2"
     }
 
     signingConfigs {
