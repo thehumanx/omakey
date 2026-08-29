@@ -196,7 +196,7 @@ never any auto-download or auto-install.
 
 ## Status
 
-omakey is on release 2.2.2. Typing, gestures, autocorrect, prediction, both layout styles, the
+omakey is on release 2.3.0. Typing, gestures, autocorrect, prediction, both layout styles, the
 clipboard manager, and the emoji panel are all working today and getting updated regularly — see
 [CHANGELOG.md](CHANGELOG.md) for the full history.
 
