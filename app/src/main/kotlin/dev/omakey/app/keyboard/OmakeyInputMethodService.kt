@@ -192,6 +192,14 @@ class OmakeyInputMethodService :
         emojiRecentsPreferences = EmojiRecentsPreferences(applicationContext)
         keyboardFeedback = VibratorKeyboardFeedback(applicationContext, hapticSoundPreferences)
 
+        // Idempotent (WorkManager's own ExistingPeriodicWorkPolicy.KEEP) — safe to call on every
+        // keyboard process start rather than needing its own "already scheduled" bookkeeping. This
+        // is what keeps the 12h check running across reboots without a dedicated boot receiver:
+        // the IME process restarts the moment the keyboard is used again.
+        if (dev.omakey.core.update.UpdatePreferences(applicationContext).settings.value.autoCheckEnabled) {
+            dev.omakey.app.update.UpdateWorkScheduler.schedule(applicationContext)
+        }
+
         // Async, off the main thread, and a no-op after the first run — must not block
         // onCreateInputView; the keyboard is typeable immediately and suggestions populate once
         // this finishes.

@@ -35,8 +35,8 @@ testing fast typing, autocorrect, and everything else. I'm improving it on a reg
 Google allows sideloading, this is probably where it stays — and maybe after that, I put it on
 the Store.
 
-It doesn't ask for internet access. The permission was never requested, so there's no way for
-anything you type to leave your phone even by accident.
+It's offline by default. The only thing that ever touches the network is checking for app
+updates — nothing you type, copy, or type into any app ever leaves your phone.
 
 ## What you won't find in most keyboards
 
@@ -70,8 +70,8 @@ anything you type to leave your phone even by accident.
   started](#getting-started) below.
 - **No cloud backup, no sync.** Your learned words, your clipboard, your settings stay on your
   phone. There's no server to sync any of it to.
-- **No GIF search.** It'd need internet access, and I'm not asking for that permission just for
-  GIFs.
+- **No GIF search.** It'd need real, ongoing network access (not the once-in-a-while manual update
+  check), and that's a bigger privacy tradeoff than I want to make just for GIFs.
 
 ## Everything it actually does
 
@@ -175,11 +175,24 @@ Swipe to the Tools tab for:
 - Automatic fallback for TalkBack users — screen-reader touch exploration switches omakey to
   standard tap-to-type so nothing gets in the way of accessibility tools.
 
+### Staying up to date
+
+- Since omakey isn't on the Play Store (yet), Settings' About section checks GitHub for the
+  latest release instead — a manual "Check for updates" button, plus an "Automatic update checks"
+  toggle (on by default) that quietly checks every 12 hours and sends a notification if there's a
+  newer version, without ever downloading or installing anything itself.
+
 ## Privacy
 
-omakey's manifest doesn't request the `INTERNET` permission. The app has no code path capable of
-sending a network request. Nothing you type, copy, or teach it can leave your device. Your
-dictionary, your clipboard, your settings all stay local.
+omakey is offline by default. Nothing you type, copy, or teach it can leave your device, and
+there's no analytics or ad SDK anywhere in the app. Your dictionary, your clipboard, your settings
+all stay local.
+
+The one exception: checking for app updates. Settings' About section has a manual "Check for
+updates" button, and (on by default, toggleable off) a periodic check every 12 hours that
+notifies you if a newer version is out. Either way, the only thing that ever happens on the
+network is a lookup against GitHub's public Releases API — no typed text, no other data, and
+never any auto-download or auto-install.
 
 ## Status
 

@@ -1,6 +1,7 @@
 package dev.omakey.app.settings
 
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
@@ -41,6 +42,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
@@ -110,6 +112,15 @@ import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 
 class SettingsActivity : ComponentActivity() {
+    // Requested only in direct response to the user flipping "Automatic update checks" on (see
+    // UpdateCheckRow) — Android 13+ ties POST_NOTIFICATIONS to an explicit runtime prompt, and
+    // firing it unprompted at Activity launch (before the user has expressed any intent around
+    // updates at all) would just be a cold permission dialog with no context. If denied, the
+    // periodic worker still runs on schedule (see UpdateCheckWorker) but silently skips posting
+    // the notification rather than crashing.
+    private val notificationPermissionLauncher =
+        registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) {}
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Draws edge-to-edge (content behind the status/nav bars) so we control inset padding
@@ -125,8 +136,14 @@ class SettingsActivity : ComponentActivity() {
         val hapticSoundPreferences = HapticSoundPreferences(applicationContext)
         val autocorrectPreferences = AutocorrectPreferences(applicationContext)
         val predictionPreferences = PredictionPreferences(applicationContext)
+        val updatePreferences = dev.omakey.core.update.UpdatePreferences(applicationContext)
         val feedback = VibratorKeyboardFeedback(applicationContext, hapticSoundPreferences)
         val wordDao = OmakeyDatabase.getInstance(applicationContext).wordDao()
+        // Idempotent (see UpdateWorkScheduler's own doc) — also scheduled from the IME service,
+        // this covers the case where Settings is opened before the keyboard has ever been enabled.
+        if (updatePreferences.settings.value.autoCheckEnabled) {
+            dev.omakey.app.update.UpdateWorkScheduler.schedule(applicationContext)
+        }
         setContent {
             OmakeySettingsTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
@@ -140,6 +157,7 @@ class SettingsActivity : ComponentActivity() {
                         hapticSoundPreferences = hapticSoundPreferences,
                         autocorrectPreferences = autocorrectPreferences,
                         predictionPreferences = predictionPreferences,
+                        updatePreferences = updatePreferences,
                         wordDao = wordDao,
                         feedback = feedback,
                         onOpenSystemSettings = {
@@ -149,6 +167,21 @@ class SettingsActivity : ComponentActivity() {
                             val imm = getSystemService(android.content.Context.INPUT_METHOD_SERVICE)
                                 as android.view.inputmethod.InputMethodManager
                             imm.showInputMethodPicker()
+                        },
+                        onAutoUpdateCheckToggled = { enabled ->
+                            updatePreferences.setAutoCheckEnabled(enabled)
+                            if (enabled) {
+                                dev.omakey.app.update.UpdateWorkScheduler.schedule(applicationContext)
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                                    androidx.core.content.ContextCompat.checkSelfPermission(
+                                        this@SettingsActivity, android.Manifest.permission.POST_NOTIFICATIONS,
+                                    ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+                                ) {
+                                    notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                                }
+                            } else {
+                                dev.omakey.app.update.UpdateWorkScheduler.cancel(applicationContext)
+                            }
                         },
                     )
                 }
@@ -211,10 +244,12 @@ private fun SettingsScreen(
     hapticSoundPreferences: HapticSoundPreferences,
     autocorrectPreferences: AutocorrectPreferences,
     predictionPreferences: PredictionPreferences,
+    updatePreferences: dev.omakey.core.update.UpdatePreferences,
     wordDao: WordDao,
     feedback: VibratorKeyboardFeedback,
     onOpenSystemSettings: () -> Unit,
     onSwitchKeyboard: () -> Unit,
+    onAutoUpdateCheckToggled: (Boolean) -> Unit,
 ) {
     val currentTheme by themeRepository.currentTheme.collectAsState()
     val useSystemAccent by themeRepository.useSystemAccent.collectAsState()
@@ -351,6 +386,26 @@ private fun SettingsScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    val autoCheckEnabled by updatePreferences.settings.collectAsState()
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(text = "Automatic update checks", style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                text = "Checks GitHub every 12 hours and notifies you if a new " +
+                                    "version is out. No background download or install.",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                        Switch(
+                            checked = autoCheckEnabled.autoCheckEnabled,
+                            onCheckedChange = onAutoUpdateCheckToggled,
+                        )
+                    }
+                    UpdateCheckRow()
                 }
             }
         }
@@ -386,6 +441,7 @@ private fun SettingsScreen(
         ThemeEditorOverlay(
             initialTheme = themeBeingEdited,
             layoutMode = layoutMode,
+            layoutPreferences = layoutPreferences,
             onSave = { theme ->
                 customThemePreferences.save(theme)
                 themeRepository.setTheme(theme)
@@ -1154,6 +1210,68 @@ private fun AccessibleModeToggle(accessibilityPreferences: AccessibilityPreferen
     }
 }
 
+/** The one manual, opt-in network call in the whole app — see [dev.omakey.core.update.UpdateChecker]'s
+ * own doc and the privacy notice above it. A plain button + inline status text, not a background
+ * check: nothing happens until the user taps it, every single time. */
+@Composable
+private fun UpdateCheckRow() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var status by remember { mutableStateOf<UpdateCheckStatus>(UpdateCheckStatus.Idle) }
+
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Button(
+            onClick = {
+                status = UpdateCheckStatus.Checking
+                scope.launch {
+                    status = when (val outcome = dev.omakey.core.update.GithubReleaseUpdateChecker()
+                        .checkForUpdate(dev.omakey.app.BuildConfig.VERSION_NAME)) {
+                        is dev.omakey.core.update.UpdateCheckOutcome.Success -> UpdateCheckStatus.Checked(outcome.result)
+                        dev.omakey.core.update.UpdateCheckOutcome.Error -> UpdateCheckStatus.Failed
+                    }
+                }
+            },
+            enabled = status !is UpdateCheckStatus.Checking,
+        ) {
+            Text(text = if (status is UpdateCheckStatus.Checking) "Checking..." else "Check for updates")
+        }
+        when (val current = status) {
+            UpdateCheckStatus.Idle, UpdateCheckStatus.Checking -> Unit
+            UpdateCheckStatus.Failed -> Text(
+                text = "Couldn't check for updates — try again later.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            is UpdateCheckStatus.Checked -> if (current.result.updateAvailable) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = "Version ${current.result.latestVersion} is available.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    TextButton(onClick = {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(current.result.releaseUrl)))
+                    }) {
+                        Text(text = "View release")
+                    }
+                }
+            } else {
+                Text(
+                    text = "You're up to date.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+private sealed interface UpdateCheckStatus {
+    data object Idle : UpdateCheckStatus
+    data object Checking : UpdateCheckStatus
+    data object Failed : UpdateCheckStatus
+    data class Checked(val result: dev.omakey.core.update.UpdateCheckResult) : UpdateCheckStatus
+}
+
 /** Normal vs. Grid — orthogonal to the color theme picked via [ThemePicker] below (every color
  * theme works with either layout mode, see [dev.omakey.core.theme.LayoutMode]'s doc), shown
  * first in Appearance since it decides how the rest of the section's options apply (e.g. "Key
@@ -1374,11 +1492,30 @@ private fun dev.omakey.core.theme.ColorSpec.toComposeColor() = Color(argb.toInt(
 private fun ThemeEditorOverlay(
     initialTheme: OmakeyTheme?,
     layoutMode: dev.omakey.core.theme.LayoutMode,
+    layoutPreferences: LayoutPreferences,
     onSave: (OmakeyTheme) -> Unit,
     onClose: () -> Unit,
 ) {
     BackHandler(onBack = onClose)
+    // "Key color" (below) only has anything to actually paint in Normal mode if key backgrounds
+    // are turned on at all — LayoutSettings.showKeyBackgrounds, the same "Key backgrounds"
+    // Appearance toggle, is what gates Color.Transparent vs. theme.keyBackground in KeyRowView.
+    // Real user feedback/bug report: picking a Key color here appeared to do nothing at all,
+    // because that toggle lives in a separate Appearance section the user had no reason to
+    // associate with the color picker they were looking at — and the preview below used to
+    // hardcode showKeyBackgrounds = false regardless, so it never would have shown the color even
+    // if the toggle *was* already on elsewhere. Surfacing the toggle right next to the color it
+    // controls (Normal-mode-only, same as "Key color" itself) fixes both: the setting is
+    // discoverable from the one place it actually matters, and the live preview reflects it.
+    val layoutSettings by layoutPreferences.settings.collectAsState()
+    // Name is entered at save time now (see the "Save theme" button's onClick and the dialog
+    // below), not as an always-visible field here — real user feedback: the name doesn't affect
+    // anything about the preview above it, so it was just taking up space in a screen that's
+    // otherwise entirely about color, for a field most people would leave on its default anyway.
+    // Still tracked here (not purely local to the dialog) so re-opening the editor for an existing
+    // custom theme pre-fills the dialog with its current name rather than "My theme" every time.
     var name by remember { mutableStateOf(initialTheme?.name ?: "My theme") }
+    var showSaveNamePrompt by remember { mutableStateOf(false) }
     var background by remember { mutableStateOf(initialTheme?.keyboardBackground?.toComposeColor() ?: Color(0xFF1E1E1E)) }
     var keyColor by remember { mutableStateOf(initialTheme?.keyBackground?.toComposeColor() ?: Color(0xFF2C2C2C)) }
     var stripeColor by remember { mutableStateOf(initialTheme?.middleRowStripeColor?.toComposeColor() ?: Color(0xFF3A3A3A)) }
@@ -1458,14 +1595,6 @@ private fun ThemeEditorOverlay(
                 TextButton(onClick = onClose) { Text(text = "Cancel") }
             }
 
-            OutlinedTextField(
-                value = name,
-                onValueChange = { name = it },
-                label = { Text(text = "Name") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-            )
-
             // Sticky, full-keyboard preview — deliberately outside any scroll container so it
             // stays on screen the whole time the carousel below is being swiped/edited, instead of
             // scrolling away with the rest of the form (real user feedback: "so we know how it
@@ -1478,7 +1607,30 @@ private fun ThemeEditorOverlay(
             androidx.compose.runtime.CompositionLocalProvider(
                 dev.omakey.core.theme.LocalKeyboardLayoutMode provides layoutMode,
             ) {
-                ThemePreviewMock(previewTheme)
+                // Real bug, fixed: this preview used to hardcode showKeyBackgrounds = false
+                // regardless of the actual setting, so editing "Key color" for a Normal-mode theme
+                // never showed any visible change here even once the toggle below was turned on.
+                ThemePreviewMock(previewTheme, showKeyBackgrounds = layoutSettings.showKeyBackgrounds)
+            }
+
+            // "Key color" (below) is otherwise invisible in Normal mode — KeyRowView renders keys
+            // fully transparent there unless key backgrounds are turned on (the flat/borderless
+            // look is the Normal-mode default, matching Fleksy). Surfaced right here, next to the
+            // color it gates, instead of leaving it to be found separately under Appearance —
+            // Grid mode always shows its own bordered cells regardless of this toggle, so it's
+            // Normal-mode-only, same as "Key color" itself.
+            if (layoutMode != dev.omakey.core.theme.LayoutMode.GRID) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(text = "Show key backgrounds", style = MaterialTheme.typography.bodyLarge)
+                    Switch(
+                        checked = layoutSettings.showKeyBackgrounds,
+                        onCheckedChange = layoutPreferences::setShowKeyBackgrounds,
+                    )
+                }
             }
 
             // Border thickness — a 3-step preset, not a color, so it doesn't fit ThemeEditField's
@@ -1510,28 +1662,94 @@ private fun ThemeEditorOverlay(
                 modifier = Modifier.weight(1f),
             )
 
-            Button(onClick = { onSave(previewTheme) }, modifier = Modifier.fillMaxWidth()) {
+            Button(onClick = { showSaveNamePrompt = true }, modifier = Modifier.fillMaxWidth()) {
                 Text(text = "Save theme")
             }
         }
     }
+
+    if (showSaveNamePrompt) {
+        ThemeSaveNamePrompt(
+            initialName = name,
+            onConfirm = { finalName ->
+                name = finalName
+                onSave(previewTheme.copy(name = finalName.ifBlank { "My theme" }))
+            },
+            onDismiss = { showSaveNamePrompt = false },
+        )
+    }
+}
+
+/** Shown only when "Save theme" is tapped — see [ThemeEditorOverlay]'s own doc for why the name
+ * field moved here instead of sitting inline in the editor the whole time. */
+@Composable
+private fun ThemeSaveNamePrompt(
+    initialName: String,
+    onConfirm: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var nameInput by remember { mutableStateOf(initialName) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(text = "Name this theme") },
+        text = {
+            OutlinedTextField(
+                value = nameInput,
+                onValueChange = { nameInput = it },
+                label = { Text(text = "Name") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(nameInput) }) { Text(text = "Save") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(text = "Cancel") }
+        },
+    )
 }
 
 /** A real, full `KeyboardLayout` rendered row-by-row via `KeyRowView` (same composable the actual
  * keyboard renders, reused rather than a bespoke mock — same trick as
- * `KeyboardSizePositionOverlay`) — shows every row, not just one, so the editor's sticky preview
- * is pixel-accurate to what typing will actually look like, including the spacebar/bottom row
- * (where [OmakeyTheme.spacebarAccentColor] actually shows up) and the home-row stripe. */
+ * `KeyboardSizePositionOverlay`), plus a static sample of the extension bar (suggestion/emoji
+ * chips) on top via [dev.omakey.app.keyboard.ui.SuggestionsTabContent] — real user feedback: the
+ * "Show key backgrounds" toggle only affected the letter grid here, so there was no way to preview
+ * its effect on the suggestion bar's own chips while editing a theme. A real `TopStrip`/
+ * `KeyboardViewModel` would need a live `TextEditor`/prediction engine/undo state Settings has no
+ * business constructing just for a preview — sample suggestions/emoji and no-op callbacks get the
+ * same pixel-accurate chip styling without any of that. Row height trimmed from 52dp to 44dp
+ * (real user feedback, "decrease the keyboard height a bit") — matters more now that the bar above
+ * adds its own height on top. */
 @Composable
-private fun ThemePreviewMock(theme: OmakeyTheme) {
+private fun ThemePreviewMock(theme: OmakeyTheme, showKeyBackgrounds: Boolean = false) {
     val noOpAncestor: () -> androidx.compose.ui.layout.LayoutCoordinates? = remember { { null } }
-    val rowHeightDp = 52
+    val rowHeightDp = 44
     Column(
         Modifier
             .fillMaxWidth()
             .background(theme.keyboardBackground.toComposeColor(), RoundedCornerShape(8.dp))
             .padding(horizontal = 4.dp, vertical = 6.dp),
     ) {
+        val isGridMode = dev.omakey.core.theme.LocalKeyboardLayoutMode.current == dev.omakey.core.theme.LayoutMode.GRID
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(44.dp)
+                .background(if (isGridMode) theme.keyboardBackground.toComposeColor() else theme.suggestionBarBackground.toComposeColor()),
+        ) {
+            dev.omakey.app.keyboard.ui.SuggestionsTabContent(
+                suggestions = listOf("hello", "world"),
+                emojiSuggestions = listOf("😊"),
+                firstSuggestionKind = dev.omakey.app.keyboard.SuggestionKind.PLAIN,
+                activeSuggestionIndex = -1,
+                theme = theme,
+                fontFamily = null,
+                showKeyBackgrounds = showKeyBackgrounds,
+                onAccept = {},
+                onAcceptEmoji = {},
+            )
+        }
         Layouts.QwertyEnUS.rows.forEachIndexed { rowIndex, row ->
             dev.omakey.app.keyboard.ui.KeyRowView(
                 rowKeys = row.keys,
@@ -1539,7 +1757,7 @@ private fun ThemePreviewMock(theme: OmakeyTheme) {
                 shiftOn = false,
                 theme = theme,
                 accessibleMode = false,
-                showKeyBackgrounds = false,
+                showKeyBackgrounds = showKeyBackgrounds,
                 // Matches KeyGrid's own homeRowIndex for QwertyEnUS (see KeyboardRoot.kt) — the
                 // ASDFGHJKL row (index 1), not the ZXCVBNM/shift row (real bug, fixed: this
                 // preview had it one row too low).

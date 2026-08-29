@@ -6,8 +6,12 @@
     <string name="settings_enable_keyboard">Enable omakey in system settings</string>
     <string name="settings_choose_keyboard">Switch to omakey</string>
     <string name="privacy_notice">
-        omakey works entirely offline. It has no internet permission, sends no typed text
-        anywhere, and includes no analytics or ad SDKs. Your personal dictionary, clipboard
-        history, and theme choices are stored only on this device.
+        omakey works entirely offline. It sends no typed text anywhere, and includes no analytics
+        or ad SDKs. Your personal dictionary, clipboard history, and theme choices are stored only
+        on this device. The one exception: checking for app updates, which looks up the latest
+        release on GitHub — either manually via the button below, or automatically every 12 hours
+        if you leave \"Automatic update checks\" on (toggle below; on by default). Either way,
+        that lookup is the only thing that ever touches the network — no typed text, no other
+        data, nothing else in the app.
     </string>
 </resources>

@@ -28,8 +28,8 @@ android {
         // refuses same-or-lower versionCode as a downgrade and uninstalling first would wipe local
         // app data (learned words, settings, clipboard history). Bump versionName only when
         // actually cutting a release.
-        versionCode = 15
-        versionName = "2.2.2"
+        versionCode = 16
+        versionName = "2.3.0"
     }
 
     signingConfigs {
@@ -94,6 +94,7 @@ dependencies {
     implementation(libs.androidx.material3)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
+    implementation(libs.androidx.work.runtime.ktx)
 
     debugImplementation(libs.androidx.ui.tooling)
 

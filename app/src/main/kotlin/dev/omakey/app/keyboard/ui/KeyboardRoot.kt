@@ -601,6 +601,13 @@ private fun KeyGrid(
                             var cursorDragAnchorX = down.position.x
                             val cursorDragStepPx = 10.dp.toPx()
 
+                            // Swipe-left-and-hold repeats the delete-word gesture, matching held-
+                            // BACKSPACE's repeat-delete convention — started the instant the swipe
+                            // itself commits (see the MOVE branch below), cancelled the moment the
+                            // finger lifts or this touch resolves some other way, same lifecycle as
+                            // [longPressJob].
+                            var swipeDeleteHoldJob: Job? = null
+
                             val longPressJob: Job = scope.launch {
                                 delay(400)
                                 if (isActive) {
@@ -707,6 +714,7 @@ private fun KeyGrid(
                                 val dragState = accentDragState
                                 if (!change.pressed) {
                                     longPressJob.cancel()
+                                    swipeDeleteHoldJob?.cancel()
                                     onPressedKeyChange(null)
                                     if (cursorDragActive) {
                                         settled = true
@@ -787,6 +795,26 @@ private fun KeyGrid(
                                         onPreviewKey, onOpenSettings, feedback,
                                         onSwipeDeleteTriggered = onSwipeDeleteTriggeredStable,
                                     )
+                                    // Swipe commits (and its single delete-word already fired,
+                                    // above) the instant the gesture state machine crosses the
+                                    // swipe-distance threshold — further MOVEs on this same touch
+                                    // are ignored by the machine itself (SWIPE_COMMITTED). Keeping
+                                    // the finger down past that point without lifting is "hold to
+                                    // keep deleting," same convention as held-BACKSPACE.
+                                    if (gestureEvent is GestureEvent.Swipe &&
+                                        gestureEvent.direction == SwipeDirection.LEFT &&
+                                        gestureEvent.downKeyCode != SpecialKeyCode.SPACE
+                                    ) {
+                                        swipeDeleteHoldJob = scope.launch {
+                                            delay(400)
+                                            while (isActive) {
+                                                feedback.onSwipeDelete()
+                                                onSwipeDeleteTriggeredStable()
+                                                viewModel.onSwipeLeft()
+                                                delay(150)
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -923,18 +951,26 @@ private fun SymbolModeOverlay(
         androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
             val density = androidx.compose.ui.platform.LocalDensity.current
             val availableWidthPx = with(density) { maxWidth.toPx() }
+            // state.options[0] is always the held key's own base label (see AccentDragState's
+            // doc) — kept in the underlying list so the drag-distance math and "release without
+            // dragging types the base char" behavior in KeyGrid's gesture loop stay unchanged, but
+            // not worth a cell here: the user is already looking at that exact key, so redundantly
+            // re-showing it in its own popup is just visual noise. Only the special characters
+            // past it get a cell.
+            val displayOptions = state.options.drop(1)
             // Shrinks cells to fit as more options accumulate (the EXTENDED_POPUP_SYMBOLS overflow
             // tier can push option count well past what a fixed cell width would fit on one row),
             // clamped so cells never get too cramped or absurdly wide with only 2-3 options.
             val cellWidthDp = with(density) {
-                (availableWidthPx / state.options.size.coerceAtLeast(1)).toDp()
+                (availableWidthPx / displayOptions.size.coerceAtLeast(1)).toDp()
             }.coerceIn(36.dp, 56.dp)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
             ) {
                 val isGridModeOverlay = dev.omakey.core.theme.LocalKeyboardLayoutMode.current == dev.omakey.core.theme.LayoutMode.GRID
-                state.options.forEachIndexed { index, option ->
+                displayOptions.forEachIndexed { rawIndex, option ->
+                    val index = rawIndex + 1
                     val isHighlighted = index == state.highlightedIndex
                     // Cells beyond the key's own curated popupChars (the EXTENDED_POPUP_SYMBOLS
                     // overflow tier, reached only by dragging past the curated set) fade in the
@@ -1428,6 +1464,13 @@ private fun TopStrip(
                 snapPositionalThreshold = 0.2f,
             ),
         ) { page ->
+            // Same "Show key backgrounds" toggle KeyRowView already respects for the main letter
+            // grid (LayoutSettings.showKeyBackgrounds) — extended here so the extension bar's own
+            // controls (suggestion/emoji chips, number keys, text-editing tool icons) stay legible
+            // against a custom theme too, instead of relying purely on text color contrast against
+            // suggestionBarBackground. Real user feedback: with a light suggestion-bar background
+            // and light key text, this row was unreadable until backgrounds were turned on here too.
+            val showKeyBackgrounds = uiState.layoutSettings.showKeyBackgrounds
             when (page) {
                 0 -> SuggestionsTabContent(
                     suggestions = uiState.suggestions,
@@ -1436,27 +1479,34 @@ private fun TopStrip(
                     activeSuggestionIndex = uiState.activeSuggestionIndex,
                     theme = theme,
                     fontFamily = fontFamily,
+                    showKeyBackgrounds = showKeyBackgrounds,
                     onAccept = viewModel::onSuggestionAccepted,
                     onAcceptEmoji = viewModel::onEmojiSuggestionAccepted,
                 )
-                1 -> NumbersTabContent(theme, fontFamily, viewModel, feedback, uiState.layout.id)
+                1 -> NumbersTabContent(theme, fontFamily, viewModel, feedback, uiState.layout.id, showKeyBackgrounds)
                 else -> ToolsTabContent(
                     theme, fontFamily, viewModel, feedback, uiState.canUndo, uiState.canRedo,
                     clipboardModeActive = clipboardModeActive,
+                    showKeyBackgrounds = showKeyBackgrounds,
                 )
             }
         }
     }
 }
 
+// internal (not private) so the theme editor's live preview (SettingsActivity's ThemePreviewMock)
+// can render a real extension-bar sample with the exact same chip styling — see that call site's
+// own doc for why a static sample beats trying to host a full KeyboardViewModel/TopStrip in
+// Settings.
 @Composable
-private fun SuggestionsTabContent(
+internal fun SuggestionsTabContent(
     suggestions: List<String>,
     emojiSuggestions: List<String>,
     firstSuggestionKind: dev.omakey.app.keyboard.SuggestionKind,
     activeSuggestionIndex: Int,
     theme: OmakeyTheme,
     fontFamily: androidx.compose.ui.text.font.FontFamily?,
+    showKeyBackgrounds: Boolean,
     onAccept: (String) -> Unit,
     onAcceptEmoji: (String) -> Unit,
 ) {
@@ -1516,6 +1566,15 @@ private fun SuggestionsTabContent(
                                 // already owns that seam (see gridCellBorder's includeBottom doc).
                                 .gridCellBorder(theme.gridBorderColor.toComposeColor(), theme.gridBorderWidth.toDp(), includeBottom = false)
                                 .padding(horizontal = 12.dp, vertical = 6.dp)
+                        } else if (showKeyBackgrounds) {
+                            // Same "Show key backgrounds" toggle the main key grid uses —
+                            // keySpecialBackground (not keyBackground) since a suggestion chip is
+                            // a control, not a literal character key, matching how backspace/
+                            // shift/etc. render when this toggle is on.
+                            m.background(
+                                if (isPressed) theme.keyBackgroundPressed.toComposeColor() else theme.keySpecialBackground.toComposeColor(),
+                                androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+                            ).padding(horizontal = 10.dp, vertical = 6.dp)
                         } else {
                             m.padding(horizontal = 10.dp, vertical = 6.dp)
                         }
@@ -1548,6 +1607,11 @@ private fun SuggestionsTabContent(
                             m.background(if (isPressed) theme.keyBackgroundPressed.toComposeColor() else theme.keyboardBackground.toComposeColor())
                                 .gridCellBorder(theme.gridBorderColor.toComposeColor(), theme.gridBorderWidth.toDp(), includeBottom = false)
                                 .padding(horizontal = 10.dp, vertical = 6.dp)
+                        } else if (showKeyBackgrounds) {
+                            m.background(
+                                if (isPressed) theme.keyBackgroundPressed.toComposeColor() else theme.keySpecialBackground.toComposeColor(),
+                                androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+                            ).padding(horizontal = 8.dp, vertical = 6.dp)
                         } else {
                             m.padding(horizontal = 8.dp, vertical = 6.dp)
                         }
@@ -1572,6 +1636,7 @@ private fun ToolsTabContent(
     // dimmed and non-interactive, and Clipboard becomes a toggle-back-to-keys button instead of
     // an open action (see item 7: clipboard-mode top bar redesign).
     clipboardModeActive: Boolean = false,
+    showKeyBackgrounds: Boolean = false,
 ) {
     val editTools = remember(viewModel) {
         listOf(
@@ -1617,6 +1682,7 @@ private fun ToolsTabContent(
                     theme = theme,
                     onClick = action.onClick,
                     modifier = Modifier.weight(1f),
+                    showKeyBackgrounds = showKeyBackgrounds,
                 )
             }
         }
@@ -1635,6 +1701,7 @@ private fun ToolsTabContent(
                 enabled = canUndo && !clipboardModeActive,
                 theme = theme,
                 onClick = { feedback.onKeyPress(); viewModel.undo() },
+                showKeyBackgrounds = showKeyBackgrounds,
             )
         }
         item {
@@ -1644,6 +1711,7 @@ private fun ToolsTabContent(
                 enabled = canRedo && !clipboardModeActive,
                 theme = theme,
                 onClick = { feedback.onKeyPress(); viewModel.redo() },
+                showKeyBackgrounds = showKeyBackgrounds,
             )
         }
         item { ToolGroupDivider(theme) }
@@ -1655,6 +1723,7 @@ private fun ToolsTabContent(
                 enabled = !clipboardModeActive,
                 theme = theme,
                 onClick = { feedback.onKeyPress(); action() },
+                showKeyBackgrounds = showKeyBackgrounds,
             )
         }
         item { ToolGroupDivider(theme) }
@@ -1669,6 +1738,7 @@ private fun ToolsTabContent(
                     feedback.onKeyPress()
                     if (clipboardModeActive) viewModel.extensionHost.close() else viewModel.selectExtension("builtin.clipboard")
                 },
+                showKeyBackgrounds = showKeyBackgrounds,
             )
         }
     }
@@ -1697,6 +1767,7 @@ private fun ToolButton(
     theme: OmakeyTheme,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    showKeyBackgrounds: Boolean = false,
 ) {
     val isGridMode = dev.omakey.core.theme.LocalKeyboardLayoutMode.current == dev.omakey.core.theme.LayoutMode.GRID
     val interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
@@ -1731,6 +1802,13 @@ private fun ToolButton(
                         // this button is the only row inside TopStrip.
                         .gridCellBorder(theme.gridBorderColor.toComposeColor(), theme.gridBorderWidth.toDp(), includeBottom = false)
                         .padding(horizontal = 14.dp, vertical = 8.dp)
+                } else if (showKeyBackgrounds) {
+                    // Same "Show key backgrounds" toggle SuggestionsTabContent's chips use —
+                    // keySpecialBackground, matching how this is a control icon, not a letter key.
+                    m.background(
+                        if (isPressed) theme.keyBackgroundPressed.toComposeColor() else theme.keySpecialBackground.toComposeColor(),
+                        androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+                    ).padding(horizontal = 12.dp, vertical = 8.dp)
                 } else {
                     m.padding(horizontal = 12.dp, vertical = 8.dp)
                 }
@@ -1756,6 +1834,7 @@ private fun NumbersTabContent(
     viewModel: KeyboardViewModel,
     feedback: KeyboardFeedback,
     currentLayoutId: String,
+    showKeyBackgrounds: Boolean = false,
 ) {
     val noOpAncestor: () -> androidx.compose.ui.layout.LayoutCoordinates? = remember { { null } }
     // Digits are already the Symbols grid's own first row, so repeating them here while a Symbols
@@ -1774,7 +1853,10 @@ private fun NumbersTabContent(
             shiftOn = false,
             theme = theme,
             accessibleMode = true,
-            showKeyBackgrounds = false,
+            // Real bug, fixed: this was hardcoded false regardless of the actual "Show key
+            // backgrounds" setting — the Numbers tab's own keys never picked up the toggle,
+            // unlike the main letter grid.
+            showKeyBackgrounds = showKeyBackgrounds,
             isHomeRow = false,
             onKeyTap = { code -> feedback.onKeyPress(); viewModel.onKeyTap(code) },
             ancestorCoordinates = noOpAncestor,

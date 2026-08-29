@@ -6,6 +6,21 @@
          offline-by-default claim (no network access is granted or used anywhere in this app). -->
     <uses-permission android:name="android.permission.VIBRATE" />
 
+    <!-- The one deliberate exception to "works entirely offline": update checking. A manual
+         "Check for updates" button in Settings (About section), plus — by direct user request —
+         an opt-out periodic background check every 12 hours (WorkManager, network-connected
+         constraint) that posts a system notification if a newer release exists. Either way, the
+         only endpoint ever contacted is GitHub's public Releases API — no telemetry, no
+         auto-download/install. See core/.../update/UpdateChecker.kt,
+         app/.../update/UpdateCheckWorker.kt, and the privacy notice (strings.xml). Toggleable off
+         in Settings (UpdatePreferences.autoCheckEnabled) without affecting the manual button. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Runtime-prompted on Android 13+, requested only when the user turns on "Automatic update
+         checks" in Settings (see SettingsActivity's notificationPermissionLauncher) — lets the
+         periodic check above actually show its "update available" notification. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <application
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"

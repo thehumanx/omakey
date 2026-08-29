@@ -754,7 +754,18 @@ class KeyboardViewModel(
         } else {
             flushWordBuffer(separator = char.toString())
             lastWordBoundarySeparator = char.toString()
-            refreshSuggestions(checkContextualCorrection = true)
+            // Real bug, fixed: this used to pass checkContextualCorrection = true for *every*
+            // non-letter character, including digits and arbitrary symbols-page characters (@, #,
+            // $, ...) that never actually end a word the way sentence punctuation does. Since
+            // currentWordBuffer is empty for these (nothing was being typed), refreshSuggestions'
+            // "just finished a word" branch fired off lastCommittedWordCased instead — the last
+            // word actually finished with a *real* separator, which for a fresh digit run could be
+            // from several words ago (typing digits never itself updates lastCommittedWord). This
+            // made the suggestion strip appear "stuck" on whatever word was last genuinely
+            // committed, reappearing every time the user typed a digit/symbol with no live word
+            // buffered. Only [punctuationCycle]'s actual sentence-ending/quoting characters (also
+            // reused by swipe up/down's own punctuation-cycling) should re-trigger that check.
+            refreshSuggestions(checkContextualCorrection = char in punctuationCycle)
             if (char == '=') tryShowCalculatorResult()
         }
         if (_uiState.value.shiftOn && !_uiState.value.capsLockOn) {

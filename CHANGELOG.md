@@ -3,6 +3,37 @@
 All notable changes to omakey are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.3.0] — 2026-08-29
+
+### Added
+- **Update checking** — Settings' About section now has a "Check for updates" button, plus an
+  "Automatic update checks" toggle (on by default) that checks GitHub every 12 hours in the
+  background and sends a notification if a new version is out. Never auto-downloads or
+  auto-installs anything, and this is the *only* thing that ever touches the network — everything
+  else in omakey still works entirely offline.
+- **Emoji suggestions matched to the word you're typing** now show up to 2 emoji alongside word
+  suggestions, and the word-to-emoji list grew substantially (hundreds of everyday words across
+  animals, food, sports, travel, objects, and more).
+- **Swipe-left-and-hold now repeats word deletion**, the same way holding backspace already did.
+
+### Changed
+- **Theme editor**: the "Show key backgrounds" toggle now also applies to the suggestion bar,
+  number keys, and text-editing tool icons — not just the main letter keys — so custom themes stay
+  readable there too instead of falling back to invisible/transparent text. The live preview while
+  editing a theme now includes a sample of the suggestion bar, and is a bit shorter overall.
+- **Theme name is now entered when you tap "Save theme"**, via a small prompt, instead of an
+  always-visible field at the top of the editor.
+
+### Fixed
+- **Suggestion strip could get "stuck" on an old word** when typing numbers or symbols right after
+  deleting a word — it now correctly clears/updates instead of showing a stale suggestion from
+  earlier in your typing session.
+- **Long-press accent/punctuation popup no longer shows the key you're already holding** as one of
+  its own options — just the actual accents/symbols.
+- **Custom theme "Key color" now actually applies** in the normal (non-Grid) keyboard layout — a
+  new "Show key backgrounds" toggle right in the theme editor makes the color visible, and the
+  live preview while editing now reflects it correctly.
+
 ## [2.2.2] — 2026-08-27
 
 ### Added
