@@ -29,6 +29,14 @@ android {
         unitTests {
             isIncludeAndroidResources = true
             isReturnDefaultValues = true
+            all {
+                // Gradle's own -D flags land on the daemon, not on the forked test JVM, so the
+                // evaluation harness's opt-in switches have to be forwarded explicitly:
+                //   -Domakey.tune=true       runs the parameter sweep (EngineTuningTest)
+                //   -Domakey.eval.full=true  scores the full corpora instead of a sample
+                it.systemProperty("omakey.tune", System.getProperty("omakey.tune") ?: "")
+                it.systemProperty("omakey.eval.full", System.getProperty("omakey.eval.full") ?: "")
+            }
         }
     }
 }

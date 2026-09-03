@@ -1486,6 +1486,7 @@ private fun TopStrip(
                 1 -> NumbersTabContent(theme, fontFamily, viewModel, feedback, uiState.layout.id, showKeyBackgrounds)
                 else -> ToolsTabContent(
                     theme, fontFamily, viewModel, feedback, uiState.canUndo, uiState.canRedo,
+                    incognito = uiState.incognito,
                     clipboardModeActive = clipboardModeActive,
                     showKeyBackgrounds = showKeyBackgrounds,
                 )
@@ -1632,6 +1633,7 @@ private fun ToolsTabContent(
     feedback: KeyboardFeedback,
     canUndo: Boolean,
     canRedo: Boolean,
+    incognito: Boolean,
     // Non-null while the clipboard panel is open — every icon except Clipboard itself renders
     // dimmed and non-interactive, and Clipboard becomes a toggle-back-to-keys button instead of
     // an open action (see item 7: clipboard-mode top bar redesign).
@@ -1671,6 +1673,16 @@ private fun ToolsTabContent(
                     feedback.onKeyPress()
                     if (clipboardModeActive) viewModel.extensionHost.close() else viewModel.selectExtension("builtin.clipboard")
                 },
+            )
+            // Reachable from the keyboard itself rather than only from Settings: the moment you
+            // want it is the moment you are already typing something you'd rather not have
+            // remembered, and leaving the field to find a toggle defeats the purpose.
+            add(
+                ToolAction(
+                    if (incognito) "Stop incognito" else "Incognito",
+                    PhosphorIncognito,
+                    true,
+                ) { feedback.onKeyPress(); viewModel.toggleIncognito() },
             )
         }
         Row(Modifier.fillMaxWidth().fillMaxHeight(), verticalAlignment = Alignment.CenterVertically) {

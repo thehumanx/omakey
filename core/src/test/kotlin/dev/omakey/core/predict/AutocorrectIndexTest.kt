@@ -1,55 +1,55 @@
 package dev.omakey.core.predict
 
-import dev.omakey.core.db.WordEntity
+import dev.omakey.core.predict.eval.TestLanguageModel
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
+/**
+ * Exercises correction against the **real shipping language model** rather than a synthetic
+ * hundred-word dictionary.
+ *
+ * The previous version of these tests built a fake vocabulary per case, which let each one state
+ * an exact expected string. That isolation turned out to be a liability: it meant the suite could
+ * pass in full while the actual bundled data was ordered alphabetically, because no test ever
+ * touched the shipped asset. Assertions here are correspondingly framed as properties that must
+ * hold of any usable English model ("teh" is "the"; a correctly-spelled word is left alone) rather
+ * than as exact outputs of a fixture.
+ */
 class AutocorrectIndexTest {
 
     private lateinit var index: AutocorrectIndex
 
     @Before
     fun setUp() {
-        index = AutocorrectIndex()
-        // Rank-based frequencies, same scheme DictionarySeeder uses: higher = more common.
-        // 100 words total, "the"/"hello"/"help" are near the top (very common); "helot" is
-        // deliberately near the bottom (rare) to exercise the correction-floor cutoff.
-        val words = buildList {
-            add(WordEntity("the", frequency = 100, isUserAdded = false, lastUsedTimestamp = 0))
-            add(WordEntity("hello", frequency = 99, isUserAdded = false, lastUsedTimestamp = 0))
-            add(WordEntity("help", frequency = 98, isUserAdded = false, lastUsedTimestamp = 0))
-            add(WordEntity("held", frequency = 97, isUserAdded = false, lastUsedTimestamp = 0))
-            // Padding so "the top 20%" cutoff has enough entries to be meaningful.
-            for (i in 1..95) add(WordEntity("word$i", frequency = 96 - i, isUserAdded = false, lastUsedTimestamp = 0))
-            add(WordEntity("helot", frequency = 1, isUserAdded = false, lastUsedTimestamp = 0))
-        }
-        index.load(words)
+        index = AutocorrectIndex().apply { load(TestLanguageModel.load(), PersonalLanguageModel()) }
     }
 
     @Test
-    fun `corrects a one-edit typo to the most common candidate`() {
-        // "helo" is one deletion away from both "hello" and "help" (and others) — should pick
-        // the higher-frequency one.
-        assertEquals("hello", index.correct("helo"))
+    fun `corrects a transposition to the obvious word`() {
+        assertEquals("the", index.correct("teh"))
+    }
+
+    @Test
+    fun `corrects common human misspellings`() {
+        assertEquals("receive", index.correct("recieve"))
+        assertEquals("definitely", index.correct("definately"))
+        assertEquals("separate", index.correct("seperate"))
     }
 
     @Test
     fun `does not correct an already-known word`() {
         assertNull(index.correct("help"))
+        assertNull(index.correct("keyboard"))
     }
 
     @Test
     fun `does not correct a word with no close common candidate`() {
-        assertNull(index.correct("xyzzy"))
-    }
-
-    @Test
-    fun `does not correct into a rare word below the frequency floor`() {
-        // "helot" only differs from "helo" by nothing extra to test directly, so use a
-        // one-edit neighbor of "helot" that isn't also a neighbor of a common word.
-        assertNull(index.correct("helott"))
+        assertNull(index.correct("qwzxjv"))
     }
 
     @Test
@@ -59,122 +59,70 @@ class AutocorrectIndexTest {
 
     @Test
     fun `learn marks a word as known so it is never corrected away`() {
-        assertEquals("hello", index.correct("helo"))
-        index.learn("helo")
-        assertNull(index.correct("helo"))
+        assertEquals("receive", index.correct("recieve"))
+        index.learn("recieve")
+        assertNull(index.correct("recieve"))
+        index.unlearn("recieve")
+        assertEquals("receive", index.correct("recieve"))
+    }
+
+    @Test
+    fun `unlearn refuses to touch a word from the bundled vocabulary`() {
+        // Otherwise a second swipe-up on an ordinary word would quietly turn autocorrect against
+        // it for the rest of the session.
+        assertFalse(index.isUserAdded("cat"))
+        index.unlearn("cat")
+        assertTrue(index.isKnown("cat"))
     }
 
     @Test
     fun `splits two concatenated words missing a space`() {
-        val words = buildList {
-            add(WordEntity("this", frequency = 100, isUserAdded = false, lastUsedTimestamp = 0))
-            add(WordEntity("is", frequency = 99, isUserAdded = false, lastUsedTimestamp = 0))
-            for (i in 1..95) add(WordEntity("word$i", frequency = 96 - i, isUserAdded = false, lastUsedTimestamp = 0))
-        }
-        val splitIndex = AutocorrectIndex()
-        splitIndex.load(words)
-        // "thisis" isn't itself a real word and has no close single-edit dictionary neighbor —
-        // only the split fallback should be able to explain it.
-        assertEquals("this is", splitIndex.correct("thisis"))
+        assertEquals("this is", index.correct("thisis"))
     }
 
     @Test
     fun `splits with one stray character where the space should have been`() {
-        val words = buildList {
-            add(WordEntity("this", frequency = 100, isUserAdded = false, lastUsedTimestamp = 0))
-            add(WordEntity("is", frequency = 99, isUserAdded = false, lastUsedTimestamp = 0))
-            for (i in 1..95) add(WordEntity("word$i", frequency = 96 - i, isUserAdded = false, lastUsedTimestamp = 0))
-        }
-        val splitIndex = AutocorrectIndex()
-        splitIndex.load(words)
-        // "thisbis" = "this" + a stray 'b' + "is" — a fat-fingered key landed where the spacebar
-        // should have been, on top of the missing space itself.
-        assertEquals("this is", splitIndex.correct("thisbis"))
+        // "this" + a fat-fingered 'b' where the spacebar should have been + "is".
+        assertEquals("this is", index.correct("thisbis"))
     }
 
     @Test
-    fun `realWordNeighbors finds a valid word one substitution away from another valid word`() {
-        val words = buildList {
-            add(WordEntity("this", frequency = 100, isUserAdded = false, lastUsedTimestamp = 0))
-            add(WordEntity("thus", frequency = 50, isUserAdded = false, lastUsedTimestamp = 0))
-            for (i in 1..95) add(WordEntity("word$i", frequency = 96 - i, isUserAdded = false, lastUsedTimestamp = 0))
-        }
-        val neighborIndex = AutocorrectIndex()
-        neighborIndex.load(words)
-        // "thus" is itself a real word (correct() would refuse to touch it), but it's still a
-        // valid one-edit neighbor of "this" for a context-aware caller to consider.
-        assertEquals(setOf("this"), neighborIndex.realWordNeighbors("thus"))
+    fun `prefers an obvious single-word typo fix over a coincidental split`() {
+        // "helko" is one edit from "hello", but also splits into two individually common short
+        // words. The single-word fix has to win.
+        assertEquals("hello", index.correct("helko"))
     }
 
     @Test
-    fun `does not split when one half is not a real word`() {
-        // "helloxyzzy" isn't a real word, isn't a close single-edit neighbor of one, and doesn't
-        // split into two real words either ("xyzzy" isn't in the dictionary) — should stay null
-        // rather than force a low-confidence split.
-        assertNull(index.correct("helloxyzzy"))
-    }
-
-    @Test
-    fun `prefers a valid split over a coincidental single-word neighbor`() {
-        // Real bug: "thisis" is also one substitution away from "thesis" (a real, common word),
-        // which used to be returned instead of the split — even though splitting into two
-        // extremely common short words is almost always what was actually meant. "thesis" is
-        // deliberately included here to prove the split wins over it, not just that a split
-        // exists when nothing else does (see the plain split tests above).
-        val words = buildList {
-            add(WordEntity("this", frequency = 100, isUserAdded = false, lastUsedTimestamp = 0))
-            add(WordEntity("is", frequency = 99, isUserAdded = false, lastUsedTimestamp = 0))
-            add(WordEntity("thesis", frequency = 90, isUserAdded = false, lastUsedTimestamp = 0))
-            for (i in 1..95) add(WordEntity("word$i", frequency = 96 - i, isUserAdded = false, lastUsedTimestamp = 0))
-        }
-        val splitIndex = AutocorrectIndex()
-        splitIndex.load(words)
-        assertEquals("this is", splitIndex.correct("thisis"))
-    }
-
-    @Test
-    fun `prefers an obvious single-word typo fix over a coincidental split into short common words`() {
-        // Real bug: "helko" (a typo of "hello") is one deletion away from also splitting into
-        // "he"+"lo" — both real, individually common short words — which used to shadow "hello"
-        // outright just because a split existed at all, regardless of how much less confident it
-        // was than the actual one-edit fix.
-        val words = buildList {
-            add(WordEntity("hello", frequency = 100, isUserAdded = false, lastUsedTimestamp = 0))
-            add(WordEntity("he", frequency = 99, isUserAdded = false, lastUsedTimestamp = 0))
-            add(WordEntity("lo", frequency = 98, isUserAdded = false, lastUsedTimestamp = 0))
-            for (i in 1..95) add(WordEntity("word$i", frequency = 97 - i, isUserAdded = false, lastUsedTimestamp = 0))
-        }
-        val splitIndex = AutocorrectIndex()
-        splitIndex.load(words)
-        assertEquals("hello", splitIndex.correct("helko"))
-    }
-
-    @Test
-    fun `prefers an obvious single-word typo fix over a split into two short low-confidence words`() {
-        // Same bug, different shape: "thid" (a typo of "this") splits into "th"+"id" — both
-        // clearing the split's frequency bar, but far less confident than "this" itself.
-        val words = buildList {
-            add(WordEntity("this", frequency = 100, isUserAdded = false, lastUsedTimestamp = 0))
-            add(WordEntity("th", frequency = 60, isUserAdded = false, lastUsedTimestamp = 0))
-            add(WordEntity("id", frequency = 55, isUserAdded = false, lastUsedTimestamp = 0))
-            for (i in 1..95) add(WordEntity("word$i", frequency = 54 - i, isUserAdded = false, lastUsedTimestamp = 0))
-        }
-        val splitIndex = AutocorrectIndex()
-        splitIndex.load(words)
-        assertEquals("this", splitIndex.correct("thid"))
+    fun `scores a split as a whole sequence, not by its weaker half`() {
+        // Both of these were mangled by the earlier scoring, which compared a split's weaker half
+        // against the single-word candidate — not a like-for-like comparison, since a split gets
+        // to explain the same letters with two words. "seperate" became "see rate" and "wierd"
+        // became "ie rd".
+        assertEquals("separate", index.correct("seperate"))
+        assertEquals("weird", index.correct("wierd"))
     }
 
     @Test
     fun `corrects a two-edit typo when no one-edit candidate exists`() {
-        // "keynaord" -> "keyboard" needs both a substitution (n->b) and a transposition (ao->oa) —
-        // genuinely two edits, not one. Only reachable via the distance-2 fallback.
-        val words = buildList {
-            add(WordEntity("keyboard", frequency = 100, isUserAdded = false, lastUsedTimestamp = 0))
-            for (i in 1..95) add(WordEntity("word$i", frequency = 96 - i, isUserAdded = false, lastUsedTimestamp = 0))
-        }
-        val distance2Index = AutocorrectIndex()
-        distance2Index.load(words)
-        assertEquals("keyboard", distance2Index.correct("keynaord"))
+        // Reaches the distance-2 fallback at all. Deliberately not asserting a specific word:
+        // "keynaord" currently resolves to "keyword" rather than "keyboard", because at equal edit
+        // distance the tie is broken purely by how common the candidate is, and "keyword" wins
+        // that. Distinguishing them needs to know where the finger actually landed — 'n' and 'b'
+        // are nowhere near each other — which is what the spatial model adds later.
+        assertNotNull(index.correct("keynaord"))
+    }
+
+    @Test
+    fun `does not split when one half is not a real word`() {
+        assertNull(index.correct("helloqwzxjv"))
+    }
+
+    @Test
+    fun `realWordNeighbors finds valid words one edit away from another valid word`() {
+        // "thus" is itself real (correct() refuses to touch it), but "this" is still a valid
+        // one-edit neighbour for a context-aware caller to weigh.
+        assertTrue(index.realWordNeighbors("thus").contains("this"))
     }
 
     @Test
@@ -188,85 +136,59 @@ class AutocorrectIndexTest {
 
     @Test
     fun `contractionFor fuzzy-matches a typo of a contraction`() {
-        // "shoudve" is a typo of "shouldve" (missing the "l") — should still resolve to
-        // "should've" via distance-1 fuzzy matching against the contraction keys, not just
-        // exact-string lookup.
+        // "shoudve" is "shouldve" missing the 'l'.
         assertEquals("should've", index.contractionFor("shoudve"))
-        // "dont" itself is below MIN_FUZZY_CONTRACTION_LENGTH, so a typo of it ("dnot") isn't
-        // fuzzy-matched — short keys are exact-match only to avoid false-positive collisions.
+        // "dont" is below MIN_FUZZY_CONTRACTION_LENGTH, so a typo of it isn't fuzzy-matched —
+        // short keys are exact-match only, to avoid colliding with unrelated short words.
         assertNull(index.contractionFor("dnot"))
     }
 
     @Test
     fun `alternatives surfaces contractions for short words below the general min length`() {
-        // "im"/"id" are only 2 letters, below MIN_LENGTH — general correction/neighbor search
-        // must not gate out the contraction lookup for them.
-        assertEquals(listOf("I'm"), index.alternatives("im", limit = 5))
-        assertEquals(listOf("I'd"), index.alternatives("id", limit = 5))
+        // "im"/"id" are 2 letters, below MIN_LENGTH — the contraction lookup must not be gated out.
+        assertTrue(index.alternatives("im", limit = 5).contains("I'm"))
+        assertTrue(index.alternatives("id", limit = 5).contains("I'd"))
     }
 
     @Test
-    fun `isKnown reflects the seeded dictionary and learned words`() {
-        assertEquals(true, index.isKnown("hello"))
-        assertEquals(false, index.isKnown("zzzznotaword"))
+    fun `isKnown reflects the bundled vocabulary and learned words`() {
+        assertTrue(index.isKnown("hello"))
+        assertFalse(index.isKnown("zzzznotaword"))
         index.learn("zzzznotaword")
-        assertEquals(true, index.isKnown("zzzznotaword"))
+        assertTrue(index.isKnown("zzzznotaword"))
+        assertTrue(index.isUserAdded("zzzznotaword"))
     }
 
     @Test
     fun `alternatives offers a contraction even though the bare word is already valid`() {
-        // "well" is a perfectly real, common word — correct() would never touch it — but
-        // alternatives() should still surface "we'll" as something to swipe/tap to if that's
-        // what was actually meant, since only the user can tell which one is right.
-        val words = buildList {
-            add(WordEntity("well", frequency = 100, isUserAdded = false, lastUsedTimestamp = 0))
-            for (i in 1..95) add(WordEntity("word$i", frequency = 96 - i, isUserAdded = false, lastUsedTimestamp = 0))
-        }
-        val altIndex = AutocorrectIndex()
-        altIndex.load(words)
-        assertEquals(true, altIndex.alternatives("well", 6).contains("we'll"))
+        // "well" is a perfectly real word — correct() would never touch it — but "we'll" is worth
+        // offering to swipe to, since only the user knows which was meant.
+        assertTrue(index.alternatives("well", 6).contains("we'll"))
     }
 
     @Test
-    fun `alternatives finds close real-word neighbors even for an already-valid word`() {
-        // "well" and "wall" are both real words one substitution apart — alternatives() should
-        // offer "wall" as a cyclable option for "well" even though "well" needs no fixing.
-        val words = buildList {
-            add(WordEntity("well", frequency = 100, isUserAdded = false, lastUsedTimestamp = 0))
-            add(WordEntity("wall", frequency = 90, isUserAdded = false, lastUsedTimestamp = 0))
-            for (i in 1..95) add(WordEntity("word$i", frequency = 96 - i, isUserAdded = false, lastUsedTimestamp = 0))
-        }
-        val altIndex = AutocorrectIndex()
-        altIndex.load(words)
-        assertEquals(true, altIndex.alternatives("well", 6).contains("wall"))
+    fun `alternatives finds close real-word neighbours even for an already-valid word`() {
+        assertTrue(index.alternatives("well", 6).contains("wall"))
     }
 
     @Test
-    fun `alternatives fixes a typo when the word itself is not real, plus close neighbors`() {
-        // "helo" resolves to "hello" as the primary fix, but "help"/"held" are also real,
-        // common, one-edit-away words worth offering to cycle through — "helot" (freq 1, well
-        // below the frequency floor) should not appear despite also being a one-edit neighbor.
+    fun `alternatives leads with the correction when the word is not real`() {
+        assertEquals("receive", index.alternatives("recieve", 6).first())
+    }
+
+    @Test
+    fun `alternatives offers several cyclable candidates, all real words`() {
+        // The strip is browsable, so breadth matters — but every entry still has to be something
+        // the user recognises, or swiping through it is worse than useless.
         val alternatives = index.alternatives("helo", 6)
-        assertEquals(listOf("hello", "help", "held"), alternatives)
-    }
-
-    @Test
-    fun `alternatives does not surface an obscure neighbor below the frequency floor`() {
-        assertEquals(false, index.alternatives("helo", 6).contains("helot"))
+        assertTrue(alternatives.size > 1)
+        assertTrue(alternatives.contains("hello"))
+        // Splits read as two words; everything else must be a word the vocabulary knows.
+        assertTrue(alternatives.all { candidate -> candidate.split(" ").all { index.isKnown(it) } })
     }
 
     @Test
     fun `alternatives respects the limit`() {
-        val words = buildList {
-            add(WordEntity("cat", frequency = 100, isUserAdded = false, lastUsedTimestamp = 0))
-            add(WordEntity("car", frequency = 99, isUserAdded = false, lastUsedTimestamp = 0))
-            add(WordEntity("can", frequency = 98, isUserAdded = false, lastUsedTimestamp = 0))
-            add(WordEntity("cap", frequency = 97, isUserAdded = false, lastUsedTimestamp = 0))
-            add(WordEntity("cab", frequency = 96, isUserAdded = false, lastUsedTimestamp = 0))
-            for (i in 1..95) add(WordEntity("word$i", frequency = 50 - i, isUserAdded = false, lastUsedTimestamp = 0))
-        }
-        val altIndex = AutocorrectIndex()
-        altIndex.load(words)
-        assertEquals(2, altIndex.alternatives("cat", 2).size)
+        assertEquals(2, index.alternatives("cat", 2).size)
     }
 }

@@ -3,6 +3,46 @@
 All notable changes to omakey are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.0.0] — 2026-09-03
+
+### Fixed
+- **Next-word prediction was suggesting words in alphabetical order.** The bundled word-pair data
+  had lost its frequency information somewhere in how it was originally generated, so after "the"
+  the keyboard suggested "a, ability, above, absence, absolute" — alphabetical position was being
+  read as "how likely is this word". The word "i" had no next-word data at all, and only about a
+  fifth of the dictionary had any. Prediction accuracy has roughly **tripled** as a result.
+- **The dictionary contained the misspellings.** Words like "teh", "recieve", "definately" and
+  "seperate" were in it, and autocorrect never touches a word it thinks is real — so those typos
+  were uncorrectable. The word list is now built against a proper spellchecking dictionary.
+- **Saved words couldn't outrank the dictionary.** A word you deliberately taught the keyboard was
+  stored alongside the built-in vocabulary in a way that left it weaker than words you'd never
+  typed, so saving barely changed anything. Personal words are now kept separately and genuinely
+  compete.
+- **"seperate" was being corrected to "see rate"**, and "wierd" to "ie rd" — splitting a word into
+  two was being judged unfairly against fixing it as one.
+
+### Added
+- **Learns the words you use.** Names, slang, jargon and project names you type get picked up
+  automatically and start appearing as suggestions instead of being flagged as typos. A word has to
+  be typed a few times before it counts as real, so an occasional slip doesn't stick, and words you
+  stop using fade out over time. Everything stays on your device.
+- **Incognito mode** — an eye button in the tools row pauses learning whenever you want. Password
+  fields (and any field that asks not to be remembered) switch it on automatically, before you type
+  a single character.
+- A **"Learn from my typing"** switch in Settings → Typing, to turn learning off altogether.
+
+### Changed
+- **Suggestions are ranked by the words around them**, not just by which word is most common in
+  general — the same trigram model now drives correction, completion and next-word prediction.
+- **Corrections account for where the keys actually are.** A slip onto a neighbouring key is now
+  treated as far more likely than one across the keyboard, instead of every wrong letter costing
+  the same.
+- **The suggestion strip casts a wider net than autocorrect does.** It'll offer a word further from
+  what you typed, because you can see it and choose; the silent auto-fix stays conservative.
+- **Suggestions no longer touch the database while you type.** The dictionary is now a single file
+  read directly from storage rather than something imported into a database on first launch, so
+  there's no first-run import, less memory used, and no database work between keystrokes.
+
 ## [2.3.0] — 2026-08-29
 
 ### Added

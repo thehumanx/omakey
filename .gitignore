@@ -10,6 +10,7 @@ captures/
 .kotlin/
 *.apk
 *.aab
+__pycache__/
 
 # Internal design/technical-decisions doc — not for the public repo.
 AGENTS.md

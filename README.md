@@ -123,10 +123,18 @@ menus involved:
 - Missing a space between two words ("thisis") gets split back apart automatically.
 - Full contraction support (im → I'm, weve → we've, shoudve → should've) with fuzzy matching for
   typos of contractions too.
+- Knows what usually comes next — suggestions are ranked by the words on either side, not just by
+  which word is commonest overall.
+- Learns the words *you* use. Names, slang, jargon, project names: type one a few times and it
+  stops being flagged as a typo and starts turning up as a suggestion. It takes a few uses before
+  a word counts as real, so an occasional slip doesn't get learned — and words you stop using fade
+  out on their own.
+- **Incognito** — an eye button in the tools row pauses learning whenever you want it, and password
+  fields are never learned from at all, automatically. None of it ever leaves your phone.
 - Optional next-word prediction, off by default.
 - Optional auto-capitalize, off by default.
 - A "Learned words" screen — view, search, edit, or remove anything your typing has taught the
-  keyboard, individually or all at once.
+  keyboard, individually or all at once. And a Settings switch to turn learning off entirely.
 - The inline calculator mentioned above — `12+7=` shows `12+7=19` right in the strip, and tapping
   it fills in the missing `19`.
 - A few matching emoji show up as extra chips next to word suggestions for words like "sad" or
@@ -196,9 +204,11 @@ never any auto-download or auto-install.
 
 ## Status
 
-omakey is on release 2.3.0. Typing, gestures, autocorrect, prediction, both layout styles, the
-clipboard manager, and the emoji panel are all working today and getting updated regularly — see
-[CHANGELOG.md](CHANGELOG.md) for the full history.
+omakey is on release 3.0.0, which rebuilt the suggestion engine from the ground up — the word data,
+how suggestions are ranked, and the ability to learn the words you actually use. Typing, gestures,
+autocorrect, prediction, both layout styles, the clipboard manager, and the emoji panel are all
+working today and getting updated regularly — see [CHANGELOG.md](CHANGELOG.md) for the full
+history.
 
 ## Getting started
 

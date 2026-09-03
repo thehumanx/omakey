@@ -10,7 +10,7 @@ picked up from here belong in `AGENTS.md`, not this file.
 |---|---|---|---|---|---|---|---|
 | Glide/swipe-to-type | Yes | Yes | Yes | No | In progress (rebuilding) | No (gesture shortcuts instead) | No |
 | Fleksy-style surface-wide gesture shortcuts (delete word, space, cycle suggestions) | No | No | No | No | No | Yes | **Yes** |
-| Offline dictionary/prediction | Yes (+cloud) | Yes (+cloud) | Yes | Yes | Yes | Yes | **Yes** |
+| Offline dictionary/prediction | Yes (+cloud) | Yes (+cloud) | Yes | Yes | Yes | Yes | **Yes (trigram model, memory-mapped)** |
 | Cloud-assisted prediction | Yes | Yes | No | No | No | Unknown | No (offline-by-default, deliberate) |
 | Clipboard manager | Yes | Yes | No | No | Yes (Smartbar) | Yes | **Yes** |
 | Number row toggle / dedicated numbers access | Yes (row) | Yes (row) | Yes (row) | Yes (row) | Yes (row) | Unknown | **Yes (swipeable Numbers tab, not a fixed row)** |
@@ -24,7 +24,7 @@ picked up from here belong in `AGENTS.md`, not this file.
 | Per-app spacebar language/app indicator | Yes | Yes | No | No | No | Unknown | No |
 | Cursor-control gesture (spacebar drag to move cursor) | Yes | Yes | No | No | No | Unknown | No |
 | Text expansion / snippets | Yes | Yes | No | No | No | Unknown | No |
-| Incognito / no-learning mode | Yes | Yes | No | No | Yes (Smartbar toggle) | Unknown | No |
+| Incognito / no-learning mode | Yes | Yes | No | No | Yes (Smartbar toggle) | Unknown | **Yes (tools-row toggle + automatic in password fields)** |
 | Extension/plugin system for panels | No (closed) | No (closed) | No | No | No | Unknown | **Yes (in-process, clipboard + emoji built in)** |
 | Gesture-typing-free keyboard-only workflow (no swipe-to-type) | N/A | N/A | N/A | Yes (only option) | Partial | Yes (by design) | **Yes (by design, Fleksy-inspired)** |
 | Accessibility / TalkBack fallback mode | Yes | Yes | Partial | Partial | Partial | Unknown | **Yes (auto-detected + manual override)** |
@@ -41,9 +41,8 @@ tracked there as a known gap.
 **High value, plausible near-term:**
 1. **One-handed mode** — shrinks and docks the keyboard to one side; every mainstream keyboard
    and FlorisBoard have it, no open-source keyboard we found lacks it except OpenBoard/AnySoftKeyboard. Straightforward layout-transform on top of the existing resizable-height system (`LayoutPreferences`).
-2. **Incognito / no-learning mode** — a per-session toggle that stops `AutocorrectIndex.learn()`
-   and `PredictionEngine.recordAcceptedWord()` from writing anything, for typing in sensitive
-   fields. Small, self-contained change given the existing `*Preferences` pattern.
+2. ~~**Incognito / no-learning mode**~~ — **done.** A tools-row toggle, plus automatic engagement
+   in password and no-suggestion fields.
 3. **Cursor-control gesture (spacebar drag)** — Gboard/SwiftKey's long-press-and-drag-the-spacebar-to-move-cursor. Fits naturally into the existing `GestureStateMachine` as a new gesture type scoped to the space key.
 
 **Medium value, more work:**

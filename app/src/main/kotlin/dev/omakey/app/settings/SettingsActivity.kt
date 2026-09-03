@@ -99,6 +99,7 @@ import dev.omakey.core.layout.LayoutPreferences
 import dev.omakey.core.layout.LayoutSettings
 import dev.omakey.core.layout.Layouts
 import dev.omakey.core.predict.AutocorrectPreferences
+import dev.omakey.core.predict.IncognitoPreferences
 import dev.omakey.core.predict.PredictionPreferences
 import dev.omakey.core.theme.AccessibilityPreferences
 import dev.omakey.core.theme.ColorSpec
@@ -136,6 +137,7 @@ class SettingsActivity : ComponentActivity() {
         val hapticSoundPreferences = HapticSoundPreferences(applicationContext)
         val autocorrectPreferences = AutocorrectPreferences(applicationContext)
         val predictionPreferences = PredictionPreferences(applicationContext)
+        val incognitoPreferences = IncognitoPreferences(applicationContext)
         val updatePreferences = dev.omakey.core.update.UpdatePreferences(applicationContext)
         val feedback = VibratorKeyboardFeedback(applicationContext, hapticSoundPreferences)
         val wordDao = OmakeyDatabase.getInstance(applicationContext).wordDao()
@@ -157,6 +159,7 @@ class SettingsActivity : ComponentActivity() {
                         hapticSoundPreferences = hapticSoundPreferences,
                         autocorrectPreferences = autocorrectPreferences,
                         predictionPreferences = predictionPreferences,
+                        incognitoPreferences = incognitoPreferences,
                         updatePreferences = updatePreferences,
                         wordDao = wordDao,
                         feedback = feedback,
@@ -244,6 +247,7 @@ private fun SettingsScreen(
     hapticSoundPreferences: HapticSoundPreferences,
     autocorrectPreferences: AutocorrectPreferences,
     predictionPreferences: PredictionPreferences,
+    incognitoPreferences: IncognitoPreferences,
     updatePreferences: dev.omakey.core.update.UpdatePreferences,
     wordDao: WordDao,
     feedback: VibratorKeyboardFeedback,
@@ -347,6 +351,7 @@ private fun SettingsScreen(
                     AutoCapitalizeToggle(autocorrectPreferences)
                     DoubleTapSpaceForPeriodToggle(autocorrectPreferences)
                     NextWordPredictionToggle(predictionPreferences)
+                    ImplicitLearningToggle(incognitoPreferences)
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     ClickableSettingRow(
                         title = "Learned words",
@@ -981,6 +986,21 @@ private fun NextWordPredictionToggle(predictionPreferences: PredictionPreference
             "ever see a suggestion there when there's an actual correction to offer.",
         checked = settings.nextWordPredictionEnabled,
         onCheckedChange = predictionPreferences::setNextWordPredictionEnabled,
+    )
+}
+
+@Composable
+private fun ImplicitLearningToggle(incognitoPreferences: IncognitoPreferences) {
+    val settings by incognitoPreferences.settings.collectAsState()
+    SettingToggle(
+        title = "Learn from my typing",
+        description = "Remembers names, slang and jargon you type so they stop being flagged as " +
+            "typos and start showing up as suggestions. A word has to be typed a few times before " +
+            "it's treated as real, so an occasional slip doesn't get learned. Everything stays on " +
+            "this device. Password fields are never learned from, and the incognito button in the " +
+            "keyboard's tools row pauses it for anything else.",
+        checked = settings.implicitLearningEnabled,
+        onCheckedChange = incognitoPreferences::setImplicitLearningEnabled,
     )
 }
 

@@ -3,6 +3,7 @@ package dev.omakey.app.keyboard
 import android.content.ClipboardManager
 import android.content.Context
 import android.inputmethodservice.InputMethodService
+import android.util.Log
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import androidx.compose.runtime.collectAsState
@@ -22,6 +23,7 @@ import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import dev.omakey.app.keyboard.ui.KeyboardRoot
 import dev.omakey.core.db.ClipboardEntity
+import dev.omakey.core.db.WordEntity
 import dev.omakey.core.db.OmakeyDatabase
 import dev.omakey.core.emoji.EmojiRecentsPreferences
 import dev.omakey.core.feedback.HapticSoundPreferences
@@ -30,9 +32,12 @@ import dev.omakey.core.input.TextEditor
 import dev.omakey.core.layout.LayoutPreferences
 import dev.omakey.core.predict.AutocorrectIndex
 import dev.omakey.core.predict.AutocorrectPreferences
+import dev.omakey.core.predict.DeferredPredictionEngine
+import dev.omakey.core.predict.IncognitoPreferences
+import dev.omakey.core.predict.NgramPredictionEngine
+import dev.omakey.core.predict.PersonalLanguageModel
 import dev.omakey.core.predict.PredictionPreferences
-import dev.omakey.core.predict.DictionarySeeder
-import dev.omakey.core.predict.FrequencyNgramPredictionEngine
+import dev.omakey.core.predict.lm.LanguageModel
 import dev.omakey.core.theme.AccessibilityPreferences
 import dev.omakey.core.theme.FontPreferences
 import dev.omakey.core.theme.LocalOmakeyTheme
@@ -70,7 +75,9 @@ class OmakeyInputMethodService :
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     private lateinit var database: OmakeyDatabase
-    private lateinit var predictionEngine: FrequencyNgramPredictionEngine
+    private val predictionEngine = DeferredPredictionEngine()
+    private lateinit var personalModel: PersonalLanguageModel
+    private lateinit var incognitoPreferences: IncognitoPreferences
     private lateinit var autocorrectIndex: AutocorrectIndex
     private lateinit var autocorrectPreferences: AutocorrectPreferences
     private lateinit var predictionPreferences: PredictionPreferences
@@ -177,7 +184,8 @@ class OmakeyInputMethodService :
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
 
         database = OmakeyDatabase.getInstance(applicationContext)
-        predictionEngine = FrequencyNgramPredictionEngine(database.wordDao(), database.bigramDao())
+        personalModel = PersonalLanguageModel()
+        incognitoPreferences = IncognitoPreferences(applicationContext)
         autocorrectIndex = AutocorrectIndex()
         autocorrectPreferences = AutocorrectPreferences(applicationContext)
         predictionPreferences = PredictionPreferences(applicationContext)
@@ -200,16 +208,35 @@ class OmakeyInputMethodService :
             dev.omakey.app.update.UpdateWorkScheduler.schedule(applicationContext)
         }
 
-        // Async, off the main thread, and a no-op after the first run — must not block
-        // onCreateInputView; the keyboard is typeable immediately and suggestions populate once
-        // this finishes.
+        // Off the main thread so onCreateInputView is never blocked — the keyboard is typeable
+        // immediately and suggestions populate the moment this finishes, which is fast now: the
+        // model is memory-mapped rather than parsed, so this is a few page faults plus loading
+        // however many words the user has personally saved.
+        //
+        // This replaces a first-run import that inserted ~180,000 rows into SQLite in batches and
+        // needed resumability machinery because the OS could kill the service partway through.
+        // There is nothing left to resume: mapping a file either succeeds or throws.
         serviceScope.launch {
-            val seeder = DictionarySeeder(database.wordDao(), database.bigramDao())
-            seeder.seedIfNeeded(applicationContext)
-            seeder.seedBigramsIfNeeded(applicationContext)
-            // Loaded after seeding so a fresh install's very first autocorrect check already has
-            // the full dictionary, not just whatever existed before this coroutine ran.
-            autocorrectIndex.load(database.wordDao().all())
+            runCatching {
+                val model = LanguageModel.load(applicationContext)
+                personalModel.load(
+                    database.wordDao().allUserAdded().map {
+                        PersonalLanguageModel.Entry(
+                            word = it.word,
+                            count = it.frequency / WordEntity.COUNT_SCALE,
+                            lastUsed = it.lastUsedTimestamp,
+                            explicit = it.explicit,
+                        )
+                    },
+                    model,
+                )
+                autocorrectIndex.load(model, personalModel)
+                predictionEngine.delegate = NgramPredictionEngine(model, database.wordDao(), personalModel)
+            }.onFailure { Log.e(TAG, "Language model unavailable; typing works, suggestions won't", it) }
+            // The old importer tracked its progress here. Left-over state is meaningless now and
+            // would otherwise sit in the app's data directory forever.
+            applicationContext.getSharedPreferences("omakey_seed_state", Context.MODE_PRIVATE)
+                .edit().clear().apply()
         }
 
         extensionRegistry = LazyExtensionRegistry(contextProvider = ::buildExtensionContext)
@@ -292,6 +319,7 @@ class OmakeyInputMethodService :
             autocorrectIndex = autocorrectIndex,
             autocorrectPreferences = autocorrectPreferences,
             predictionPreferences = predictionPreferences,
+            incognitoPreferences = incognitoPreferences,
             extensionRegistry = extensionRegistry,
             themeRepository = themeRepository,
             layoutPreferences = layoutPreferences,
@@ -378,5 +406,9 @@ class OmakeyInputMethodService :
         clipboardManager.removePrimaryClipChangedListener(clipboardListener)
         serviceScope.cancel()
         super.onDestroy()
+    }
+
+    private companion object {
+        const val TAG = "OmakeyIME"
     }
 }

@@ -1,5 +1,6 @@
 package dev.omakey.app.keyboard
 
+import android.text.InputType
 import android.view.inputmethod.EditorInfo
 import dev.omakey.core.emoji.WordEmojiSuggestions
 import dev.omakey.core.gesture.GesturePreferences
@@ -12,6 +13,7 @@ import dev.omakey.core.layout.Layouts
 import dev.omakey.core.layout.SpecialKeyCode
 import dev.omakey.core.predict.AutocorrectIndex
 import dev.omakey.core.predict.AutocorrectPreferences
+import dev.omakey.core.predict.IncognitoPreferences
 import dev.omakey.core.predict.Calculator
 import dev.omakey.core.predict.PredictionEngine
 import dev.omakey.core.predict.PredictionPreferences
@@ -89,6 +91,9 @@ data class KeyboardUiState(
      * whichever extension bar content is currently active, for ~0.5s — see
      * [KeyboardViewModel.showBanner]. */
     val bannerMessage: String? = null,
+    /** True while nothing typed is being remembered — either the user toggled it, or the focused
+     * field is a password. Purely a rendering hint; the authority is [IncognitoPreferences]. */
+    val incognito: Boolean = false,
 )
 
 /**
@@ -103,6 +108,7 @@ class KeyboardViewModel(
     private val autocorrectIndex: AutocorrectIndex,
     private val autocorrectPreferences: AutocorrectPreferences,
     private val predictionPreferences: PredictionPreferences,
+    private val incognitoPreferences: IncognitoPreferences,
     val extensionRegistry: ExtensionRegistry,
     themeRepository: ThemeRepository,
     layoutPreferences: LayoutPreferences,
@@ -280,6 +286,48 @@ class KeyboardViewModel(
         gesturePreferences.settings
             .onEach { settings -> _uiState.update { it.copy(gestureSettings = settings) } }
             .launchIn(scope)
+        incognitoPreferences.incognito
+            .onEach { enabled -> _uiState.update { it.copy(incognito = enabled) } }
+            .launchIn(scope)
+    }
+
+    /**
+     * Whether a field must never be learned from.
+     *
+     * Covers the three password variants (text, web, numeric — they are distinct constants, and
+     * checking only `TYPE_TEXT_VARIATION_PASSWORD` would miss the web login form that most people
+     * actually type passwords into), plus visible-password fields, and any field that has asked
+     * not to receive suggestions at all. `IME_FLAG_NO_PERSONALIZED_LEARNING` is the platform's
+     * explicit way for an app to say "don't remember this" and is honoured directly.
+     *
+     * Variations live in the low bits of `inputType` and must be masked out before comparison;
+     * testing `inputType and VARIATION == VARIATION` without the mask matches unrelated fields.
+     */
+    private fun isSensitiveField(info: EditorInfo?): Boolean {
+        val editorInfo = info ?: return false
+        if ((editorInfo.imeOptions and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING) != 0) return true
+        val inputType = editorInfo.inputType
+        val classType = inputType and InputType.TYPE_MASK_CLASS
+        val variation = inputType and InputType.TYPE_MASK_VARIATION
+        if (classType == InputType.TYPE_CLASS_NUMBER &&
+            variation == InputType.TYPE_NUMBER_VARIATION_PASSWORD
+        ) {
+            return true
+        }
+        if (classType == InputType.TYPE_CLASS_TEXT) {
+            return variation == InputType.TYPE_TEXT_VARIATION_PASSWORD ||
+                variation == InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD ||
+                variation == InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD ||
+                (inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS) != 0
+        }
+        return false
+    }
+
+    /** Manual incognito toggle, from the keyboard's own toolbar. Deliberately session state rather
+     * than a saved preference — see [IncognitoPreferences]: someone who turns it on to type one
+     * password should not silently lose personalisation forever afterwards. */
+    fun toggleIncognito() {
+        incognitoPreferences.setIncognito(!incognitoPreferences.incognito.value)
     }
 
     val extensionHost = object : ExtensionHost {
@@ -297,6 +345,11 @@ class KeyboardViewModel(
      * newline; anything else (Go/Search/Send/Next/Done/Previous, e.g. a URL bar's "Go") is passed
      * straight through to [TextEditor.sendEditorAction] instead. */
     fun resetForNewField(info: EditorInfo? = null) {
+        // Engaged before anything else, so no word from this field can be learned even if the very
+        // first keystroke arrives immediately. This is the case that actually matters: a user
+        // typing a password or a recovery phrase will never think to reach for a toggle, and words
+        // captured from one would sit in the dictionary indefinitely.
+        incognitoPreferences.onFieldChanged(isSensitiveField(info))
         val enterAction = when {
             info == null -> EditorInfo.IME_ACTION_NONE
             (info.imeOptions and EditorInfo.IME_FLAG_NO_ENTER_ACTION) != 0 -> EditorInfo.IME_ACTION_NONE
@@ -923,7 +976,7 @@ class KeyboardViewModel(
         lastAutocorrect = null
         if (!autocorrectPreferences.settings.value.autocorrectEnabled) return
         if (typed.isEmpty()) return
-        val correctedLower = autocorrectIndex.correct(typed) ?: return
+        val correctedLower = autocorrectIndex.correct(typed, correctionContext()) ?: return
         val corrected = matchCase(typed, correctedLower)
         if (corrected == typed) return
         commitCorrection(corrected)
@@ -1154,23 +1207,35 @@ class KeyboardViewModel(
         refreshSuggestionsAfterDeletion()
     }
 
-    // Deliberately does NOT call autocorrectIndex.learn()/predictionEngine.recordAcceptedWord()
-    // for ordinary typing — only the explicit swipe-up "save word" gesture
-    // (revertAndMaybeSave) teaches the dictionary a new word. Every word boundary used to
-    // silently learn whatever was just typed, including typos that weren't caught (e.g. because
-    // autocorrect was off, or the typo wasn't a recognized one-edit neighbor of anything) — those
-    // got permanently marked "known" the moment they were finished, immune to correction forever
-    // after. Bigram/frequency data from the seeded corpus still drives prediction and completion;
-    // it just no longer grows from casual typing.
+    /**
+     * Ends the word in progress, and lets the personal model learn from it.
+     *
+     * Implicit learning was previously removed outright, because it used to mark every finished
+     * word "known" — including uncaught typos, which then became **immune to correction forever**
+     * (confirmed on a device). It is safe again only because [PersonalLanguageModel] separates the
+     * two consequences that were conflated: a word picked up here influences *ranking*
+     * immediately but earns *correction immunity* only after several separate uses, while an
+     * explicit swipe-up save still earns it at once. A typo is a slip, and slips don't reliably
+     * repeat.
+     *
+     * Skipped entirely while incognito (a password field, or the user's own toggle), and skipped
+     * for a word autocorrect has just rewritten — [lastAutocorrect] means what is on screen is the
+     * engine's guess, not a word the user chose, and learning from it would let the engine
+     * reinforce its own corrections.
+     */
     private fun flushWordBuffer(separator: String = "") {
         suggestionCycleIndex = -1
         val word = currentWordBuffer.toString()
         if (word.isNotEmpty()) {
             previousToLastCommittedWord = lastCommittedWord
+            val previousForLearning = lastCommittedWord
             lastCommittedWord = word.lowercase()
             lastCommittedWordCased = word
             currentWordBuffer.clear()
             pushUndo(UndoEvent.Inserted(word + separator))
+            if (incognitoPreferences.shouldLearn() && lastAutocorrect == null && word.all { it.isLetter() }) {
+                scope.launch { predictionEngine.recordAcceptedWord(word, previousForLearning) }
+            }
         }
     }
 
@@ -1233,10 +1298,9 @@ class KeyboardViewModel(
      * 1. **Still typing a word** ([currentWordBuffer] non-empty): alternatives for *that* word
      *    (see [wordAlternatives]) merged with prefix completions, `activeCorrection` = LIVE_BUFFER.
      * 2. **Just finished a word** (buffer empty, [checkContextualCorrection] true): alternatives
-     *    for [lastCommittedWord], re-ranked by what the word *before* it suggests was actually
-     *    meant (see [reorderByContext]) when there's ambiguity — e.g. "thus" only outranks "this"
-     *    here if the preceding word's history actually favors "this". `activeCorrection` =
-     *    RETROACTIVE if any alternatives exist.
+     *    for [lastCommittedWord], scored against what the word *before* it makes likely — e.g.
+     *    "thus" only outranks "this" here if the preceding word actually favours it.
+     *    `activeCorrection` = RETROACTIVE if any alternatives exist.
      * 3. **Neither** (nothing to vary): falls back to plain next-word prediction, gated by the
      *    separate next-word-prediction toggle; no `activeCorrection` — accepting one of these
      *    types a fresh word rather than replacing anything. */
@@ -1261,7 +1325,12 @@ class KeyboardViewModel(
             )
             refreshJob = scope.launch {
                 val alternatives = withContext(Dispatchers.Default) { wordAlternatives(prefix) }
-                val predicted = predictionEngine.suggestNext(lastCommittedWord, prefix, limit = SUGGESTION_LIMIT)
+                val predicted = predictionEngine.suggestNext(
+                    beforePreviousWord = previousToLastCommittedWord,
+                    previousWord = lastCommittedWord,
+                    currentPrefix = prefix,
+                    limit = SUGGESTION_LIMIT,
+                )
                 val suggestions = (alternatives + predicted.filterNot { p -> alternatives.any { it.equals(p, ignoreCase = true) } })
                     .take(SUGGESTION_LIMIT)
                 _uiState.update {
@@ -1276,9 +1345,14 @@ class KeyboardViewModel(
 
         val target = lastCommittedWordCased.takeIf { checkContextualCorrection }
         if (target != null) {
-            val context = previousToLastCommittedWord
+            // The word being corrected here is `lastCommittedWord` itself, so its left context is
+            // the word *before* it — not [correctionContext], which would place the word under
+            // correction inside its own context and bias scoring toward candidates that plausibly
+            // follow themselves. Only one word of context is available in this direction; nothing
+            // earlier than `previousToLastCommittedWord` is tracked.
+            val context = autocorrectIndex.contextOf(previousToLastCommittedWord, null)
             refreshJob = scope.launch {
-                val rawAlternatives = withContext(Dispatchers.Default) { wordAlternatives(target) }
+                val rawAlternatives = withContext(Dispatchers.Default) { wordAlternatives(target, context) }
                 if (rawAlternatives.isNotEmpty()) {
                     activeCorrection = ActiveCorrection(
                         mode = CorrectionApplyMode.RETROACTIVE,
@@ -1287,8 +1361,7 @@ class KeyboardViewModel(
                         occupiedAfter = 0,
                         separator = lastWordBoundarySeparator,
                     )
-                    val ranked = reorderByContext(context, rawAlternatives)
-                    _uiState.update { it.copy(suggestions = ranked, firstSuggestionKind = SuggestionKind.CORRECTION) }
+                    _uiState.update { it.copy(suggestions = rawAlternatives, firstSuggestionKind = SuggestionKind.CORRECTION) }
                 } else {
                     refreshPlainPrediction()
                 }
@@ -1308,7 +1381,12 @@ class KeyboardViewModel(
             return
         }
         refreshJob = scope.launch {
-            val predicted = predictionEngine.suggestNext(lastCommittedWord, "", limit = SUGGESTION_LIMIT)
+            val predicted = predictionEngine.suggestNext(
+                beforePreviousWord = previousToLastCommittedWord,
+                previousWord = lastCommittedWord,
+                currentPrefix = "",
+                limit = SUGGESTION_LIMIT,
+            )
             _uiState.update { it.copy(suggestions = predicted, firstSuggestionKind = SuggestionKind.PLAIN) }
         }
     }
@@ -1317,9 +1395,12 @@ class KeyboardViewModel(
      * contraction result (already correctly cased, e.g. "I'm") or a two-word split (left as
      * lowercase, reads fine either way), neither of which should have [matchCase]'s single-word
      * casing rules applied on top. */
-    private fun wordAlternatives(word: String): List<String> {
+    private fun wordAlternatives(
+        word: String,
+        context: AutocorrectIndex.Context = correctionContext(),
+    ): List<String> {
         val contraction = autocorrectIndex.contractionFor(word)
-        return autocorrectIndex.alternatives(word, SUGGESTION_LIMIT).map { alt ->
+        return autocorrectIndex.alternatives(word, SUGGESTION_LIMIT, context).map { alt ->
             when {
                 alt == contraction -> alt
                 alt.contains(' ') -> alt
@@ -1328,19 +1409,16 @@ class KeyboardViewModel(
         }
     }
 
-    /** Re-ranks [candidates] (real-word alternatives to a word that's itself already valid — the
-     * "real-word error" case, e.g. "thus" vs. "this") by which one actually fits [context] (the
-     * word immediately before it), when that data clearly favors one over the raw frequency-based
-     * order [wordAlternatives] already applied. Never promotes a candidate on weak/no evidence —
-     * requires *some* real usage history for the pairing, not just the absence of a tie — since
-     * this is about picking between multiple already-valid words, a lower-confidence judgment call
-     * than fixing an outright typo. */
-    private suspend fun reorderByContext(context: String?, candidates: List<String>): List<String> {
-        if (context == null || candidates.size <= 1) return candidates
-        val ranked = candidates.map { it to predictionEngine.bigramRank(context, it.lowercase()) }
-        if (ranked.all { it.second == 0 }) return candidates
-        return ranked.sortedByDescending { it.second }.map { it.first }
-    }
+    /** Left context for correction scoring: the two words before whatever is being corrected.
+     *
+     * `AutocorrectIndex` ranks candidates by `-channelCost + λ·logP(candidate | context)`, so
+     * supplying this is what lets "thus" lose to "this" when the preceding words actually favour
+     * it. This replaced a separate `reorderByContext` pass that re-sorted the finished candidate
+     * list by bigram count after the fact — which could only ever reorder what frequency had
+     * already selected, and could not help a context-appropriate word that never made the list.
+     * Scoring with context up front subsumes it, and reaches the trigram tier besides. */
+    private fun correctionContext(): AutocorrectIndex.Context =
+        autocorrectIndex.contextOf(lastCommittedWord, previousToLastCommittedWord)
 
     private companion object {
         const val PREFERRED_EXTENSION_ID = "builtin.emoji"

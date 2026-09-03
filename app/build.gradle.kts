@@ -28,8 +28,17 @@ android {
         // refuses same-or-lower versionCode as a downgrade and uninstalling first would wipe local
         // app data (learned words, settings, clipboard history). Bump versionName only when
         // actually cutting a release.
-        versionCode = 16
-        versionName = "2.3.0"
+        versionCode = 17
+        versionName = "3.0.0"
+    }
+
+    androidResources {
+        // The language model is read by memory-mapping it straight out of the APK
+        // (LanguageModel.mapAsset). A compressed asset has no mappable file offset — AssetManager
+        // .openFd() throws for one — so it would silently fall back to reading the whole multi-
+        // megabyte model onto the heap of a process Android kills for memory. Storing it
+        // uncompressed costs APK size and buys zero-copy loading.
+        noCompress += "bin"
     }
 
     signingConfigs {

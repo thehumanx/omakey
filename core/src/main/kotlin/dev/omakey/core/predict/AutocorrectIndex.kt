@@ -1,102 +1,139 @@
 package dev.omakey.core.predict
 
-import dev.omakey.core.db.WordEntity
+import dev.omakey.core.predict.lm.LanguageModel
+import dev.omakey.core.predict.spatial.ChannelModel
+import dev.omakey.core.predict.spatial.TouchTrace
 import kotlin.math.abs
 
 /**
- * In-memory typo correction, checked on every word-boundary keystroke (space/punctuation/enter)
- * — far too hot a path to round-trip SQLite per word, so the whole dictionary is loaded into a
- * plain map once at startup instead.
+ * Typo correction, checked on every word-boundary keystroke (space/punctuation/enter).
  *
- * Correction is real Damerau-Levenshtein edit distance (insert/delete/substitute/adjacent-
- * transpose), not just a fixed one-edit candidate set — scanning only dictionary words that share
- * the typed word's first letter (see [candidatesNear]) keeps this affordable even at distance 2,
- * without the combinatorial blowup of generating and hashing every possible 1- or 2-edit string
- * (a 60k-word dictionary split across 26 first letters is ~2,300 candidates on average, each an
- * O(length²) distance computation — microseconds, not milliseconds).
+ * Candidates are ranked by a **single noisy-channel score**, the model mainstream keyboards use:
+ *
+ * ```
+ * score(candidate) = -channelCost(typed | candidate) + λ · logP(candidate | context)
+ * ```
+ *
+ * The first term (see [ChannelModel]) prices *how the letters differ*, aware of where the keys sit,
+ * so a slip onto a neighbouring key is cheap and a jump across the keyboard is not. The second
+ * prices *how likely the word is here*, using the same trigram backoff the prediction engine uses,
+ * so context participates in correction rather than being applied as an afterthought.
+ *
+ * This replaced a lexicographic `(edit distance, then raw frequency)` comparison, under which a
+ * distance-1 match to a marginal word always beat a distance-2 match to an overwhelmingly likely
+ * one, and under which every substitution cost the same regardless of which keys were involved.
+ * That ordering was the main reason the engine, when it acted at all, changed a misspelling into
+ * the *wrong* word more often than the right one.
+ *
+ * Holds no dictionary of its own: the word set and its probabilities come straight from the
+ * memory-mapped [LanguageModel]. Membership is a binary search over the blob, "words near this one"
+ * is a contiguous id range, and probability is a `getShort`.
  */
-class AutocorrectIndex {
-    @Volatile private var frequencyByWord: Map<String, Int> = emptyMap()
-    @Volatile private var wordsByFirstLetter: Map<Char, List<Pair<String, Int>>> = emptyMap()
-    @Volatile private var correctionFloor: Int = 0
-    @Volatile private var strictFloor: Int = 0
+class AutocorrectIndex(
+    private val channel: ChannelModel = ChannelModel(),
+    /** Rank in the frequency ordering a word must reach to be a correction target. Constructor
+     * parameters so the tuning sweep can search over them; see the companion for the defaults and
+     * why these are ranks rather than percentiles. */
+    private val correctionRank: Int = CORRECTION_RANK,
+    private val strictRank: Int = STRICT_RANK,
+    private val maxEdits: Int = MAX_EDITS,
+    private val maxBrowsableEdits: Int = MAX_BROWSABLE_EDITS,
+) {
 
-    /** Which "known" words came from the user's own swipe-up saves, as opposed to the bundled
-     * seed dictionary — the only ones [unlearn] is ever allowed to touch. Without this distinction
-     * "unlearn" could remove a real, common word (e.g. "cat") from the in-memory index just
-     * because the user swiped up on it a second time, silently turning autocorrect against an
-     * ordinary dictionary word for the rest of the session. */
-    @Volatile private var userAddedWords: Set<String> = emptySet()
+    @Volatile private var model: LanguageModel? = null
+    @Volatile private var personal: PersonalLanguageModel = PersonalLanguageModel()
+    @Volatile private var correctionFloor: Float = Float.NEGATIVE_INFINITY
+    @Volatile private var strictFloor: Float = Float.NEGATIVE_INFINITY
 
-    fun load(words: List<WordEntity>) {
-        val map = words.associate { it.word to it.frequency }
-        frequencyByWord = map
-        userAddedWords = words.filter { it.isUserAdded }.mapTo(mutableSetOf()) { it.word }
-        wordsByFirstLetter = map.entries
-            .filter { it.key.isNotEmpty() }
-            .groupBy({ it.key.first() }) { it.key to it.value }
-        // Only correct into reasonably common words — otherwise a typed non-word that happens to
-        // be close to an obscure dictionary entry gets "corrected" into something the user has
-        // never heard of, which is worse than not correcting at all. Two tiers: a looser floor
-        // (top ~20%) for close/high-confidence matches (distance 1, word splits), a stricter one
-        // (top ~10%) for the inherently less certain distance-2 fallback.
-        val sorted = map.values.sortedDescending()
-        correctionFloor = sorted.getOrElse((sorted.size * 0.2).toInt()) { 0 }
-        strictFloor = sorted.getOrElse((sorted.size * 0.1).toInt()) { 0 }
+    /** Reused across the thousands of distance computations one correction performs, instead of
+     * allocating a matrix per candidate. Thread-local because corrections run on whatever
+     * `Dispatchers.Default` thread the refresh coroutine landed on. */
+    private val editScratch = ThreadLocal.withInitial { Array(MAX_LENGTH + 2) { IntArray(MAX_LENGTH + 2) } }
+    private val costScratch = ThreadLocal.withInitial { Array(MAX_LENGTH + 2) { FloatArray(MAX_LENGTH + 2) } }
+
+    /** Left context for scoring, as word ids. Two words, because the language model's trigram tier
+     * is where most of its discriminating power is. */
+    data class Context(val previousId: Int = LanguageModel.NO_WORD, val beforePreviousId: Int = LanguageModel.NO_WORD) {
+        companion object { val NONE = Context() }
+    }
+
+    fun contextOf(previousWord: String?, beforePreviousWord: String?): Context {
+        val languageModel = model ?: return Context.NONE
+        return Context(
+            previousId = previousWord?.lowercase()?.let { languageModel.indexOf(it) } ?: LanguageModel.NO_WORD,
+            beforePreviousId = beforePreviousWord?.lowercase()?.let { languageModel.indexOf(it) } ?: LanguageModel.NO_WORD,
+        )
+    }
+
+    fun load(languageModel: LanguageModel, personalModel: PersonalLanguageModel) {
+        personal = personalModel
+        model = languageModel
+
+        // Only correct *into* reasonably common words — otherwise a typed non-word that happens to
+        // sit close to an obscure entry gets "corrected" into something the user has never heard
+        // of, which is worse than not correcting at all. Two tiers: a looser floor for
+        // close/high-confidence matches (distance 1, word splits) and a stricter one for the
+        // inherently less certain distance-2 fallback.
+        //
+        // Expressed as an absolute rank rather than a percentile of the vocabulary, deliberately.
+        // A percentile silently loosens as the vocabulary grows — a move from a 60k to a 150k word
+        // model would take "top 20%" from the 12,000th most common word to the 30,000th, admitting
+        // a long tail of rare words as correction targets without anyone changing a threshold.
+        val sorted = FloatArray(languageModel.vocabularySize) { languageModel.unigramLogProbability(it) }
+        sorted.sort() // ascending, so rank N from the top is at size - 1 - N
+        fun floorAtRank(rank: Int): Float =
+            sorted.getOrElse(sorted.size - 1 - rank) { sorted.firstOrNull() ?: Float.NEGATIVE_INFINITY }
+        correctionFloor = floorAtRank(correctionRank)
+        strictFloor = floorAtRank(strictRank)
     }
 
     /** Marks a word as known (e.g. explicitly saved via swipe-up) so it's never "corrected" away
-     * in the future, even if it's a name/slang/word absent from the seeded dictionary. The exact
-     * frequency value doesn't matter here — only presence in the map is checked. */
+     * in the future, even if it's a name/slang/word absent from the bundled vocabulary. */
     fun learn(word: String) {
         val lower = word.lowercase()
-        if (lower.isEmpty() || lower in frequencyByWord) return
-        frequencyByWord = frequencyByWord + (lower to 1)
-        userAddedWords = userAddedWords + lower
-        val firstLetter = lower.first()
-        wordsByFirstLetter = wordsByFirstLetter +
-            (firstLetter to ((wordsByFirstLetter[firstLetter] ?: emptyList()) + (lower to 1)))
+        if (lower.isEmpty() || isKnown(lower)) return
+        personal.record(lower, explicit = true)
     }
 
-    /** Reverses [learn] — removes [word] from the index so it goes back to being correctable,
-     * e.g. swiping up a second time on an already-learned word. Only ever touches words
-     * previously learned via [learn] (see [userAddedWords]'s doc) — a no-op for bundled
-     * dictionary words, which can never be unlearned this way. */
+    /** Reverses [learn] — removes [word] so it goes back to being correctable, e.g. swiping up a
+     * second time on an already-learned word. Only ever touches words the user added: a bundled
+     * vocabulary word can never be unlearned this way, so "unlearn" can't silently turn autocorrect
+     * against an ordinary word like "cat". */
     fun unlearn(word: String) {
         val lower = word.lowercase()
-        if (lower !in userAddedWords) return
-        frequencyByWord = frequencyByWord - lower
-        userAddedWords = userAddedWords - lower
-        val firstLetter = lower.firstOrNull() ?: return
-        wordsByFirstLetter = wordsByFirstLetter +
-            (firstLetter to (wordsByFirstLetter[firstLetter].orEmpty().filterNot { it.first == lower }))
+        if (!personal.isExplicit(lower)) return
+        personal.forget(lower)
     }
 
-    /** Whether [word] is already a real/known word — used to skip re-saving something to the
-     * dictionary that's already in it (see the swipe-up "save word" gesture). */
-    fun isKnown(word: String): Boolean = word.lowercase() in frequencyByWord
+    /** Whether [word] is a real/known word — bundled vocabulary or the user's own. */
+    fun isKnown(word: String): Boolean {
+        val lower = word.lowercase()
+        // isTrusted, not contains: a word picked up from casual typing must not gain immunity from
+        // correction just by having been typed once. See PersonalLanguageModel's class doc.
+        if (personal.isTrusted(lower)) return true
+        val languageModel = model ?: return false
+        return languageModel.indexOf(lower) != LanguageModel.NO_WORD
+    }
 
-    /** Whether [word] was learned via the user's own swipe-up save (as opposed to being part of
-     * the bundled seed dictionary) — this is exactly what determines whether a second swipe-up
-     * can [unlearn] it. */
-    fun isUserAdded(word: String): Boolean = word.lowercase() in userAddedWords
+    /** Whether [word] came from the user's own swipe-up save rather than the bundled vocabulary —
+     * exactly what determines whether a second swipe-up can [unlearn] it. */
+    fun isUserAdded(word: String): Boolean = personal.isExplicit(word.lowercase())
 
-    /** Curated apostrophe-insertion fixes ("im" -> "I'm", "weve" -> "we've") — a closed, well-
-     * known set deliberately handled separately from [correct]'s general distance search, for two
-     * reasons: (1) the seeded dictionary's source corpus had punctuation stripped, so contraction
-     * forms like "dont"/"cant"/"im" already exist in it as ordinary "known" words in their own
-     * right — [correct] would refuse to touch them at all (the "already known" guardrail exists
-     * for good reason, just not here); (2) several of these are genuinely ambiguous with an
-     * unrelated common word ("well" the adverb vs. "we'll", "its" the possessive vs. "it's", "id"
-     * as in ID card vs. "I'd") — offering the expansion as a suggestion the user chooses to accept
-     * is appropriate, silently auto-applying it often would not be.
+    /**
+     * Curated apostrophe-insertion fixes ("im" -> "I'm", "weve" -> "we've").
      *
-     * Tries an exact match first (the common case), then a fuzzy one-edit match against the
-     * curated key set for contraction keys of at least [MIN_FUZZY_CONTRACTION_LENGTH] characters
-     * — e.g. "shoudve" (a typo *of* "shouldve", missing the 'l') still resolves to "should've".
-     * Short keys ("im", "id", "ive"...) are deliberately exact-only: fuzzy-matching a 2-3 letter
-     * string against anything is far too prone to colliding with unrelated short words. Returns
-     * null for anything not close to an entry in the curated set — never guesses beyond it. */
+     * The bundled vocabulary contains apostrophe forms as first-class words, so general edit
+     * distance can reach "don't" from "dont" on its own. This map survives for the cases distance
+     * alone gets wrong: the apostrophe-less spelling is usually *also* a real word ("were"/"we're",
+     * "well"/"we'll", "its"/"it's", "id"/"I'd"), so [correct] will not touch it, and several are
+     * genuinely ambiguous — offering the expansion for the user to accept is right, silently
+     * applying it is not.
+     *
+     * Tries an exact match first, then a fuzzy one-edit match against keys of at least
+     * [MIN_FUZZY_CONTRACTION_LENGTH] characters — so "shoudve" still resolves to "should've". Short
+     * keys ("im", "id", "ive") are exact-only: fuzzy-matching a 2-3 letter string collides with
+     * unrelated short words far too readily.
+     */
     fun contractionFor(typed: String): String? {
         val lower = typed.lowercase()
         CONTRACTIONS[lower]?.let { return it }
@@ -104,7 +141,7 @@ class AutocorrectIndex {
         var bestDistance = 2
         for ((key, expansion) in CONTRACTIONS) {
             if (key.length < MIN_FUZZY_CONTRACTION_LENGTH) continue
-            val distance = damerauLevenshtein(lower, key, 1) ?: continue
+            val distance = editDistance(lower, key, 1) ?: continue
             if (distance < bestDistance) {
                 bestDistance = distance
                 best = expansion
@@ -113,214 +150,304 @@ class AutocorrectIndex {
         return best
     }
 
-    /** Every plausible alternative for [word] worth offering on the suggestion strip for the user
-     * to cycle through via swipe up/down — deliberately broader than [correct]: applies whether or
-     * not [word] is itself a valid dictionary word, because "valid dictionary word" and "what the
-     * user actually meant" are different questions. Typing "well" perfectly correctly doesn't mean
-     * "we'll" wasn't the intent; only the user can tell, so both get offered rather than the
-     * keyboard silently deciding for them (that's exactly why this is a browsable list, not an
-     * auto-apply). Ordered by confidence: curated contraction expansion, then — only if [word]
-     * isn't itself real — a split or distance-based typo fix, then close real-word neighbors
-     * (distance 1 before distance 2, frequency breaking ties) regardless of [word]'s own validity.
-     * Deduplicated case-insensitively, capped at [limit]. */
-    fun alternatives(word: String, limit: Int): List<String> {
+    /**
+     * Every plausible alternative for [word] worth offering on the suggestion strip — deliberately
+     * broader than [correct]: applies whether or not [word] is itself valid, because "valid
+     * dictionary word" and "what the user actually meant" are different questions. Typing "well"
+     * perfectly correctly doesn't mean "we'll" wasn't the intent; only the user can tell, so both
+     * get offered rather than the keyboard silently deciding (which is exactly why this is a
+     * browsable list, not an auto-apply).
+     *
+     * Ordered by the same noisy-channel score [correct] uses, so the strip agrees with the
+     * auto-apply decision instead of ranking by a different rule. The curated contraction leads
+     * when there is one; a word split is offered alongside single-word candidates.
+     * Deduplicated case-insensitively, capped at [limit].
+     */
+    fun alternatives(
+        word: String,
+        limit: Int,
+        context: Context = Context.NONE,
+        taps: TouchTrace.Taps? = null,
+    ): List<String> {
+        val languageModel = model ?: return emptyList()
         val lower = word.lowercase()
         if (limit <= 0 || lower.isEmpty()) return emptyList()
         if (!lower.all { it.isLetter() }) return emptyList()
 
         val results = LinkedHashSet<String>()
-        // Checked before the general MIN_LENGTH gate below — several contraction keys ("im",
-        // "id") are shorter than it, and would otherwise never even reach contractionFor() at
-        // all. Real bug, confirmed: "im" (2 letters) was rejected outright before contraction
-        // lookup ever ran.
+        // Checked before the length gate below — several contraction keys ("im", "id") are shorter
+        // than MIN_LENGTH and would otherwise never reach contractionFor() at all.
         contractionFor(lower)?.let { results += it }
+        if (lower.length !in MIN_LENGTH..MAX_LENGTH) return results.take(limit).toList()
 
-        if (lower.length in MIN_LENGTH..MAX_LENGTH) {
-            if (lower !in frequencyByWord) {
-                // Whichever of split-vs-single-word-typo-fix actually wins (see [correct]'s
-                // scoring) leads the list; the other still gets offered as a secondary candidate
-                // rather than being dropped, since this list is meant to be browsable.
-                val split = correctSplitCandidate(lower)
-                val distanceMatch = bestByDistance(lower, maxDistance = 1, minFrequency = correctionFloor)
-                val distanceFrequency = distanceMatch?.let { frequencyByWord[it] } ?: -1
-                val splitWins = split != null && (distanceMatch == null || split.minHalfFrequency > distanceFrequency)
-                if (splitWins) {
-                    if (results.size < limit) results += split!!.text
-                    if (results.size < limit) distanceMatch?.let { results += it }
-                } else {
-                    if (results.size < limit) distanceMatch?.let { results += it }
-                    if (results.size < limit) split?.let { results += it.text }
-                }
-                if (results.size < limit) bestByDistance(lower, maxDistance = 2, minFrequency = strictFloor)?.let { results += it }
-            }
+        val scored = ArrayList<Scored>(SCORED_CAPACITY)
+        collectCandidates(lower, correctionFloor, context, maxBrowsableEdits, taps, scored)
+        if (!isKnown(lower)) {
+            correctSplitCandidate(lower, context)?.let { scored += it }
         }
-
-        if (results.size < limit && lower.length in MIN_LENGTH..MAX_LENGTH) {
-            candidatesNear(lower).asSequence()
-                // Same "don't suggest something obscure" bar as the rest of this class — without
-                // it, an over-broad neighbor search surfaces genuinely rare words (e.g. "helot")
-                // as if they were reasonable everyday alternatives.
-                .filter { (candidate, freq) -> freq >= correctionFloor && candidate != lower && results.none { it.equals(candidate, ignoreCase = true) } }
-                .mapNotNull { (candidate, freq) -> damerauLevenshtein(lower, candidate, 2)?.let { d -> Triple(candidate, d, freq) } }
-                .sortedWith(compareBy({ it.second }, { -it.third }))
-                .forEach { (candidate, _, _) -> if (results.size < limit) results += candidate }
+        scored.sortByDescending { it.score }
+        for (candidate in scored) {
+            if (results.size >= limit) break
+            if (results.none { it.equals(candidate.text, ignoreCase = true) }) results += candidate.text
         }
-
         return results.take(limit).toList()
     }
 
-    /** Returns a corrected (lowercase) word if [typed] is confidently a typo of a much more
-     * common dictionary word, or null if it should be left alone — already a known word, too
-     * short, contains non-letters, or no sufficiently common/close neighbor exists.
+    /**
+     * A corrected (lowercase) word if [typed] is confidently a typo of a much more likely word, or
+     * null to leave it alone — already known, too short, contains non-letters, or nothing scores
+     * well enough.
      *
      * Can also return two words separated by a single space (e.g. `"this is"`) when [typed] looks
-     * like two real words typed without the space between them — see [correctSplitCandidate].
-     * Whether the split or a single-word typo fix wins is decided by actually comparing their
-     * confidence (the split's weaker half's frequency vs. the single-word candidate's frequency)
-     * rather than the split always short-circuiting the single-word search: a concatenation of two
-     * very common short words (e.g. "thisis" -> "this"+"is") can coincidentally also be one edit
-     * away from some unrelated real word ("thesis"), and vice versa — an unrelated single-word
-     * typo (e.g. "helko" -> "hello") can coincidentally split into two barely-clears-the-bar real
-     * words ("he"+"lo") that are individually far less common than the actual intended word. Only
-     * when the split's weakest half is *more* confident than the single-word match does the split
-     * win; ties and everything else fall back to the single-word correction. Callers that commit
-     * the result must handle the two-word shape (split on the space, treat it as a real word
-     * boundary) rather than assuming the return value is always one token. */
-    fun correct(typed: String): String? {
+     * like two real words typed without the space — see [correctSplitCandidate]. Callers committing
+     * the result must handle the two-word shape rather than assuming one token.
+     */
+    fun correct(typed: String, context: Context = Context.NONE, taps: TouchTrace.Taps? = null): String? {
+        model ?: return null
         val lower = typed.lowercase()
         if (lower.length < MIN_LENGTH || lower.length > MAX_LENGTH) return null
         if (!lower.all { it.isLetter() }) return null
-        if (lower in frequencyByWord) return null // never "correct" an already-real word
+        if (isKnown(lower)) return null // never "correct" an already-real word
 
-        val split = correctSplitCandidate(lower)
-        val distanceMatch = bestByDistance(lower, maxDistance = 1, minFrequency = correctionFloor)
-        val distanceFrequency = distanceMatch?.let { frequencyByWord[it] } ?: -1
-        if (split != null && (distanceMatch == null || split.minHalfFrequency > distanceFrequency)) return split.text
-        if (distanceMatch != null) return distanceMatch
-
-        return bestByDistance(lower, maxDistance = 2, minFrequency = strictFloor)
+        val scored = ArrayList<Scored>(SCORED_CAPACITY)
+        collectCandidates(lower, correctionFloor, context, maxEdits, taps, scored)
+        correctSplitCandidate(lower, context)?.let { scored += it }
+        return scored.maxByOrNull { it.score }?.text
     }
 
-    private data class SplitCandidate(val text: String, val minHalfFrequency: Int)
-
-    /** Checks whether [lower] is actually two real words typed without a space between them —
-     * common for fast typists whose thumb slightly missed the spacebar — optionally with exactly
-     * one stray extra character sitting where the space should have been (e.g. "thisbis" = "this"
-     * + a stray 'b' + "is"). Tries the string as typed, plus every single-character-deleted
-     * variant of it, at every possible split point; picks whichever split has the strongest
-     * confidence in *both* halves (each must clear [strictFloor] — stricter than plain single-word
-     * correction, since a split has more freedom to coincidentally line up than a single edit
-     * does). The returned [SplitCandidate.minHalfFrequency] is what [correct]/[alternatives] weigh
-     * against the single-word candidate's own frequency to decide which one actually wins. */
-    private fun correctSplitCandidate(lower: String): SplitCandidate? {
-        if (lower.length < MIN_SPLIT_LENGTH) return null
-        val candidates = (listOf(lower) + lower.indices.map { lower.removeRange(it, it + 1) }).distinct()
-        var best: Pair<String, String>? = null
-        var bestScore = -1
-        for (candidate in candidates) {
-            if (candidate.length < MIN_SPLIT_LENGTH) continue
-            for (split in MIN_SPLIT_WORD_LENGTH..(candidate.length - MIN_SPLIT_WORD_LENGTH)) {
-                val left = candidate.substring(0, split)
-                val leftFreq = frequencyByWord[left] ?: continue
-                if (leftFreq < strictFloor) continue
-                val right = candidate.substring(split)
-                val rightFreq = frequencyByWord[right] ?: continue
-                if (rightFreq < strictFloor) continue
-                val score = minOf(leftFreq, rightFreq)
-                if (score > bestScore) {
-                    bestScore = score
-                    best = left to right
-                }
-            }
-        }
-        return best?.let { SplitCandidate("${it.first} ${it.second}", bestScore) }
-    }
-
-    /** Real-dictionary neighbors of [word] exactly one edit away — the candidate set a context-
-     * aware caller (see [dev.omakey.core.predict.PredictionEngine.bigramRank]) can rank against
-     * bigram context, for catching "real-word errors": a typo that happens to itself be a valid
-     * word (so [correct] won't touch it) but isn't the word the surrounding context suggests was
-     * actually meant. Unlike [correct], this deliberately does *not* filter by frequency or
-     * exclude [word] itself being known — ranking by context is the caller's job, not raw
-     * dictionary frequency. */
+    /** Real-vocabulary neighbours of [word] exactly one edit away — the candidate set a
+     * context-aware caller ranks to catch "real-word errors": a typo that is itself a valid word
+     * (so [correct] won't touch it) but isn't what the surrounding context suggests was meant.
+     * Deliberately does *not* filter by frequency — ranking is the caller's job. */
     fun realWordNeighbors(word: String): Set<String> {
+        val languageModel = model ?: return emptySet()
         val lower = word.lowercase()
         if (lower.length < MIN_LENGTH || lower.length > MAX_LENGTH) return emptySet()
         if (!lower.all { it.isLetter() }) return emptySet()
-        val neighbors = mutableSetOf<String>()
-        for ((candidate, _) in candidatesNear(lower)) {
-            if (candidate != lower && damerauLevenshtein(lower, candidate, 1) != null) neighbors += candidate
+        val neighbours = mutableSetOf<String>()
+        for (id in candidatesNear(lower)) {
+            val distance = editDistance(lower, id, 1) ?: continue
+            if (distance > 0) neighbours += languageModel.wordAt(id)
         }
-        return neighbors
+        return neighbours
     }
 
-    /** Best real dictionary word within [maxDistance] edits of [word] — closest distance wins,
-     * ties broken by frequency. Scans only [candidatesNear] (same first letter as [word]) so full
-     * Damerau-Levenshtein distance stays cheap even at distance 2. */
-    private fun bestByDistance(word: String, maxDistance: Int, minFrequency: Int): String? {
+    private class Scored(val text: String, val score: Float)
+
+    /**
+     * Scores every vocabulary word within [MAX_EDITS] edits of [typed] that clears [floor],
+     * appending them to [into].
+     *
+     * The integer edit distance is used only to bound the candidate set — it decides *whether* a
+     * word is considered, never which one wins. That ranking is the combined channel + language
+     * score, which is why a two-edit correction into a very likely word can now beat a one-edit
+     * correction into an unlikely one.
+     */
+    private fun collectCandidates(
+        typed: String,
+        floor: Float,
+        context: Context,
+        editBound: Int,
+        taps: TouchTrace.Taps?,
+        into: MutableList<Scored>,
+    ) {
+        val languageModel = model ?: return
+        for (id in candidatesNear(typed)) {
+            val prior = languageModel.unigramLogProbability(id)
+            if (prior < floor) continue
+            val distance = editDistance(typed, id, editBound) ?: continue
+            if (distance == 0) continue
+            val cost = channelCost(typed, id, taps)
+            val languageScore = personal.adjustById(
+                id,
+                languageModel.logProbability(id, context.previousId, context.beforePreviousId),
+            )
+            into += Scored(
+                languageModel.wordAt(id),
+                -cost + channel.languageModelWeight * languageScore,
+            )
+        }
+    }
+
+    /**
+     * Checks whether [lower] is two real words typed without a space — common for fast typists
+     * whose thumb missed the spacebar — optionally with one stray extra character where the space
+     * should have been ("thisbis" = "this" + stray 'b' + "is").
+     *
+     * Scored on the same scale as a single-word candidate: the channel pays for the missing space
+     * (and for the stray character, when there was one), and the language term is the probability
+     * of the **whole two-word sequence**, `log P(left) + log P(right | left)`.
+     *
+     * That comparability is the entire point. An earlier version scored a split by its *weaker
+     * half's* frequency and compared that against a single word's frequency, which is not a
+     * like-for-like comparison: a split gets to explain the same letters using two words, and
+     * because short common words are individually very probable, almost any long word could be
+     * beaten by some pair of short ones. Real damage, caught by the evaluation harness — "seperate"
+     * was being "corrected" to "see rate" and "wierd" to "ie rd".
+     */
+    private fun correctSplitCandidate(lower: String, context: Context): Scored? {
+        val languageModel = model ?: return null
+        if (lower.length < MIN_SPLIT_LENGTH) return null
         var best: String? = null
-        var bestDistance = maxDistance + 1
-        var bestFrequency = -1
-        for ((candidate, freq) in candidatesNear(word)) {
-            if (freq < minFrequency) continue
-            val distance = damerauLevenshtein(word, candidate, maxDistance) ?: continue
-            if (distance < bestDistance || (distance == bestDistance && freq > bestFrequency)) {
-                best = candidate
-                bestDistance = distance
-                bestFrequency = freq
-            }
-        }
-        return best
-    }
-
-    /** Dictionary words sharing [word]'s first letter — a classic spelling-correction prune (the
-     * first character is rarely the one actually mistyped) that cuts a ~60k-word dictionary down
-     * to roughly 1/26th before the O(length²) distance computation below. Trade-off: misses
-     * corrections where the first letter itself was mistyped — accepted, since that's a
-     * comparatively rare class of typo, in exchange for making real edit-distance-2 correction
-     * affordable at all (naively hashing every generated 2-edit string, the previous approach,
-     * is quadratic in the distance-1 candidate count — tens of thousands of strings for a 6-letter
-     * word). */
-    private fun candidatesNear(word: String): List<Pair<String, Int>> =
-        if (word.isEmpty()) emptyList() else wordsByFirstLetter[word.first()] ?: emptyList()
-
-    /** Standard Damerau-Levenshtein distance (insert/delete/substitute/adjacent-transpose).
-     * Returns null as soon as it's clear the true distance exceeds [maxDistance] — both a cheap
-     * early exit (length difference alone rules out most candidates instantly) and a way for
-     * callers to treat "too far" and "not found" identically. */
-    private fun damerauLevenshtein(a: String, b: String, maxDistance: Int): Int? {
-        if (abs(a.length - b.length) > maxDistance) return null
-        val d = Array(a.length + 1) { IntArray(b.length + 1) }
-        for (i in 0..a.length) d[i][0] = i
-        for (j in 0..b.length) d[0][j] = j
-        for (i in 1..a.length) {
-            for (j in 1..b.length) {
-                val cost = if (a[i - 1] == b[j - 1]) 0 else 1
-                d[i][j] = minOf(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost)
-                if (i > 1 && j > 1 && a[i - 1] == b[j - 2] && a[i - 2] == b[j - 1]) {
-                    d[i][j] = minOf(d[i][j], d[i - 2][j - 2] + cost)
+        var bestScore = Float.NEGATIVE_INFINITY
+        // The string as typed, plus every single-character-deleted variant of it.
+        for (removed in -1 until lower.length) {
+            val candidate = if (removed < 0) lower else lower.removeRange(removed, removed + 1)
+            if (candidate.length < MIN_SPLIT_LENGTH) continue
+            // Missing space is always a deletion; a stray character is an extra insertion.
+            val channelCost = channel.deletion() + if (removed < 0) 0f else channel.insertion()
+            for (split in MIN_SPLIT_WORD_LENGTH..(candidate.length - MIN_SPLIT_WORD_LENGTH)) {
+                val leftId = languageModel.indexOf(candidate.substring(0, split))
+                if (leftId == LanguageModel.NO_WORD) continue
+                if (languageModel.unigramLogProbability(leftId) < strictFloor) continue
+                val rightId = languageModel.indexOf(candidate.substring(split))
+                if (rightId == LanguageModel.NO_WORD) continue
+                if (languageModel.unigramLogProbability(rightId) < strictFloor) continue
+                // The right half is scored *in context of the left*, so a pair that genuinely
+                // occurs together ("this is") is rewarded over one that merely consists of two
+                // common words ("see rate").
+                val languageScore =
+                    languageModel.logProbability(leftId, context.previousId, context.beforePreviousId) +
+                        languageModel.logProbability(rightId, leftId, context.previousId)
+                val score = -channelCost + channel.languageModelWeight * languageScore
+                if (score > bestScore) {
+                    bestScore = score
+                    best = "${candidate.substring(0, split)} ${candidate.substring(split)}"
                 }
             }
         }
-        val result = d[a.length][b.length]
+        return best?.let { Scored(it, bestScore) }
+    }
+
+    /** Vocabulary words sharing [word]'s first letter — the classic spelling-correction prune, and
+     * free here: the vocabulary is lexicographically ordered, so this is a contiguous id range
+     * rather than a bucket map that has to be built and held in memory.
+     *
+     * Known limitation: a mistyped *first* letter is unreachable, so "hte" cannot find "the".
+     * Lifting it means walking a trie with an edit-distance cutoff instead of scanning a range. */
+    private fun candidatesNear(word: String): IntRange {
+        val languageModel = model ?: return IntRange.EMPTY
+        if (word.isEmpty()) return IntRange.EMPTY
+        return languageModel.prefixRange(word.substring(0, 1))
+    }
+
+    // --- distance and cost ----------------------------------------------------------------------
+
+    /** Plain Damerau-Levenshtein against the vocabulary word [id], used only to bound the candidate
+     * set. Reads characters straight out of the mapped blob so scanning thousands of candidates
+     * allocates nothing. Null once the true distance is known to exceed [maxDistance]. */
+    private fun editDistance(a: String, id: Int, maxDistance: Int): Int? {
+        val languageModel = model ?: return null
+        val length = languageModel.wordLength(id)
+        if (abs(a.length - length) > maxDistance) return null
+        if (a.length > MAX_LENGTH || length > MAX_LENGTH) return null
+        return editDistance(a, null, id, length, maxDistance)
+    }
+
+    private fun editDistance(a: String, b: String, maxDistance: Int): Int? {
+        if (abs(a.length - b.length) > maxDistance) return null
+        if (a.length > MAX_LENGTH || b.length > MAX_LENGTH) return null
+        return editDistance(a, b, -1, b.length, maxDistance)
+    }
+
+    private fun editDistance(a: String, b: String?, id: Int, bLength: Int, maxDistance: Int): Int? {
+        val languageModel = model
+        val d = editScratch.get()
+        for (i in 0..a.length) d[i][0] = i
+        for (j in 0..bLength) d[0][j] = j
+        for (i in 1..a.length) {
+            var rowBest = Int.MAX_VALUE
+            val aChar = a[i - 1]
+            for (j in 1..bLength) {
+                val bChar = b?.get(j - 1) ?: languageModel!!.charAt(id, j - 1)
+                val cost = if (aChar == bChar) 0 else 1
+                var value = minOf(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost)
+                if (i > 1 && j > 1) {
+                    val bPrevious = b?.get(j - 2) ?: languageModel!!.charAt(id, j - 2)
+                    if (aChar == bPrevious && a[i - 2] == bChar) value = minOf(value, d[i - 2][j - 2] + cost)
+                }
+                d[i][j] = value
+                if (value < rowBest) rowBest = value
+            }
+            // A whole row above the bound means no completion can come back under it.
+            if (rowBest > maxDistance) return null
+        }
+        val result = d[a.length][bLength]
         return if (result <= maxDistance) result else null
+    }
+
+    /** `-log P(typed | candidate)` under [ChannelModel] — the same Damerau recurrence, but with
+     * real per-edit costs instead of 1 apiece, so which keys were involved actually matters. */
+    private fun channelCost(typed: String, id: Int, taps: TouchTrace.Taps?): Float {
+        val languageModel = model ?: return Float.MAX_VALUE
+        val length = languageModel.wordLength(id)
+        val d = costScratch.get()
+        for (i in 0..typed.length) d[i][0] = i * channel.insertion()
+        for (j in 0..length) d[0][j] = j * channel.deletion()
+        for (i in 1..typed.length) {
+            val typedChar = typed[i - 1]
+            for (j in 1..length) {
+                val intendedChar = languageModel.charAt(id, j - 1)
+                var value = minOf(
+                    d[i - 1][j] + channel.insertion(),
+                    d[i][j - 1] + channel.deletion(),
+                    d[i - 1][j - 1] + channel.substitutionAt(typedChar, intendedChar, taps, i - 1),
+                )
+                if (i > 1 && j > 1) {
+                    val intendedPrevious = languageModel.charAt(id, j - 2)
+                    if (typedChar == intendedPrevious && typed[i - 2] == intendedChar) {
+                        value = minOf(value, d[i - 2][j - 2] + channel.transposition())
+                    }
+                }
+                d[i][j] = value
+            }
+        }
+        return d[typed.length][length]
     }
 
     private companion object {
         const val MIN_LENGTH = 3
-        const val MAX_LENGTH = 20
+        const val MAX_LENGTH = 24
         const val MIN_SPLIT_WORD_LENGTH = 2
         const val MIN_SPLIT_LENGTH = MIN_SPLIT_WORD_LENGTH * 2
 
-        /** Fuzzy contraction matching (see [contractionFor]) only applies to keys at least this
-         * long — a 2-3 letter key fuzzy-matched against arbitrary typed text is far too prone to
-         * colliding with unrelated short words to be worth the false-positive risk. */
+        /**
+         * Structural bound on the candidate set for the **silent auto-apply** path. Ranking within
+         * it is the combined score's job.
+         *
+         * Two, not three, and measured rather than assumed: allowing a third edit finds 1.6 points
+         * more correct answers but produces 9.9 points more *wrong* ones, because the candidate
+         * pool at distance 3 is mostly unrelated words that happen to be reachable. For a change
+         * applied without asking, that trade is clearly bad.
+         */
+        const val MAX_EDITS = 2
+
+        /**
+         * The same bound for the **suggestion strip**, which is deliberately looser.
+         *
+         * The strip is browsable — the user reads it and picks — so an extra speculative candidate
+         * costs a glance, while a missing one costs a manual retype. The measurement that rules
+         * distance 3 out for auto-apply simultaneously argues *for* it here: strip recall rises
+         * from 48.6% to 55.4%. Same evidence, opposite conclusion, because the two paths have
+         * genuinely different costs of being wrong.
+         */
+        const val MAX_BROWSABLE_EDITS = 3
+
+        /** Typical number of candidates that clear the floor and the edit bound — sizing the list
+         * up front avoids regrowth on the typing hot path. */
+        const val SCORED_CAPACITY = 32
+
+        /** Correction targets must be at least this common — a rank in the frequency ordering, so
+         * the bar doesn't move when the vocabulary size changes. */
+        const val CORRECTION_RANK = 25_000
+        const val STRICT_RANK = 8_000
+
+        /** Fuzzy contraction matching only applies to keys at least this long — a 2-3 letter key
+         * fuzzy-matched against arbitrary text collides with unrelated short words too readily. */
         const val MIN_FUZZY_CONTRACTION_LENGTH = 5
 
-        // Aiming for comprehensive coverage of standard English contractions, not just a handful
-        // of examples — every common subject+verb and negative pairing, plus the modal-perfect
-        // ("could've"/"should've"/etc) forms that are routinely typed without the apostrophe and
-        // routinely typo'd on top of that (see contractionFor's fuzzy fallback).
+        // Comprehensive coverage of standard English contractions whose apostrophe-less spelling
+        // is itself a real word, or which are ambiguous enough that auto-applying would be wrong.
         val CONTRACTIONS: Map<String, String> = mapOf(
             // I
             "im" to "I'm", "ive" to "I've", "id" to "I'd", "ill" to "I'll",
@@ -349,8 +476,7 @@ class AutocorrectIndex {
             "couldnt" to "couldn't", "shouldnt" to "shouldn't", "wouldnt" to "wouldn't",
             "mightnt" to "mightn't", "mustnt" to "mustn't", "neednt" to "needn't",
             "shant" to "shan't", "oughtnt" to "oughtn't",
-            // modal + have — very commonly typed without the apostrophe, and often mistyped on
-            // top of that (the actual case this fuzzy matching exists for)
+            // modal + have — routinely typed without the apostrophe and mistyped on top of that
             "couldve" to "could've", "shouldve" to "should've", "wouldve" to "would've",
             "mightve" to "might've", "mustve" to "must've",
             // let's, y'all, ain't, o'clock
