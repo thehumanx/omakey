@@ -2,6 +2,7 @@ package dev.omakey.core.predict
 
 import dev.omakey.core.predict.lm.LanguageModel
 import dev.omakey.core.predict.spatial.ChannelModel
+import dev.omakey.core.predict.spatial.KeyboardGeometry
 import dev.omakey.core.predict.spatial.TouchTrace
 import kotlin.math.abs
 
@@ -225,9 +226,9 @@ class AutocorrectIndex(
         if (lower.length < MIN_LENGTH || lower.length > MAX_LENGTH) return emptySet()
         if (!lower.all { it.isLetter() }) return emptySet()
         val neighbours = mutableSetOf<String>()
-        for (id in candidatesNear(lower)) {
-            val distance = editDistance(lower, id, 1) ?: continue
-            if (distance > 0) neighbours += languageModel.wordAt(id)
+        forEachCandidate(lower) { id, _ ->
+            val distance = editDistance(lower, id, 1)
+            if (distance != null && distance > 0) neighbours += languageModel.wordAt(id)
         }
         return neighbours
     }
@@ -252,11 +253,16 @@ class AutocorrectIndex(
         into: MutableList<Scored>,
     ) {
         val languageModel = model ?: return
-        for (id in candidatesNear(typed)) {
+        // A candidate reached by assuming the *first* letter was itself mistyped has already spent
+        // evidence before any of the rest of the word is examined, so it is held to the same
+        // stricter bar the distance-2 fallback uses. Same tiering idea, same reason: a less
+        // certain route into the vocabulary needs a more certain destination.
+        val offFirstLetterFloor = maxOf(floor, strictFloor)
+        forEachCandidate(typed) { id, offFirstLetter ->
             val prior = languageModel.unigramLogProbability(id)
-            if (prior < floor) continue
-            val distance = editDistance(typed, id, editBound) ?: continue
-            if (distance == 0) continue
+            if (prior < (if (offFirstLetter) offFirstLetterFloor else floor)) return@forEachCandidate
+            val distance = editDistance(typed, id, editBound) ?: return@forEachCandidate
+            if (distance == 0) return@forEachCandidate
             val cost = channelCost(typed, id, taps)
             val languageScore = personal.adjustById(
                 id,
@@ -319,16 +325,87 @@ class AutocorrectIndex(
         return best?.let { Scored(it, bestScore) }
     }
 
-    /** Vocabulary words sharing [word]'s first letter — the classic spelling-correction prune, and
-     * free here: the vocabulary is lexicographically ordered, so this is a contiguous id range
-     * rather than a bucket map that has to be built and held in memory.
+    /**
+     * Every vocabulary word worth scoring as a correction of [typed], with a flag for whether it
+     * was reached by assuming [typed]'s **first** letter is itself wrong (the caller holds those to
+     * a stricter frequency bar — see [collectCandidates]).
      *
-     * Known limitation: a mistyped *first* letter is unreachable, so "hte" cannot find "the".
-     * Lifting it means walking a trie with an edit-distance cutoff instead of scanning a range. */
-    private fun candidatesNear(word: String): IntRange {
-        val languageModel = model ?: return IntRange.EMPTY
-        if (word.isEmpty()) return IntRange.EMPTY
-        return languageModel.prefixRange(word.substring(0, 1))
+     * This used to be a single contiguous id range: the words sharing [typed]'s exact first letter,
+     * the classic spelling-correction prune. It is fast and mostly right — the first character of a
+     * word really is the one least often mistyped — but "mostly" hid a whole class of typos the
+     * engine simply could not see. "qccount" cannot reach "account", "wpple" cannot reach "apple",
+     * "hte" cannot reach "the": the intended word is one obvious slip away, but it lives in a range
+     * that was never scanned, so no amount of better ranking could ever surface it.
+     *
+     * The fix is *not* to drop the prune. That was measured (see AGENTS.md §6) and made accuracy
+     * worse while costing 14× the latency, because scanning all 26 ranges under a flat edit bound
+     * mostly admits unrelated words that happen to fall within two edits. The prune was doing real
+     * work; it was just drawn in the wrong place — on letter *identity* rather than on how
+     * plausible the slip is.
+     *
+     * So the first letter is now treated like every other letter, with the search bounded the same
+     * way the rest of the word already is — by the channel model. Four routes, all of them a
+     * single-character error at position 0:
+     *
+     *  - **As typed.** The overwhelmingly likely case, and the only tier held to the ordinary floor.
+     *  - **Substitution**, restricted to keys physically adjacent to the one typed
+     *    ([KeyboardGeometry.areAdjacent]) — the thumb landed one key off. `q` sits directly above
+     *    `a`, which is the entire "qccount" story. A jump across the keyboard is not a slip, and
+     *    admitting those is exactly what made removing the prune wholesale perform badly.
+     *  - **Insertion / transposition**, both of which leave the intended word starting with
+     *    `typed[1]` ("xaccount", "hte") — one extra range, not a guess about which.
+     *  - **Deletion**, where the first letter never got typed at all ("ccount" → "account"). The
+     *    intended word is [typed] with one letter put back in front, which is 26 binary searches
+     *    rather than 26 more ranges to scan — so it costs essentially nothing and needs no
+     *    adjacency restriction, there being no typed key to be near.
+     *
+     * That is ~8 ranges instead of 1 or 26, and the extra ones are pre-filtered by a float compare
+     * before any distance matrix is built.
+     */
+    private inline fun forEachCandidate(typed: String, action: (id: Int, offFirstLetter: Boolean) -> Unit) {
+        val languageModel = model ?: return
+        if (typed.isEmpty()) return
+
+        for (id in languageModel.prefixRange(typed.substring(0, 1))) action(id, false)
+
+        val typedFirst = letterIndex(typed[0])
+        var alternates = alternateFirstLetters(typed)
+        var remaining = alternates
+        while (remaining != 0) {
+            val letter = Integer.numberOfTrailingZeros(remaining)
+            remaining = remaining and (remaining - 1)
+            for (id in languageModel.prefixRange(FIRST_LETTERS[letter])) action(id, true)
+        }
+
+        // Deletion at position 0. Skips letters whose whole range was just scanned, so the same id
+        // is never handed to `action` twice.
+        if (typed.length in (MIN_LENGTH - 1) until MAX_LENGTH) {
+            if (typedFirst >= 0) alternates = alternates or (1 shl typedFirst)
+            val prepended = StringBuilder(typed.length + 1).append(' ').append(typed)
+            for (letter in 0 until ALPHABET_SIZE) {
+                if ((alternates shr letter) and 1 == 1) continue
+                prepended.setCharAt(0, 'a' + letter)
+                val id = languageModel.indexOf(prepended)
+                if (id != LanguageModel.NO_WORD) action(id, true)
+            }
+        }
+    }
+
+    /** Bitmask of first letters, other than [typed]'s own, that a correction of [typed] may start
+     * with — see [forEachCandidate] for what each one represents. */
+    private fun alternateFirstLetters(typed: String): Int {
+        var mask = 0
+        val first = letterIndex(typed[0])
+        if (first >= 0) mask = mask or ADJACENT_MASK[first]
+        if (typed.length > 1) {
+            val second = letterIndex(typed[1])
+            if (second >= 0) mask = mask or (1 shl second)
+        }
+        // The typed letter's own range is always scanned separately, and `a` counts itself as
+        // adjacent to nothing, but clear it explicitly: typed[1] == typed[0] ("aardvark") would
+        // otherwise put it back.
+        if (first >= 0) mask = mask and (1 shl first).inv()
+        return mask
     }
 
     // --- distance and cost ----------------------------------------------------------------------
@@ -406,6 +483,30 @@ class AutocorrectIndex(
     }
 
     private companion object {
+        const val ALPHABET_SIZE = 26
+
+        /** Single-character prefixes, held rather than built per lookup — [forEachCandidate] runs
+         * on the typing hot path and asks for several of these per keystroke. */
+        val FIRST_LETTERS: Array<String> = Array(ALPHABET_SIZE) { ('a' + it).toString() }
+
+        /** For each letter, the bitmask of letters whose keys physically touch it. Derived from
+         * [KeyboardGeometry] rather than written out by hand, so it stays true to the row stagger
+         * the geometry already models instead of drifting from it. */
+        val ADJACENT_MASK: IntArray = IntArray(ALPHABET_SIZE) { index ->
+            var mask = 0
+            for (other in 0 until ALPHABET_SIZE) {
+                if (other != index && KeyboardGeometry.areAdjacent('a' + index, 'a' + other)) {
+                    mask = mask or (1 shl other)
+                }
+            }
+            mask
+        }
+
+        fun letterIndex(character: Char): Int {
+            val lower = character.lowercaseChar()
+            return if (lower in 'a'..'z') lower - 'a' else -1
+        }
+
         const val MIN_LENGTH = 3
         const val MAX_LENGTH = 24
         const val MIN_SPLIT_WORD_LENGTH = 2

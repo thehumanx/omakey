@@ -187,7 +187,13 @@ class EmojiPanelExtension : OmakeyExtension {
                         columns = if (isEmoticons) GridCells.Adaptive(72.dp) else GridCells.Fixed(8),
                         modifier = Modifier.fillMaxSize(),
                     ) {
-                        items(animatedCategory.emoji) { emoji ->
+                        items(animatedCategory.emoji) { rawEmoji ->
+                            // Toned for display as well as insertion, so the grid shows what
+                            // tapping it will actually produce. Recents are stored toned too (they
+                            // come straight from what was inserted), and withSkinTone strips any
+                            // existing modifier before applying the current one, so an emoji used
+                            // under an old setting re-tones rather than showing stale.
+                            val emoji = extensionContext?.withSkinTone(rawEmoji) ?: rawEmoji
                             val interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
                             val isPressed by interactionSource.collectIsPressedAsState()
                             // Real bug, fixed: this cell used to size itself to the Text's own

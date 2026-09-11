@@ -18,8 +18,12 @@ class InMemoryWordDao(seed: List<WordEntity> = emptyList()) : WordDao {
 
     override suspend fun allUserAdded(): List<WordEntity> = byWord.values.filter { it.isUserAdded }
 
-    override suspend fun findUserAdded(query: String, limit: Int): List<WordEntity> =
-        byWord.values.filter { it.isUserAdded && it.word.startsWith(query) }
+    override suspend fun findUserAdded(query: String, minFrequency: Int, limit: Int): List<WordEntity> =
+        byWord.values
+            .filter {
+                it.isUserAdded && it.word.startsWith(query) &&
+                    (it.explicit || it.frequency >= minFrequency)
+            }
             .sortedByDescending { it.lastUsedTimestamp }
             .take(limit)
 

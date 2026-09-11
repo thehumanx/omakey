@@ -22,11 +22,16 @@ import kotlin.random.Random
  *
  * ```
  * noise (key widths)   0.25            0.35            0.45            0.60
- * key identity only    fixed 71.74 %   fixed 53.60 %   fixed 33.82 %   fixed 16.12 %
- *                      wrong 15.81 %   wrong 20.99 %   wrong 25.93 %   wrong 31.07 %
- * with touch points    fixed 71.86 %   fixed 54.01 %   fixed 34.21 %   fixed 16.69 %
- *                      wrong 15.70 %   wrong 20.58 %   wrong 25.54 %   wrong 30.51 %
+ * key identity only    fixed 82.09 %   fixed 66.05 %   fixed 43.14 %   fixed 21.66 %
+ *                      wrong 10.00 %   wrong 13.07 %   wrong 19.76 %   wrong 27.39 %
+ * with touch points    fixed 82.33 %   fixed 66.98 %   fixed 44.26 %   fixed 22.51 %
+ *                      wrong  9.77 %   wrong 12.14 %   wrong 18.64 %   wrong 26.55 %
  * ```
+ *
+ * (Before the first letter became correctable — see [EngineEvaluationTest]'s phase 3 — the same
+ * sweep read 71.74 / 53.60 / 33.82 / 16.12 % fixed against 15.81 / 20.99 / 25.93 / 31.07 % wrong.
+ * Simulated taps stray at position 0 exactly as often as anywhere else, so an exact-first-letter
+ * candidate prune was discarding a fixed fraction of every noise level's typos outright.)
  *
  * **Real coordinates add remarkably little: +0.4 to +0.6 points, consistently, at every noise
  * level.** The reason is visible once stated: when a tap strays over a boundary it lands on a key
@@ -43,9 +48,9 @@ import kotlin.random.Random
  * generates taps centred on the key by construction.
  *
  * **The more useful result is the absolute one.** On simulated touchscreen typing the engine fixes
- * 54% and breaks 21% at moderate noise, and 72% against 16% at light noise — fixing three to four
+ * 66% and breaks 13% at moderate noise, and 82% against 10% at light noise — fixing five to eight
  * times more often than it errs. The cognitive-misspelling scorecard in [EngineEvaluationTest]
- * shows the reverse (33% fixed against 36% wrong), and it was tempting to read that as the engine
+ * shows the reverse (32% fixed against 38% wrong), and it was tempting to read that as the engine
  * being broken. It is measuring a different, much harder problem: "definately" is four edits and a
  * cross-keyboard substitution from its target, and a phone keyboard is not mainly in that business.
  *

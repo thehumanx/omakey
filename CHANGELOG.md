@@ -3,6 +3,70 @@
 All notable changes to omakey are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [4.0.0] — 2026-09-11
+
+The keyboard can now be moved, floated and resized from the keyboard itself, autocorrect can fix
+the first letter of a word, and undo finally treats a paste as one thing.
+
+### Added
+- **Quick access** — a new button at the left of the suggestion strip opens a panel with
+  One-handed, Floating, Resize, Theme and Settings. These are decisions you make while looking at
+  whatever you're typing into, so they no longer live buried in Settings.
+- **Floating keyboard.** Detach it and put it anywhere on screen. The app underneath stays visible
+  *and* tappable — tapping outside the keyboard reaches the app, and the app isn't pushed up the
+  way a normal keyboard pushes it.
+- **One-handed mode.** Shrinks the keyboard to the left or right so a thumb can reach every key,
+  with buttons alongside it to switch sides, go back to full width, or resize.
+- **Resize from the keyboard**, by dragging its corners, in whatever mode you're currently in.
+  Each mode remembers its own size — resizing while floating doesn't change your normal keyboard.
+- **Emoji skin tone** (Settings → Appearance) — six tones, shown as real emoji rather than colour
+  chips, applied to hands, faces and people everywhere emoji appear.
+- **"Add padding"** (Settings → Appearance) — leaves a gap down the left and right edges so the
+  outer keys aren't flush against a curved or bezel-less screen edge.
+- **A live keyboard preview in Settings**, right under the Normal/Grid picker. It reflects your
+  theme, font, key backgrounds, home-row highlight, capitalization and padding as you change them.
+- **Two new fonts** — Solway and Aleo.
+
+### Fixed
+- **Autocorrect couldn't fix the first letter of a word.** "qccount" never suggested "account",
+  "hte" never became "the", "gome" never became "home" — the intended word was simply never
+  looked at if its first letter differed. It is now, where the slip is plausible: a neighbouring
+  key, a stray leading character, two letters swapped, or a first letter missed entirely. On
+  realistic phone typing this fixes **substantially more** typos while making **fewer** wrong
+  corrections.
+- **Undoing a paste removed it a word at a time.** Pasting a paragraph and undoing chewed
+  backwards through it in fragments, because paste was never recorded as an edit at all. A paste,
+  a cut, deleting a selection, an emoji, or anything inserted from the clipboard panel is now one
+  undo step, however much text it moved — matching how Windows and macOS have always done it.
+- **The keyboard remembered words you'd just rejected.** Typing "shoukd", noticing, and fixing it
+  still left "shoukd" learned. A word now has to survive — anything suggesting it wasn't what you
+  meant (a backspace, a correction, an undo) discards it instead.
+- **Words were half-learned after a single use.** A word typed once nudged your suggestions and
+  showed up under "Learned words" even though autocorrect didn't trust it yet. Nothing counts as
+  learned until its third clean use now — one threshold instead of two. (Trade-off: a name typed
+  once won't complete until you've used it a few times.)
+- **The "Accent" theme had nothing to do with your device's accent colour.** It was a fixed indigo
+  palette that happened to share a name with the "pick accent colour from system" switch — turning
+  that switch on gave you one wallpaper-coloured key on an indigo keyboard. Accent now genuinely
+  is your device's Material You palette, surfaces included, and follows your system light/dark
+  setting too.
+- **The system accent colour was read at a single fixed shade**, so it never actually matched the
+  accent you see elsewhere in Android, and had poor contrast in one theme or the other. It now
+  uses the shade Android itself uses, picked for whether your keyboard is light or dark, with a
+  matching label colour so keys stay readable.
+- **The delete-word shimmer disappeared when the home-row highlight was off.** They're unrelated
+  features that happened to share a switch.
+- **The Settings keyboard preview was missing its outline** in Grid mode.
+
+### Changed
+- **Settings reorganised.** "Show key press popup" moved to Typing (it's feedback while typing, not
+  a static look); "Keyboard size & position" and "Always show capital letters" moved to Appearance,
+  next to the preview that shows them.
+- Undo now applies in one step rather than character by character, so undoing a long paste no
+  longer visibly unwinds.
+- Settings is reachable from the keyboard itself, via Quick access — previously only by
+  long-pressing the extensions key.
+
 ## [3.0.0] — 2026-09-03
 
 ### Fixed

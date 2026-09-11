@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -24,9 +25,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -47,6 +50,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.changedToDownIgnoreConsumed
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
@@ -65,8 +70,12 @@ import dev.omakey.core.gesture.KeyHitTester
 import dev.omakey.core.gesture.SwipeDirection
 import dev.omakey.core.gesture.TouchAction
 import dev.omakey.core.gesture.TouchSample
+import kotlin.math.roundToInt
 import dev.omakey.core.layout.KeyDefinition
+import dev.omakey.core.layout.KeyboardPlacement
+import dev.omakey.core.layout.KeyboardPlacementGeometry
 import dev.omakey.core.layout.KeyRow as LayoutKeyRow
+import dev.omakey.core.layout.LayoutSettings
 import dev.omakey.core.layout.Layouts
 import dev.omakey.core.layout.SpecialKeyCode
 import dev.omakey.core.layout.computeKeyWidthsPx
@@ -122,7 +131,7 @@ private val GRID_BORDER_WIDTH = 1.5.dp
  * kept in the render layer, not `core`, since `Dp` is a Compose UI type (see `GridBorderWidth`'s
  * own doc in `OmakeyTheme.kt`). MD matches [GRID_BORDER_WIDTH], the value every border already
  * used before this became user-configurable. */
-private fun dev.omakey.core.theme.GridBorderWidth.toDp(): androidx.compose.ui.unit.Dp = when (this) {
+internal fun dev.omakey.core.theme.GridBorderWidth.toDp(): androidx.compose.ui.unit.Dp = when (this) {
     dev.omakey.core.theme.GridBorderWidth.SM -> 1.dp
     dev.omakey.core.theme.GridBorderWidth.MD -> GRID_BORDER_WIDTH
     dev.omakey.core.theme.GridBorderWidth.LG -> 2.5.dp
@@ -150,7 +159,7 @@ private fun Modifier.gridCellBorder(color: Color, strokeWidth: androidx.compose.
  * exactly that reason. Still applied directly on `TopStrip`'s own element (not a separate
  * ancestor) via `drawWithContent`, same "must be the same element that owns the background" lesson
  * as everywhere else here — this one just also needs to leave one side out. */
-private fun Modifier.gridBorderExceptBottom(color: Color, strokeWidth: androidx.compose.ui.unit.Dp = GRID_BORDER_WIDTH): Modifier = this.drawWithContent {
+internal fun Modifier.gridBorderExceptBottom(color: Color, strokeWidth: androidx.compose.ui.unit.Dp = GRID_BORDER_WIDTH): Modifier = this.drawWithContent {
     drawContent()
     val strokePx = strokeWidth.toPx()
     val half = strokePx / 2f
@@ -174,6 +183,11 @@ fun KeyboardRoot(
     accessibilityPreferences: AccessibilityPreferences? = null,
     onOpenSettings: () -> Unit = {},
     feedback: KeyboardFeedback = NoOpKeyboardFeedback,
+    /** Reports the keyboard's own rectangle, in window coordinates, every time it is laid out.
+     * `OmakeyInputMethodService` needs it to mark exactly that region touchable while floating —
+     * everything outside must fall through to the app. Defaulted to a no-op so previews and the
+     * Settings mock can host this composable without a service. */
+    onKeyboardBoundsChanged: (androidx.compose.ui.geometry.Rect) -> Unit = {},
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val theme = resolveEffectiveTheme(uiState.theme, uiState.useSystemAccent)
@@ -256,17 +270,83 @@ fun KeyboardRoot(
 
     val layoutSettings = uiState.layoutSettings
     val effectiveRows = uiState.layout.rows
+
+    // --- placement ---------------------------------------------------------------------------
+    // Size and position live here as *local* state seeded from preferences, not read straight off
+    // them, so a resize drag repaints every frame without writing to SharedPreferences every frame.
+    // Committed on drag end, exactly like Settings' own KeyboardSizePositionOverlay.
+    val configuration = androidx.compose.ui.platform.LocalConfiguration.current
+    val screenWidthDp = configuration.screenWidthDp
+    val screenHeightDp = configuration.screenHeightDp
+    val placement = layoutSettings.placement
+    val place = rememberPlacementState(viewModel, layoutSettings, screenWidthDp, screenHeightDp)
+
     // Row height is derived from each layout's own BASE row count (always 4, for both letters and
     // symbols — QwertyEnUS.rows.size), so keys are always the same size regardless of which
-    // layout is active.
-    val rowHeightDp = layoutSettings.keyboardHeightDp / Layouts.QwertyEnUS.rows.size
+    // layout is active. The *height* it divides is the current placement's own — a floating
+    // keyboard has its own height, which is what makes "resize in the current mode" work without
+    // any mode-specific code down here.
+    val rowHeightDp = place.keyboardHeightDp / Layouts.QwertyEnUS.rows.size
     val gridHeightDp = rowHeightDp * effectiveRows.size
     // The "home row" (asdfghjkl) is always the second row of the base QWERTY layout.
     val homeRowIndex = if (uiState.layout.id == Layouts.QwertyEnUS.id) 1 else -1
 
-    Column(
+    // Everything below sits inside a placement container. Docked, it is a plain wrapper and the
+    // keyboard fills it exactly as before. Floating, it is a tall transparent area the keyboard is
+    // positioned within — which only works because onComputeInsets tells the system the IME
+    // occupies no space and only the keyboard's own bounds are touchable (see
+    // OmakeyInputMethodService.onComputeInsets). One-handed, it is full width with the keyboard
+    // pushed to one side and the gutter holding its side buttons.
+    Box(
         modifier = Modifier
             .fillMaxWidth()
+            .then(
+                if (placement == KeyboardPlacement.FLOATING) {
+                    // Exactly tall enough to hold the keyboard at its current height off the
+                    // bottom — no taller. A window bigger than it needs to be is more screen the
+                    // system has to treat as ours, and more that can go wrong in a host app.
+                    Modifier.height((place.floatingBottomDp + SUGGESTION_STRIP_HEIGHT_DP + gridHeightDp).dp)
+                } else {
+                    Modifier.wrapContentHeight()
+                },
+            ),
+    ) {
+        if (placement.isOneHanded) {
+            OneHandedGutter(
+                viewModel = viewModel,
+                theme = theme,
+                placement = placement,
+                heightDp = SUGGESTION_STRIP_HEIGHT_DP + gridHeightDp,
+                modifier = Modifier.align(
+                    if (placement == KeyboardPlacement.ONE_HANDED_LEFT) Alignment.TopEnd else Alignment.TopStart,
+                ),
+            )
+        }
+
+    Column(
+        modifier = Modifier
+            .align(
+                when {
+                    placement == KeyboardPlacement.FLOATING -> Alignment.BottomStart
+                    placement == KeyboardPlacement.ONE_HANDED_LEFT -> Alignment.TopStart
+                    placement == KeyboardPlacement.ONE_HANDED_RIGHT -> Alignment.TopEnd
+                    else -> Alignment.TopStart
+                },
+            )
+            .then(
+                when {
+                    placement == KeyboardPlacement.FLOATING ->
+                        Modifier
+                            .offset(x = place.floatingXDp.dp, y = (-place.floatingBottomDp).dp)
+                            .width(place.widthDp.dp)
+                    placement.isOneHanded -> Modifier.width(place.widthDp.dp)
+                    else -> Modifier.fillMaxWidth()
+                },
+            )
+            // The keyboard's own bounds, reported to the service so it can mark exactly this
+            // rectangle as the touchable region while floating. Everything outside it must reach
+            // the app underneath, which is the whole point of floating.
+            .onGloballyPositioned { onKeyboardBoundsChanged(it.boundsInWindow()) }
             .background(theme.keyboardBackground.toComposeColor())
             // Leaves a gap for the system gesture pill / 3-button nav bar instead of drawing under
             // it — without this the bottom row (and the extension panel's close button) can sit
@@ -276,7 +356,30 @@ fun KeyboardRoot(
             // right edge-gesture insets too — invisible in Normal mode (no border to reveal it)
             // but a very visible dark gutter down both sides once Grid mode's bordered cells make
             // "the keyboard isn't actually full-width" obvious.
-            .windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom)),
+            // Docked only: floating and one-handed keyboards are positioned by the user, and a
+            // system-inset gap under a keyboard sitting in the middle of the screen is just a
+            // stray band of keyboard colour.
+            .then(
+                if (placement == KeyboardPlacement.DOCKED) {
+                    Modifier.windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom))
+                } else {
+                    Modifier
+                },
+            )
+            // Optional gutters down both sides, so the outermost keys don't sit flush against a
+            // curved/bezel-less edge. Applied here rather than per-row so the suggestion strip and
+            // extension panels line up with the keys instead of running wider than them. Inside
+            // the background above, not outside it, so the gutters are keyboard-coloured rather
+            // than punching a hole through to the host app.
+            // Edge padding compensates for a screen edge, so it only means anything when the
+            // keyboard is actually against one.
+            .padding(
+                horizontal = if (layoutSettings.edgePadding && placement == KeyboardPlacement.DOCKED) {
+                    LayoutSettings.EDGE_PADDING_DP.dp
+                } else {
+                    0.dp
+                },
+            ),
     ) {
         // Which of the 3 "TopStrip is visible" bottom-content modes is active — used only to
         // drive the Crossfade below, not the branching itself (that's still the same explicit
@@ -292,6 +395,10 @@ fun KeyboardRoot(
         // strip, and it's only ever visible for the same single continuous touch that opened it
         // (see KeyGrid's own doc), so there's no persistent "popup open" state to branch on here.
         val bottomContentMode = when {
+            // Checked before the extension cases: the two share this slot and the view model
+            // already clears one when the other opens, so this ordering only decides a race that
+            // cannot happen — but it decides it the way the user's last tap intended.
+            uiState.quickAccessOpen -> "quick-access"
             uiState.activeExtensionId == EMOJI_EXTENSION_ID -> "emoji"
             uiState.activeExtensionId == CLIPBOARD_EXTENSION_ID -> "clipboard"
             uiState.activeExtensionId == null -> "keys"
@@ -319,15 +426,16 @@ fun KeyboardRoot(
                 // its bottom, so the extension switcher's own header row (clipboard/emoji/
                 // keyboard icons) is redundant here — keep the normal suggestions/tools/numbers
                 // top strip instead, exactly like the regular typing view.
-                "emoji" -> TopStrip(viewModel = viewModel, uiState = uiState, theme = theme, fontFamily = fontFamily, feedback = feedback)
+                "emoji" -> TopStrip(viewModel = viewModel, uiState = uiState, theme = theme, fontFamily = fontFamily, feedback = feedback, quickAccessOpen = uiState.quickAccessOpen)
                 // Locked to the Tools page with everything except Clipboard dimmed and swiping
                 // between pages disabled — the top strip becomes a single-purpose "you're in
                 // clipboard mode" bar. Tapping the (still enabled) Clipboard icon again exits.
                 "clipboard" -> TopStrip(
                     viewModel = viewModel, uiState = uiState, theme = theme, fontFamily = fontFamily,
                     feedback = feedback, clipboardModeActive = true,
+                    quickAccessOpen = uiState.quickAccessOpen,
                 )
-                else -> TopStrip(viewModel = viewModel, uiState = uiState, theme = theme, fontFamily = fontFamily, feedback = feedback)
+                else -> TopStrip(viewModel = viewModel, uiState = uiState, theme = theme, fontFamily = fontFamily, feedback = feedback, quickAccessOpen = uiState.quickAccessOpen)
             }
             // A short directional slide for the region below the top strip when switching between
             // the normal keyboard and the emoji/clipboard panels — entering a panel slides up,
@@ -380,6 +488,15 @@ fun KeyboardRoot(
                     label = "bottom-content-mode",
                 ) { mode ->
                 when (mode) {
+                    "quick-access" -> QuickAccessPanel(
+                        viewModel = viewModel,
+                        theme = theme,
+                        fontFamily = fontFamily,
+                        feedback = feedback,
+                        placement = placement,
+                        heightDp = gridHeightDp,
+                        onOpenSettings = onOpenSettings,
+                    )
                     "emoji", "clipboard" -> ExtensionPanelSlot(viewModel = viewModel, heightDp = gridHeightDp, showHeaderRow = false)
                     else -> KeyGrid(
                         viewModel = viewModel,
@@ -438,7 +555,11 @@ fun KeyboardRoot(
         // "placement mode" in Settings (see SettingsActivity's KeyboardPlacementOverlay) rather
         // than a plain height slider — raises the whole keyboard for easier one-handed thumb
         // reach. Zero by default (no visual change for anyone who hasn't opted in).
-        if (layoutSettings.bottomOffsetDp > 0) {
+        //
+        // Docked only: floating and one-handed keyboards are already positioned by the user, and
+        // a second, invisible offset fighting with that position is how "I moved it and it didn't
+        // go where I put it" bugs happen.
+        if (layoutSettings.bottomOffsetDp > 0 && placement == KeyboardPlacement.DOCKED) {
             Box(
                 Modifier
                     .fillMaxWidth()
@@ -446,7 +567,25 @@ fun KeyboardRoot(
                     .background(theme.keyboardBackground.toComposeColor()),
             )
         }
-    }
+    } // keyboard Column
+
+        // Drawn over the keyboard, inside the placement container so its handles sit on the
+        // keyboard's real edges whatever mode it is in.
+        if (uiState.resizing) {
+            ResizeOverlay(
+                viewModel = viewModel,
+                theme = theme,
+                placement = placement,
+                place = place,
+                totalHeightDp = SUGGESTION_STRIP_HEIGHT_DP + gridHeightDp,
+                edgePaddingDp = if (layoutSettings.edgePadding && placement == KeyboardPlacement.DOCKED) {
+                    LayoutSettings.EDGE_PADDING_DP
+                } else {
+                    0
+                },
+            )
+        }
+    } // placement container
 }
 
 /** Tracks a single continuous long-press-and-drag on a key with `popupChars` (accents/punctuation
@@ -851,7 +990,8 @@ private fun KeyGrid(
                     theme = theme,
                     accessibleMode = accessibleMode,
                     showKeyBackgrounds = layoutSettings.showKeyBackgrounds,
-                    isHomeRow = layoutSettings.showMiddleRowStripe && rowIndex == homeRowIndex,
+                    isHomeRow = rowIndex == homeRowIndex,
+                    homeRowTinted = layoutSettings.showMiddleRowStripe,
                     onKeyTap = onKeyTapStable,
                     ancestorCoordinates = ancestorCoordinatesStable,
                     onBoundsMeasured = onBoundsMeasuredStable,
@@ -1158,7 +1298,12 @@ internal fun KeyRowView(
     theme: OmakeyTheme,
     accessibleMode: Boolean,
     showKeyBackgrounds: Boolean,
+    // Structural: is this *the* home row of this layout. Deliberately separate from
+    // [homeRowTinted], which is the user's "Home row highlight" setting. Conflating the two meant
+    // turning the highlight off also silenced the swipe-left delete shimmer below, which is a
+    // different feature that merely happens to be drawn on the same row — real bug, fixed.
     isHomeRow: Boolean,
+    homeRowTinted: Boolean = true,
     onKeyTap: (Int) -> Unit,
     ancestorCoordinates: () -> androidx.compose.ui.layout.LayoutCoordinates?,
     onBoundsMeasured: (List<Triple<Int, KeyDefinition, Rect>>) -> Unit,
@@ -1195,7 +1340,7 @@ internal fun KeyRowView(
         Modifier
             .fillMaxWidth()
             .height(rowHeightDp.dp)
-            .let { m -> if (isHomeRow) m.background(theme.middleRowStripeColor.toComposeColor()) else m }
+            .let { m -> if (isHomeRow && homeRowTinted) m.background(theme.middleRowStripeColor.toComposeColor()) else m }
             .let { m ->
                 if (isHomeRow && shimmerProgress > 0f) {
                     m.then(
@@ -1283,13 +1428,16 @@ internal fun KeyRowView(
                 val isCapsLockKey = key.code == SpecialKeyCode.SHIFT && capsLockOn
                 val isPressed = pressedKeyCode == key.code
                 val isGridMode = dev.omakey.core.theme.LocalKeyboardLayoutMode.current == dev.omakey.core.theme.LayoutMode.GRID
-                val keyBackground = when {
+                // Kept as a ColorSpec rather than resolved straight to a Compose Color, because
+                // the label colour below has to be chosen against whatever this works out to —
+                // see theme.labelOn. Null means the key paints no fill of its own.
+                val keyBackgroundSpec = when {
                     // Grid mode's whole point is a solid fill on press, so it takes priority over
                     // every other background rule here (including the spacebar's own accent color
                     // and the "borderless" showKeyBackgrounds toggle, which is a Normal-mode-only
                     // preference — a borderless grid isn't a grid).
-                    isGridMode && isPressed -> theme.keyBackgroundPressed.toComposeColor()
-                    isSpace -> theme.spacebarAccentColor.toComposeColor()
+                    isGridMode && isPressed -> theme.keyBackgroundPressed
+                    isSpace -> theme.spacebarAccentColor
                     // Caps lock gets its own persistent highlight, same visual language as a
                     // physical caps-lock LED — distinguishes "locked on" from a plain momentary
                     // press, which only brightens the icon (see isPressed below). Uses
@@ -1299,18 +1447,19 @@ internal fun KeyRowView(
                     // small nudge off the base key color (see buildCustomTheme's smallNudge),
                     // which read as flat, barely-distinguishable "weird grey" instead of a clear
                     // locked-on indicator (real bug report).
-                    isCapsLockKey -> theme.keyBackgroundPressed.toComposeColor()
-                    !isGridMode && !showKeyBackgrounds -> Color.Transparent
+                    isCapsLockKey -> theme.keyBackgroundPressed
+                    !isGridMode && !showKeyBackgrounds -> null
                     // Grid mode deliberately has only 4 meaningfully distinct colors — background,
                     // border, spacebar accent, and the home-row tint below — not a separate "key
                     // color"/"special key color" on top. Real user feedback: keeping keyBackground
                     // and keySpecialBackground as distinct fields there just meant two theme
                     // settings doing the same visual job (every cell is "boxed" by its border
                     // regardless of key type), for no benefit.
-                    isGridMode -> theme.keyboardBackground.toComposeColor()
-                    key.keyType == dev.omakey.core.layout.KeyType.SPECIAL -> theme.keySpecialBackground.toComposeColor()
-                    else -> theme.keyBackground.toComposeColor()
+                    isGridMode -> theme.keyboardBackground
+                    key.keyType == dev.omakey.core.layout.KeyType.SPECIAL -> theme.keySpecialBackground
+                    else -> theme.keyBackground
                 }
+                val keyBackground = keyBackgroundSpec?.toComposeColor() ?: Color.Transparent
                 val keyDescription = if (key.code == SpecialKeyCode.ENTER) describeKey(key, enterAction) else describeKey(key)
                 // Grid mode: no gap between cells, square corners, and a hairline border in
                 // theme.gridBorderColor — the same single color, at full opacity, on every key
@@ -1347,7 +1496,7 @@ internal fun KeyRowView(
                         // cases. middleRowStripeColor is a low-alpha tint by design (see
                         // OmakeyTheme's own preset values), so drawing it as a second background
                         // layer composites correctly over whatever's already filled.
-                        .let { m -> if (isGridMode && isHomeRow) m.background(theme.middleRowStripeColor.toComposeColor(), keyShapeForMode) else m }
+                        .let { m -> if (isGridMode && isHomeRow && homeRowTinted) m.background(theme.middleRowStripeColor.toComposeColor(), keyShapeForMode) else m }
                         .let { m -> if (isGridMode) m.gridCellBorder(gridBorderColor, theme.gridBorderWidth.toDp(), includeBottom = gridCellBottomBorder) else m },
                     contentAlignment = Alignment.Center,
                 ) {
@@ -1358,10 +1507,16 @@ internal fun KeyRowView(
                     // control keys as secondary, plus gives a clear "yes, I registered your
                     // press" cue for keys like backspace that have no other visual feedback.
                     val isDimmable = key.keyType == dev.omakey.core.layout.KeyType.SPECIAL && !isSpace
+                    // Resolved against whatever this key's background actually turned out to be:
+                    // the spacebar, a pressed grid cell and the caps-lock key can all be carrying a
+                    // system accent colour that theme.keyTextColor was never chosen against, and
+                    // drawing the label in it regardless is how a label ends up invisible. For
+                    // every preset this returns keyTextColor unchanged — see OmakeyTheme.labelOn.
+                    val labelColor = theme.labelOn(keyBackgroundSpec ?: theme.keyboardBackground).toComposeColor()
                     val tint = when {
                         isActiveShift -> theme.keyBackgroundPressed.toComposeColor()
-                        isDimmable && !isPressed -> theme.keyTextColor.toComposeColor().copy(alpha = 0.5f)
-                        else -> theme.keyTextColor.toComposeColor()
+                        isDimmable && !isPressed -> labelColor.copy(alpha = 0.5f)
+                        else -> labelColor
                     }
                     val icon = keyIcon(key, capsLockOn, enterAction)
                     if (icon != null) {
@@ -1405,6 +1560,7 @@ private fun TopStrip(
     fontFamily: androidx.compose.ui.text.font.FontFamily?,
     feedback: KeyboardFeedback,
     clipboardModeActive: Boolean = false,
+    quickAccessOpen: Boolean = false,
 ) {
     val pagerState = androidx.compose.foundation.pager.rememberPagerState(
         initialPage = if (clipboardModeActive) 2 else tabToPage(uiState.topStripTab),
@@ -1450,6 +1606,13 @@ private fun TopStrip(
             // bug, fixed — reported as "the border above QWERTY is thicker than the others").
             .let { m -> if (isGridMode) m.gridBorderExceptBottom(theme.gridBorderColor.toComposeColor(), theme.gridBorderWidth.toDp()) else m },
     ) {
+        // Row, not the bare pager it used to be: the quick-access button is pinned at the left and
+        // the three swipeable pages take the rest. Pinned rather than being a fourth page, because
+        // it must be reachable in one tap from whichever page the user is on — a page you have to
+        // swipe to is not quick access. Costs ~44dp of suggestion width, the same trade Gboard makes.
+        Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+            QuickAccessButton(theme = theme, viewModel = viewModel, feedback = feedback, active = quickAccessOpen)
+            Box(Modifier.weight(1f).fillMaxHeight()) {
         androidx.compose.foundation.pager.HorizontalPager(
             state = pagerState,
             modifier = Modifier.fillMaxSize(),
@@ -1492,6 +1655,56 @@ private fun TopStrip(
                 )
             }
         }
+            }
+        }
+    }
+}
+
+/** The nine-dot button at the left of the top strip. Highlighted while its panel is open, so it
+ * reads as a toggle rather than a one-way door — tapping it again is how the panel closes. */
+@Composable
+private fun QuickAccessButton(
+    theme: OmakeyTheme,
+    viewModel: KeyboardViewModel,
+    feedback: KeyboardFeedback,
+    active: Boolean,
+) {
+    val isGridMode = dev.omakey.core.theme.LocalKeyboardLayoutMode.current == dev.omakey.core.theme.LayoutMode.GRID
+    val interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val background = if (active || isPressed) theme.keyBackgroundPressed else theme.keySpecialBackground
+    Box(
+        Modifier
+            .fillMaxHeight()
+            .width(44.dp)
+            .padding(if (isGridMode) 0.dp else 6.dp)
+            .let { m ->
+                if (isGridMode) {
+                    m.background(background.toComposeColor())
+                        .gridCellBorder(theme.gridBorderColor.toComposeColor(), theme.gridBorderWidth.toDp(), includeBottom = false)
+                } else if (active || isPressed) {
+                    m.background(background.toComposeColor(), androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                } else {
+                    m
+                }
+            }
+            .clickable(
+                interactionSource = interactionSource,
+                indication = if (isGridMode) null else androidx.compose.foundation.LocalIndication.current,
+            ) { feedback.onKeyPress(); viewModel.toggleQuickAccess() }
+            .semantics { contentDescription = if (active) "Close quick access" else "Quick access" },
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = PhosphorQuickAccess,
+            contentDescription = null,
+            tint = if (active || isGridMode || isPressed) {
+                theme.labelOn(background).toComposeColor()
+            } else {
+                theme.keyTextColor.toComposeColor()
+            },
+            modifier = Modifier.size(20.dp),
+        )
     }
 }
 
@@ -1988,6 +2201,480 @@ private fun ExtensionPanelSlot(viewModel: KeyboardViewModel, heightDp: Int, show
                     }.onFailure { failed = true }
                 }
             }
+        }
+    }
+}
+
+/**
+ * Live size/position for the current placement, seeded from preferences and mutated by resize
+ * drags.
+ *
+ * Local state rather than reading [LayoutSettings] directly, because a drag updates this on every
+ * frame and preferences are a SharedPreferences write plus a StateFlow emission plus a
+ * recomposition of everything that observes them — fine once per gesture ([commit]), not sixty
+ * times a second. Same split Settings' own `KeyboardSizePositionOverlay` already uses.
+ *
+ * Every setter clamps through [KeyboardPlacementGeometry], so there is no path by which a drag can
+ * leave the keyboard off screen or too small to type on, whatever order the user drags in.
+ */
+@androidx.compose.runtime.Stable
+private class PlacementState(
+    private val settings: LayoutSettings,
+    private val screenWidthDp: Int,
+    private val screenHeightDp: Int,
+    private val onCommit: (width: Int, height: Int, x: Int, y: Int) -> Unit,
+) {
+    private val placement = settings.placement
+
+    var widthDp by androidx.compose.runtime.mutableFloatStateOf(
+        when {
+            placement == KeyboardPlacement.FLOATING ->
+                KeyboardPlacementGeometry.clampFloatingWidth(settings.floatingWidthDp, screenWidthDp).toFloat()
+            placement.isOneHanded ->
+                KeyboardPlacementGeometry.clampOneHandedWidth(settings.oneHandedWidthDp, screenWidthDp).toFloat()
+            else -> screenWidthDp.toFloat()
+        },
+    )
+        private set
+
+    var keyboardHeightDpFloat by androidx.compose.runtime.mutableFloatStateOf(
+        if (placement == KeyboardPlacement.FLOATING) {
+            KeyboardPlacementGeometry.clampFloatingHeight(settings.floatingHeightDp, screenHeightDp).toFloat()
+        } else {
+            settings.keyboardHeightDp.toFloat()
+        },
+    )
+        private set
+
+    /** Left edge, from the window's left. Only meaningful while floating. */
+    var floatingXDpFloat by androidx.compose.runtime.mutableFloatStateOf(
+        (
+            settings.floatingXDp.takeIf { it != LayoutSettings.UNSET_POSITION }
+                // Never positioned before — centre it rather than dropping it in a corner the user
+                // then has to drag it out of.
+                ?: KeyboardPlacementGeometry.defaultFloatingX(
+                    KeyboardPlacementGeometry.clampFloatingWidth(settings.floatingWidthDp, screenWidthDp),
+                    screenWidthDp,
+                )
+            ).toFloat(),
+    )
+        private set
+
+    /** Bottom edge, measured *up* from the window's bottom. See clampFloatingY's doc for why up. */
+    var floatingBottomDpFloat by androidx.compose.runtime.mutableFloatStateOf(settings.floatingYDp.toFloat())
+        private set
+
+    val keyboardHeightDp: Int get() = keyboardHeightDpFloat.roundToInt()
+    val floatingXDp: Int get() = floatingXDpFloat.roundToInt()
+    val floatingBottomDp: Int get() = floatingBottomDpFloat.roundToInt()
+
+    private val totalHeightDp: Float get() = keyboardHeightDpFloat + SUGGESTION_STRIP_HEIGHT_DP
+
+    fun resizeWidth(deltaDp: Float) {
+        widthDp = when {
+            placement == KeyboardPlacement.FLOATING ->
+                KeyboardPlacementGeometry.clampFloatingWidth((widthDp + deltaDp).roundToInt(), screenWidthDp).toFloat()
+            placement.isOneHanded ->
+                KeyboardPlacementGeometry.clampOneHandedWidth((widthDp + deltaDp).roundToInt(), screenWidthDp).toFloat()
+            else -> widthDp // docked is always full width; nothing to drag
+        }
+    }
+
+    fun resizeHeight(deltaDp: Float) {
+        val next = keyboardHeightDpFloat + deltaDp
+        keyboardHeightDpFloat = if (placement == KeyboardPlacement.FLOATING) {
+            KeyboardPlacementGeometry.clampFloatingHeight(next.roundToInt(), screenHeightDp).toFloat()
+        } else {
+            next.coerceIn(LayoutSettings.MIN_HEIGHT_DP.toFloat(), LayoutSettings.MAX_HEIGHT_DP.toFloat())
+        }
+    }
+
+    fun move(deltaXDp: Float, deltaYDp: Float) {
+        if (placement != KeyboardPlacement.FLOATING) return
+        floatingXDpFloat = KeyboardPlacementGeometry
+            .clampFloatingX((floatingXDpFloat + deltaXDp).roundToInt(), widthDp.roundToInt(), screenWidthDp).toFloat()
+        // Dragging the finger *down* (positive y) lowers the keyboard, which decreases a value
+        // measured upward from the bottom — hence the subtraction.
+        floatingBottomDpFloat = KeyboardPlacementGeometry
+            .clampFloatingY((floatingBottomDpFloat - deltaYDp).roundToInt(), totalHeightDp.roundToInt(), screenHeightDp)
+            .toFloat()
+    }
+
+    fun commit() = onCommit(widthDp.roundToInt(), keyboardHeightDp, floatingXDp, floatingBottomDp)
+}
+
+/** Keyed on the settings that seed it, so an external change (Settings, or switching placement)
+ * re-seeds rather than leaving stale local values on screen. */
+@Composable
+private fun rememberPlacementState(
+    viewModel: KeyboardViewModel,
+    settings: LayoutSettings,
+    screenWidthDp: Int,
+    screenHeightDp: Int,
+): PlacementState = remember(
+    viewModel,
+    settings.placement,
+    settings.floatingWidthDp,
+    settings.floatingHeightDp,
+    settings.floatingXDp,
+    settings.floatingYDp,
+    settings.oneHandedWidthDp,
+    settings.keyboardHeightDp,
+    screenWidthDp,
+    screenHeightDp,
+) {
+    PlacementState(settings, screenWidthDp, screenHeightDp, viewModel::commitPlacementBounds)
+}
+
+/** One quick-access tile: icon over label, in a 4-column grid. */
+private data class QuickTile(
+    val label: String,
+    val icon: ImageVector,
+    val active: Boolean,
+    val onClick: () -> Unit,
+)
+
+/**
+ * The panel behind the quick-access button — the keyboard's own home for decisions about *where it
+ * sits*, which are made while looking at the app being typed into and so have no business being in
+ * Settings.
+ *
+ * Occupies the key-grid slot (same one the extension panels use) rather than floating over the
+ * keys: these tiles change the keyboard's size and position, and a panel overlapping the thing it
+ * is about would hide the result of every tap.
+ *
+ * A tile for the mode you are already in is highlighted and switches back to docked, so each is its
+ * own off switch — no separate "back to normal" control to find.
+ */
+@Composable
+private fun QuickAccessPanel(
+    viewModel: KeyboardViewModel,
+    theme: OmakeyTheme,
+    fontFamily: androidx.compose.ui.text.font.FontFamily?,
+    feedback: KeyboardFeedback,
+    placement: KeyboardPlacement,
+    heightDp: Int,
+    onOpenSettings: () -> Unit,
+) {
+    val isGridMode = dev.omakey.core.theme.LocalKeyboardLayoutMode.current == dev.omakey.core.theme.LayoutMode.GRID
+    val tiles = listOf(
+        QuickTile("One-handed", PhosphorOneHanded, placement.isOneHanded) {
+            feedback.onKeyPress(); viewModel.toggleOneHanded()
+        },
+        QuickTile("Floating", PhosphorFloating, placement == KeyboardPlacement.FLOATING) {
+            feedback.onKeyPress(); viewModel.setPlacement(KeyboardPlacement.FLOATING)
+        },
+        QuickTile("Resize", PhosphorResize, false) {
+            feedback.onKeyPress(); viewModel.setResizing(true)
+        },
+        QuickTile("Theme", PhosphorPalette, false) {
+            feedback.onKeyPress(); viewModel.cycleTheme()
+        },
+        QuickTile("Settings", PhosphorGear, false) {
+            feedback.onKeyPress(); viewModel.closeQuickAccess(); onOpenSettings()
+        },
+    )
+
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .height(heightDp.dp)
+            .background(theme.keyboardBackground.toComposeColor()),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().height(32.dp).padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            val backInteraction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+            Box(
+                Modifier
+                    .fillMaxHeight()
+                    .clickable(
+                        interactionSource = backInteraction,
+                        indication = if (isGridMode) null else androidx.compose.foundation.LocalIndication.current,
+                    ) { feedback.onKeyPress(); viewModel.closeQuickAccess() }
+                    .padding(horizontal = 6.dp)
+                    .semantics { contentDescription = "Close quick access" },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = PhosphorArrowLeft,
+                    contentDescription = null,
+                    tint = theme.keyTextColor.toComposeColor(),
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+            Text(
+                text = "Quick access",
+                color = theme.keyTextColor.toComposeColor().copy(alpha = 0.7f),
+                fontFamily = fontFamily,
+                fontSize = 12.sp,
+                modifier = Modifier.padding(start = 4.dp),
+            )
+        }
+        androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
+            columns = androidx.compose.foundation.lazy.grid.GridCells.Fixed(4),
+            modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 8.dp),
+        ) {
+            gridItems(tiles) { tile ->
+                val interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                val isPressed by interactionSource.collectIsPressedAsState()
+                val background = when {
+                    tile.active -> theme.keyBackgroundPressed
+                    isPressed -> theme.keyBackgroundPressed
+                    else -> theme.keySpecialBackground
+                }
+                Column(
+                    modifier = Modifier
+                        .padding(4.dp)
+                        .fillMaxWidth()
+                        .height(64.dp)
+                        .background(
+                            background.toComposeColor(),
+                            androidx.compose.foundation.shape.RoundedCornerShape(if (isGridMode) 0.dp else 10.dp),
+                        )
+                        .clickable(
+                            interactionSource = interactionSource,
+                            indication = if (isGridMode) null else androidx.compose.foundation.LocalIndication.current,
+                            onClick = tile.onClick,
+                        )
+                        .semantics { contentDescription = tile.label },
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
+                ) {
+                    Icon(
+                        imageVector = tile.icon,
+                        contentDescription = null,
+                        // Resolved against this tile's own fill, which for an active tile is the
+                        // accent colour — see OmakeyTheme.labelOn.
+                        tint = theme.labelOn(background).toComposeColor(),
+                        modifier = Modifier.size(22.dp),
+                    )
+                    Text(
+                        text = tile.label,
+                        color = theme.labelOn(background).toComposeColor(),
+                        fontFamily = fontFamily,
+                        fontSize = 10.sp,
+                        modifier = Modifier.padding(top = 6.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The narrow column of buttons filling the space a one-handed keyboard leaves behind — switch
+ * side, expand back to full width, resize. Same three Gboard puts there, and for the same reason:
+ * the gutter is dead space that the hand not holding the phone can't reach anyway, so the controls
+ * for getting *out* of one-handed mode belong in it.
+ */
+@Composable
+private fun OneHandedGutter(
+    viewModel: KeyboardViewModel,
+    theme: OmakeyTheme,
+    placement: KeyboardPlacement,
+    heightDp: Int,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier.height(heightDp.dp).width(KeyboardPlacementGeometry.ONE_HANDED_GUTTER_DP.dp),
+        verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        // The switch-side arrow points where the keyboard is *going*, so it mirrors with the
+        // current side — an arrow pointing left while the keyboard is already on the left reads as
+        // a broken button. Mirroring the one glyph beats shipping a second, near-identical icon.
+        val switchSideMirrored = placement == KeyboardPlacement.ONE_HANDED_LEFT
+        val buttons = listOf(
+            Triple("Switch side", PhosphorSwitchSide) { viewModel.switchOneHandedSide() },
+            Triple("Full width", PhosphorExpand) { viewModel.setPlacement(KeyboardPlacement.DOCKED) },
+            Triple("Resize", PhosphorResize) { viewModel.setResizing(true) },
+        )
+        buttons.forEach { (description, icon, action) ->
+            val interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+            val isPressed by interactionSource.collectIsPressedAsState()
+            Box(
+                Modifier
+                    .padding(vertical = 6.dp)
+                    .size(36.dp)
+                    .background(
+                        if (isPressed) theme.keyBackgroundPressed.toComposeColor() else theme.keySpecialBackground.toComposeColor(),
+                        androidx.compose.foundation.shape.RoundedCornerShape(10.dp),
+                    )
+                    .clickable(interactionSource = interactionSource, indication = null, onClick = action)
+                    .semantics { contentDescription = description },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = theme.keyTextColor.toComposeColor(),
+                    modifier = Modifier
+                        .size(18.dp)
+                        .then(
+                            if (icon == PhosphorSwitchSide && switchSideMirrored) {
+                                Modifier.graphicsLayer(scaleX = -1f)
+                            } else {
+                                Modifier
+                            },
+                        ),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Drag-to-resize, drawn over the keyboard in whatever placement it is currently in.
+ *
+ * Which edges are draggable follows from the placement, because that is what "resize in the current
+ * mode" means — a docked keyboard has no width to change, a floating one has both dimensions and a
+ * position, a one-handed one has a width worth changing and a height shared with docked:
+ *
+ * | placement   | draggable                                |
+ * |-------------|------------------------------------------|
+ * | docked      | top edge → height                        |
+ * | one-handed  | inner edge → width; top edge → height    |
+ * | floating    | corner → width + height; body → position |
+ *
+ * Corner brackets rather than a full outline: they mark the grab targets, which an outline does
+ * not, and they leave the keys underneath readable while dragging.
+ *
+ * Everything is live — the keyboard behind this really is resizing as the finger moves, rather than
+ * showing a ghost that snaps into place on release. The value is written to preferences once, on
+ * release (see [PlacementState.commit]).
+ */
+@Composable
+private fun androidx.compose.foundation.layout.BoxScope.ResizeOverlay(
+    viewModel: KeyboardViewModel,
+    theme: OmakeyTheme,
+    placement: KeyboardPlacement,
+    place: PlacementState,
+    totalHeightDp: Int,
+    /** Matches the keyboard's own edge gutters so the brackets land on the keys' real edge rather
+     * than the window's — only docked keyboards have them (see the root Column's own padding). */
+    edgePaddingDp: Int,
+) {
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val accent = theme.keyBackgroundPressed.toComposeColor()
+    // Bracket arms, drawn at the four corners of the keyboard's own rectangle.
+    val bracket = 18.dp
+    val stroke = 3.dp
+
+    Box(
+        Modifier
+            .align(
+                when {
+                    placement == KeyboardPlacement.FLOATING -> Alignment.BottomStart
+                    placement == KeyboardPlacement.ONE_HANDED_RIGHT -> Alignment.TopEnd
+                    else -> Alignment.TopStart
+                },
+            )
+            .then(
+                if (placement == KeyboardPlacement.FLOATING) {
+                    Modifier.offset(x = place.floatingXDp.dp, y = (-place.floatingBottomDp).dp)
+                } else {
+                    Modifier
+                },
+            )
+            .padding(horizontal = edgePaddingDp.dp)
+            .width((place.widthDp - edgePaddingDp * 2).dp)
+            .height(totalHeightDp.dp),
+    ) {
+        @Composable
+        fun Corner(alignment: Alignment, horizontalSign: Int, verticalSign: Int, description: String) {
+            Box(
+                Modifier
+                    .align(alignment)
+                    .size(bracket * 2)
+                    .pointerInput(placement) {
+                        detectDragGestures(
+                            onDragEnd = { place.commit() },
+                        ) { change, dragAmount ->
+                            change.consume()
+                            with(density) {
+                                // Sign per corner: dragging the right edge right grows the
+                                // keyboard, dragging the left edge right shrinks it. Same for
+                                // vertical. Without this, two of the four corners would resize
+                                // backwards.
+                                place.resizeWidth(dragAmount.x.toDp().value * horizontalSign)
+                                place.resizeHeight(dragAmount.y.toDp().value * verticalSign)
+                            }
+                        }
+                    }
+                    .semantics { contentDescription = description },
+            ) {
+                // Two arms meeting at the corner.
+                Box(
+                    Modifier
+                        .align(alignment)
+                        .size(width = bracket, height = stroke)
+                        .background(accent, androidx.compose.foundation.shape.RoundedCornerShape(2.dp)),
+                )
+                Box(
+                    Modifier
+                        .align(alignment)
+                        .size(width = stroke, height = bracket)
+                        .background(accent, androidx.compose.foundation.shape.RoundedCornerShape(2.dp)),
+                )
+            }
+        }
+
+        when {
+            placement == KeyboardPlacement.FLOATING -> {
+                Corner(Alignment.TopStart, horizontalSign = -1, verticalSign = -1, description = "Resize from top left")
+                Corner(Alignment.TopEnd, horizontalSign = 1, verticalSign = -1, description = "Resize from top right")
+                Corner(Alignment.BottomStart, horizontalSign = -1, verticalSign = 1, description = "Resize from bottom left")
+                Corner(Alignment.BottomEnd, horizontalSign = 1, verticalSign = 1, description = "Resize from bottom right")
+                // The whole body drags the keyboard around — while resizing there is nothing else
+                // the body could usefully do, and a dedicated grab handle would be one more small
+                // target on an already busy overlay.
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .padding(bracket * 2)
+                        .pointerInput(placement) {
+                            detectDragGestures(
+                                onDragEnd = { place.commit() },
+                            ) { change, dragAmount ->
+                                change.consume()
+                                with(density) { place.move(dragAmount.x.toDp().value, dragAmount.y.toDp().value) }
+                            }
+                        }
+                        .semantics { contentDescription = "Move keyboard" },
+                )
+            }
+            placement.isOneHanded -> {
+                val inner = if (placement == KeyboardPlacement.ONE_HANDED_LEFT) Alignment.TopEnd else Alignment.TopStart
+                val sign = if (placement == KeyboardPlacement.ONE_HANDED_LEFT) 1 else -1
+                Corner(inner, horizontalSign = sign, verticalSign = -1, description = "Resize keyboard")
+                Corner(
+                    if (placement == KeyboardPlacement.ONE_HANDED_LEFT) Alignment.BottomEnd else Alignment.BottomStart,
+                    horizontalSign = sign,
+                    verticalSign = 1,
+                    description = "Resize keyboard",
+                )
+            }
+            else -> {
+                // Docked: only the top edge means anything, so both handles resize height alone.
+                Corner(Alignment.TopStart, horizontalSign = 0, verticalSign = -1, description = "Resize keyboard height")
+                Corner(Alignment.TopEnd, horizontalSign = 0, verticalSign = -1, description = "Resize keyboard height")
+            }
+        }
+
+        // Done sits inside the keyboard's own rectangle, not below it: while floating there is no
+        // "below" that belongs to us, and a button outside the touchable region would not receive
+        // the tap at all.
+        Box(
+            Modifier
+                .align(Alignment.Center)
+                .background(accent, androidx.compose.foundation.shape.RoundedCornerShape(20.dp))
+                .clickable { place.commit(); viewModel.setResizing(false) }
+                .padding(horizontal = 20.dp, vertical = 8.dp)
+                .semantics { contentDescription = "Done resizing" },
+        ) {
+            Text(text = "Done", color = theme.labelOn(theme.keyBackgroundPressed).toComposeColor(), fontSize = 14.sp)
         }
     }
 }

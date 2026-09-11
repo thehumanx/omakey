@@ -51,6 +51,21 @@ interface ExtensionContext {
     val textEditor: TextEditorFacade
     val clipboardRepository: ClipboardRepository
     val emojiRecents: EmojiRecentsRepository
+
+    /**
+     * [emoji] rendered in whatever skin tone the user picked in Settings, or unchanged if it
+     * doesn't support tone selection.
+     *
+     * A function on the context rather than the tone itself being exposed, because the tone lives
+     * in `core` and this module deliberately depends on nothing but the Kotlin stdlib — handing
+     * over a `String -> String` keeps that boundary intact and keeps the Unicode rules (which
+     * modifiers exist, which emoji accept one, stripping before re-applying) in one place instead
+     * of copied into every extension that shows an emoji.
+     *
+     * Call it for display *and* for insertion, so what the user taps is what they get.
+     */
+    fun withSkinTone(emoji: String): String
+
     fun requestPanelClose()
 }
 

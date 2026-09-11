@@ -26,9 +26,11 @@ import dev.omakey.core.db.ClipboardEntity
 import dev.omakey.core.db.WordEntity
 import dev.omakey.core.db.OmakeyDatabase
 import dev.omakey.core.emoji.EmojiRecentsPreferences
+import dev.omakey.core.emoji.EmojiSkinTonePreferences
 import dev.omakey.core.feedback.HapticSoundPreferences
 import dev.omakey.core.gesture.GesturePreferences
 import dev.omakey.core.input.TextEditor
+import dev.omakey.core.layout.KeyboardPlacement
 import dev.omakey.core.layout.LayoutPreferences
 import dev.omakey.core.predict.AutocorrectIndex
 import dev.omakey.core.predict.AutocorrectPreferences
@@ -91,6 +93,7 @@ class OmakeyInputMethodService :
     private lateinit var topStripTabPreferences: TopStripTabPreferences
     private lateinit var hapticSoundPreferences: HapticSoundPreferences
     private lateinit var emojiRecentsPreferences: EmojiRecentsPreferences
+    private lateinit var emojiSkinTonePreferences: EmojiSkinTonePreferences
     private lateinit var keyboardFeedback: KeyboardFeedback
     private var keyboardViewModel: KeyboardViewModel? = null
 
@@ -130,6 +133,23 @@ class OmakeyInputMethodService :
         } else {
             serviceScope.launch { captureCurrentClipboardIfNew() }
         }
+    }
+
+    /**
+     * The clipboard's current text, for [KeyboardViewModel]'s Paste button — which commits it
+     * itself instead of delegating to the host app, so that the paste can be recorded as a single
+     * undo step. Null for an image clip, an empty clip, or a clipboard that can't be read.
+     *
+     * Unlike [captureCurrentClipboardIfNew], this runs only in direct response to the user tapping
+     * Paste on omakey's own toolbar, so omakey is unambiguously the focused IME — which
+     * `ClipboardService.showAccessNotificationLocked` exempts from the "pasted from your clipboard"
+     * toast. Deliberately *not* trimmed: unlike clipboard-history capture, a paste must reproduce
+     * the clip exactly, and the recorded undo step has to match what was actually inserted.
+     */
+    private fun currentClipboardText(): CharSequence? {
+        val clip = clipboardManager.primaryClip?.takeIf { it.itemCount > 0 } ?: return null
+        if (clip.description?.hasMimeType("image/*") == true) return null
+        return clip.getItemAt(0).coerceToText(this)?.takeIf { it.isNotEmpty() }
     }
 
     /** Shared by [clipboardListener] (fires on every clipboard *change* while the keyboard is on
@@ -198,6 +218,7 @@ class OmakeyInputMethodService :
         topStripTabPreferences = TopStripTabPreferences(applicationContext)
         hapticSoundPreferences = HapticSoundPreferences(applicationContext)
         emojiRecentsPreferences = EmojiRecentsPreferences(applicationContext)
+        emojiSkinTonePreferences = EmojiSkinTonePreferences(applicationContext)
         keyboardFeedback = VibratorKeyboardFeedback(applicationContext, hapticSoundPreferences)
 
         // Idempotent (WorkManager's own ExistingPeriodicWorkPolicy.KEEP) — safe to call on every
@@ -254,8 +275,15 @@ class OmakeyInputMethodService :
     }
 
     private fun buildExtensionContext(): ExtensionContext = object : ExtensionContext {
+        // Read per call, not captured: the user can change the tone in Settings while the panel is
+        // open, and EmojiSkinTonePreferences' own listener keeps this instance's flow current.
+        override fun withSkinTone(emoji: String): String = emojiSkinTonePreferences.skinTone.value.apply(emoji)
+
         override val textEditor: TextEditorFacade = object : TextEditorFacade {
-            override fun insertText(text: String) = text.forEach { this@OmakeyInputMethodService.textEditor.commitCharacter(it) }
+            // One batched commitText rather than a loop over Chars — a loop splits every emoji's
+            // surrogate pair across two calls, and every skin-tone modifier off the emoji it
+            // modifies.
+            override fun insertText(text: String) = this@OmakeyInputMethodService.textEditor.insertText(text)
             override fun deleteBackward(count: Int) {
                 repeat(count) { this@OmakeyInputMethodService.textEditor.deleteCharacterBackward() }
                 // Deleting via an extension (e.g. the emoji panel's own backspace) bypasses
@@ -328,6 +356,8 @@ class OmakeyInputMethodService :
             topStripTabPreferences = topStripTabPreferences,
             scope = serviceScope,
             onClipboardCopy = onClipboardCopy,
+            clipboardText = ::currentClipboardText,
+            emojiSkinTone = { emojiSkinTonePreferences.skinTone.value },
         )
         keyboardViewModel = viewModel
 
@@ -394,6 +424,60 @@ class OmakeyInputMethodService :
     }
 
     override fun onEvaluateFullscreenMode(): Boolean = false
+
+    /**
+     * Where the keyboard itself is, in window coordinates — reported by `KeyboardRoot` on every
+     * layout pass. Only consulted while floating.
+     *
+     * A plain field, read by [onComputeInsets] whenever the framework next recomputes insets rather
+     * than pushed at it. There is no public "insets are stale, recompute now" call; the framework
+     * recomputes on its own layout/draw pass, which a Compose layout change triggers anyway. The
+     * cost is that a drag can be one frame ahead of the touchable region — invisible in practice,
+     * and far better than trying to force a recomputation from inside a layout pass, which is how
+     * layout loops start.
+     */
+    @Volatile private var keyboardBounds: android.graphics.Rect? = null
+
+    private fun onKeyboardBoundsChanged(bounds: androidx.compose.ui.geometry.Rect) {
+        keyboardBounds = android.graphics.Rect(
+            bounds.left.toInt(),
+            bounds.top.toInt(),
+            bounds.right.toInt(),
+            bounds.bottom.toInt(),
+        )
+    }
+
+    /**
+     * Makes floating mode possible, and does nothing in any other placement.
+     *
+     * Two separate things have to be arranged, and they are easy to confuse:
+     *
+     *  - **The app must not be pushed up.** `contentTopInsets`/`visibleTopInsets` are what the host
+     *    app resizes around. Setting both to the input view's full height says "the IME occupies no
+     *    space at the bottom", so the app lays out as if no keyboard were showing — which is the
+     *    point of floating, since the keyboard may be nowhere near the bottom.
+     *  - **Touches outside the keyboard must reach the app.** By default the whole IME window
+     *    swallows them, which for a floating keyboard means a large invisible dead zone.
+     *    `TOUCHABLE_INSETS_REGION` plus a `touchableRegion` of exactly the keyboard's own rectangle
+     *    limits us to what we actually draw.
+     *
+     * Falls back to the default behaviour whenever bounds haven't been reported yet — a floating
+     * keyboard that is briefly fully touchable is recoverable; one that is briefly *untouchable* is
+     * a keyboard the user cannot type on.
+     *
+     * Known limitation: a host app that ignores `contentTopInsets` will still resize around us.
+     * There is nothing an IME can do about that, and every floating keyboard has the same gap.
+     */
+    override fun onComputeInsets(outInsets: Insets) {
+        super.onComputeInsets(outInsets)
+        if (layoutPreferences.settings.value.placement != KeyboardPlacement.FLOATING) return
+        val bounds = keyboardBounds ?: return
+        val viewHeight = window?.window?.decorView?.height ?: return
+        outInsets.contentTopInsets = viewHeight
+        outInsets.visibleTopInsets = viewHeight
+        outInsets.touchableInsets = Insets.TOUCHABLE_INSETS_REGION
+        outInsets.touchableRegion.set(bounds)
+    }
 
     private fun openSettings() {
         val intent = android.content.Intent(this, dev.omakey.app.settings.SettingsActivity::class.java)

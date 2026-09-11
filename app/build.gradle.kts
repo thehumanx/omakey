@@ -28,8 +28,8 @@ android {
         // refuses same-or-lower versionCode as a downgrade and uninstalling first would wipe local
         // app data (learned words, settings, clipboard history). Bump versionName only when
         // actually cutting a release.
-        versionCode = 17
-        versionName = "3.0.0"
+        versionCode = 18
+        versionName = "4.0.0"
     }
 
     androidResources {

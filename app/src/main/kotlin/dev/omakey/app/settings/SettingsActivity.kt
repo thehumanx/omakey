@@ -74,6 +74,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -91,15 +93,20 @@ import dev.omakey.core.icons.PhosphorCopy
 import dev.omakey.core.db.OmakeyDatabase
 import dev.omakey.core.db.WordDao
 import dev.omakey.core.db.WordEntity
+import dev.omakey.core.emoji.EmojiSkinTone
+import dev.omakey.core.emoji.EmojiSkinTonePreferences
 import dev.omakey.core.feedback.HapticSoundPreferences
 import dev.omakey.core.feedback.HapticSoundSettings
 import dev.omakey.core.gesture.GesturePreferences
 import dev.omakey.core.gesture.GestureSettings
 import dev.omakey.core.layout.LayoutPreferences
 import dev.omakey.core.layout.LayoutSettings
+import dev.omakey.app.keyboard.ui.gridBorderExceptBottom
+import dev.omakey.app.keyboard.ui.toDp
 import dev.omakey.core.layout.Layouts
 import dev.omakey.core.predict.AutocorrectPreferences
 import dev.omakey.core.predict.IncognitoPreferences
+import dev.omakey.core.predict.PersonalLanguageModel
 import dev.omakey.core.predict.PredictionPreferences
 import dev.omakey.core.theme.AccessibilityPreferences
 import dev.omakey.core.theme.ColorSpec
@@ -138,6 +145,7 @@ class SettingsActivity : ComponentActivity() {
         val autocorrectPreferences = AutocorrectPreferences(applicationContext)
         val predictionPreferences = PredictionPreferences(applicationContext)
         val incognitoPreferences = IncognitoPreferences(applicationContext)
+        val emojiSkinTonePreferences = EmojiSkinTonePreferences(applicationContext)
         val updatePreferences = dev.omakey.core.update.UpdatePreferences(applicationContext)
         val feedback = VibratorKeyboardFeedback(applicationContext, hapticSoundPreferences)
         val wordDao = OmakeyDatabase.getInstance(applicationContext).wordDao()
@@ -160,6 +168,7 @@ class SettingsActivity : ComponentActivity() {
                         autocorrectPreferences = autocorrectPreferences,
                         predictionPreferences = predictionPreferences,
                         incognitoPreferences = incognitoPreferences,
+                        emojiSkinTonePreferences = emojiSkinTonePreferences,
                         updatePreferences = updatePreferences,
                         wordDao = wordDao,
                         feedback = feedback,
@@ -248,6 +257,7 @@ private fun SettingsScreen(
     autocorrectPreferences: AutocorrectPreferences,
     predictionPreferences: PredictionPreferences,
     incognitoPreferences: IncognitoPreferences,
+    emojiSkinTonePreferences: EmojiSkinTonePreferences,
     updatePreferences: dev.omakey.core.update.UpdatePreferences,
     wordDao: WordDao,
     feedback: VibratorKeyboardFeedback,
@@ -263,6 +273,10 @@ private fun SettingsScreen(
     // live preview mock should actually show, so previews reflect what really gets applied.
     val effectiveTheme = dev.omakey.app.keyboard.resolveEffectiveTheme(currentTheme, useSystemAccent)
     val currentFontId by fontPreferences.fontId.collectAsState()
+    // The keyboard preview renders in the chosen font, so picking one shows what it looks like on
+    // actual keycaps rather than only in the picker's own label.
+    val previewFontFamily = remember(currentFontId) { dev.omakey.app.keyboard.ui.FontCatalog.resolve(currentFontId) }
+    val layoutSettings by layoutPreferences.settings.collectAsState()
     var showTestOverlay by remember { mutableStateOf(false) }
     var showLearnedWordsOverlay by remember { mutableStateOf(false) }
     var showSizePositionOverlay by remember { mutableStateOf(false) }
@@ -319,6 +333,28 @@ private fun SettingsScreen(
                     // mode always shows bordered cells regardless of that toggle).
                     Text(text = "Layout style", style = MaterialTheme.typography.bodyLarge)
                     LayoutModePicker(themeRepository)
+                    // Directly under the picker, and fed the *resolved* theme plus every live
+                    // appearance setting — layout style, theme, font, key backgrounds, home-row
+                    // highlight, capitalization and edge padding all land here. Normal vs. Grid is
+                    // the difference this exists for: it is a structural change to how every key
+                    // is drawn, and a two-word segmented button conveys none of it.
+                    Spacer(Modifier.height(4.dp))
+                    // Must provide the layout mode: LocalKeyboardLayoutMode defaults to NORMAL
+                    // when nothing supplies it, so without this the preview would render Normal
+                    // keys even with Grid selected — which is the single thing this preview most
+                    // needs to show. Same trap the theme editor's own preview already hit once.
+                    androidx.compose.runtime.CompositionLocalProvider(
+                        dev.omakey.core.theme.LocalKeyboardLayoutMode provides layoutMode,
+                    ) {
+                        ThemePreviewMock(
+                            theme = effectiveTheme,
+                            showKeyBackgrounds = layoutSettings.showKeyBackgrounds,
+                            fontFamily = previewFontFamily,
+                            homeRowTinted = layoutSettings.showMiddleRowStripe,
+                            alwaysShowUppercaseLetters = layoutSettings.alwaysShowUppercaseLetters,
+                            edgePadding = layoutSettings.edgePadding,
+                        )
+                    }
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     Text(text = "Theme", style = MaterialTheme.typography.bodyLarge)
                     ThemePicker(
@@ -332,16 +368,28 @@ private fun SettingsScreen(
                         SettingToggle(
                             title = "Pick accent color from system",
                             description = "Use your device's Material You accent color for the " +
-                                "spacebar instead of the theme's own.",
+                                "spacebar, pressed keys and caps lock instead of the theme's own. " +
+                                "The Accent theme already uses your device's colors throughout.",
                             checked = useSystemAccent,
                             onCheckedChange = themeRepository::setUseSystemAccent,
                         )
                     }
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     AppearanceLayoutToggles(layoutPreferences)
+                    CapitalizationToggleSection(layoutPreferences)
+                    EdgePaddingToggle(layoutPreferences)
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    ClickableSettingRow(
+                        title = "Keyboard size & position",
+                        description = "Resize the keyboard and raise it off the bottom edge for " +
+                            "easier one-handed thumb reach — drag to adjust both.",
+                        onClick = { showSizePositionOverlay = true },
+                    )
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     Text(text = "Font", style = MaterialTheme.typography.bodyLarge)
                     FontPicker(fontPreferences, currentFontId)
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    EmojiSkinTonePicker(emojiSkinTonePreferences)
                 }
             }
 
@@ -352,6 +400,7 @@ private fun SettingsScreen(
                     DoubleTapSpaceForPeriodToggle(autocorrectPreferences)
                     NextWordPredictionToggle(predictionPreferences)
                     ImplicitLearningToggle(incognitoPreferences)
+                    TapPreviewToggle(layoutPreferences)
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     ClickableSettingRow(
                         title = "Learned words",
@@ -359,14 +408,6 @@ private fun SettingsScreen(
                             "search, or remove any that shouldn't have been learned.",
                         onClick = { showLearnedWordsOverlay = true },
                     )
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    ClickableSettingRow(
-                        title = "Keyboard size & position",
-                        description = "Resize the keyboard and raise it off the bottom edge for " +
-                            "easier one-handed thumb reach — drag to adjust both.",
-                        onClick = { showSizePositionOverlay = true },
-                    )
-                    CapitalizationToggleSection(layoutPreferences)
                     GestureSettingsSection(gesturePreferences)
                 }
             }
@@ -613,6 +654,11 @@ private fun KeyboardSizePositionOverlay(
     }
 }
 
+/** Derived from the model's own threshold rather than written out, so the two can't drift apart:
+ * [WordDao.findUserAdded] compares against the scaled integer the `frequency` column stores. */
+private val LEARNED_WORD_MIN_FREQUENCY =
+    (PersonalLanguageModel.IMPLICIT_TRUST_THRESHOLD * WordEntity.COUNT_SCALE).toInt()
+
 /** Full-screen overlay listing every word the user's own typing has taught the dictionary
  * (`WordEntity.isUserAdded`) — lets a mistakenly-learned typo (see [AutocorrectIndex.learn]: once
  * a word is "known" it's never autocorrected away again, so a typo learned before the dictionary
@@ -631,7 +677,10 @@ private fun LearnedWordsOverlay(wordDao: WordDao, onClose: () -> Unit) {
     var wordBeingEdited by remember { mutableStateOf<WordEntity?>(null) }
 
     suspend fun reload() {
-        words = wordDao.findUserAdded(query.trim().lowercase())
+        words = wordDao.findUserAdded(
+            query = query.trim().lowercase(),
+            minFrequency = LEARNED_WORD_MIN_FREQUENCY,
+        )
     }
     LaunchedEffect(query) { reload() }
 
@@ -938,6 +987,60 @@ private fun FontPicker(fontPreferences: FontPreferences, currentFontId: String) 
     }
 }
 
+/**
+ * The six Fitzpatrick tones, each drawn as the actual toned emoji rather than a colour swatch.
+ *
+ * A flat colour chip would be a guess at what the font renders — tones vary between emoji fonts,
+ * and the point of the setting is what lands in the message. Showing the real glyph means the
+ * preview cannot disagree with the result. "Default" is the unmodified yellow, which is an absence
+ * of a modifier rather than a sixth tone, and reads correctly as such when shown alongside.
+ */
+@Composable
+private fun EmojiSkinTonePicker(preferences: EmojiSkinTonePreferences) {
+    val current by preferences.skinTone.collectAsState()
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(text = "Emoji skin tone", style = MaterialTheme.typography.bodyLarge)
+        Text(
+            text = "Applied to emoji that support it — hands, faces and people. Everything else " +
+                "is unaffected.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            for (tone in EmojiSkinTone.ALL) {
+                val selected = tone == current
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp)
+                        .background(
+                            if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                            RoundedCornerShape(8.dp),
+                        )
+                        .border(
+                            width = if (selected) 2.dp else 0.dp,
+                            color = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                            shape = RoundedCornerShape(8.dp),
+                        )
+                        .clickable { preferences.setSkinTone(tone) }
+                        .semantics { contentDescription = tone.label },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(text = tone.sample, fontSize = 22.sp)
+                }
+            }
+        }
+        Text(
+            text = current.label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
 @Composable
 private fun AutocorrectToggle(autocorrectPreferences: AutocorrectPreferences) {
     val settings by autocorrectPreferences.settings.collectAsState()
@@ -1008,6 +1111,38 @@ private fun ImplicitLearningToggle(incognitoPreferences: IncognitoPreferences) {
  * which this toggle has nothing to do with; Grid mode always shows bordered cells regardless of
  * this setting) and "Home row highlight" — both purely visual, so they live in Appearance now
  * rather than Typing. */
+/** The enlarged-character bubble above a tapped key. Lives in Typing, not Appearance: it is
+ * feedback about what you just typed, and it appears only while typing — grouping it with static
+ * looks (themes, fonts, key shapes) put it where nobody would look for it. Distinct from
+ * `GestureSettings.showKeyPopup`, the long-press accent popup, which is in Gestures. */
+@Composable
+private fun TapPreviewToggle(layoutPreferences: LayoutPreferences) {
+    val settings by layoutPreferences.settings.collectAsState()
+    SettingToggle(
+        title = "Show key press popup",
+        description = "Briefly shows an enlarged copy of the letter above your finger on " +
+            "every tap. Distinct from \"Long press for special characters\" — this one is " +
+            "the ordinary per-tap preview, not the held-key accent picker.",
+        checked = settings.showTapPreview,
+        onCheckedChange = layoutPreferences::setShowTapPreview,
+    )
+}
+
+/** Blank gutters down both sides of the keyboard. Fleksy shipped the same option for the same
+ * reason — on a phone with no side bezel the outer keys sit where the glass curves away, which is
+ * exactly where a thumb slides off. */
+@Composable
+private fun EdgePaddingToggle(layoutPreferences: LayoutPreferences) {
+    val settings by layoutPreferences.settings.collectAsState()
+    SettingToggle(
+        title = "Add padding",
+        description = "Leave a gap down the left and right edges, so the outer keys aren't flush " +
+            "against a curved or bezel-less screen edge. Costs a little key width.",
+        checked = settings.edgePadding,
+        onCheckedChange = layoutPreferences::setEdgePadding,
+    )
+}
+
 @Composable
 private fun AppearanceLayoutToggles(layoutPreferences: LayoutPreferences) {
     val settings by layoutPreferences.settings.collectAsState()
@@ -1024,14 +1159,6 @@ private fun AppearanceLayoutToggles(layoutPreferences: LayoutPreferences) {
             description = "A light stripe behind the ASDF row to help find it by feel.",
             checked = settings.showMiddleRowStripe,
             onCheckedChange = layoutPreferences::setShowMiddleRowStripe,
-        )
-        SettingToggle(
-            title = "Show key press popup",
-            description = "Briefly shows an enlarged copy of the letter above your finger on " +
-                "every tap. Distinct from \"Long press for special characters\" — this one is " +
-                "the ordinary per-tap preview, not the held-key accent picker.",
-            checked = settings.showTapPreview,
-            onCheckedChange = layoutPreferences::setShowTapPreview,
         )
     }
 }
@@ -1742,21 +1869,44 @@ private fun ThemeSaveNamePrompt(
  * (real user feedback, "decrease the keyboard height a bit") — matters more now that the bar above
  * adds its own height on top. */
 @Composable
-private fun ThemePreviewMock(theme: OmakeyTheme, showKeyBackgrounds: Boolean = false) {
+private fun ThemePreviewMock(
+    theme: OmakeyTheme,
+    showKeyBackgrounds: Boolean = false,
+    fontFamily: androidx.compose.ui.text.font.FontFamily? = null,
+    homeRowTinted: Boolean = true,
+    alwaysShowUppercaseLetters: Boolean = true,
+    edgePadding: Boolean = false,
+) {
     val noOpAncestor: () -> androidx.compose.ui.layout.LayoutCoordinates? = remember { { null } }
     val rowHeightDp = 44
     Column(
         Modifier
             .fillMaxWidth()
             .background(theme.keyboardBackground.toComposeColor(), RoundedCornerShape(8.dp))
-            .padding(horizontal = 4.dp, vertical = 6.dp),
+            .padding(horizontal = 4.dp, vertical = 6.dp)
+            // Mirrors KeyboardRoot's own gutters, inside the background for the same reason — this
+            // preview's whole job is to be what the keyboard will actually look like.
+            .padding(horizontal = if (edgePadding) LayoutSettings.EDGE_PADDING_DP.dp else 0.dp),
     ) {
         val isGridMode = dev.omakey.core.theme.LocalKeyboardLayoutMode.current == dev.omakey.core.theme.LayoutMode.GRID
         Box(
             Modifier
                 .fillMaxWidth()
                 .height(44.dp)
-                .background(if (isGridMode) theme.keyboardBackground.toComposeColor() else theme.suggestionBarBackground.toComposeColor()),
+                .background(if (isGridMode) theme.keyboardBackground.toComposeColor() else theme.suggestionBarBackground.toComposeColor())
+                // Grid mode draws two *container* outlines that its per-cell right+bottom borders
+                // can't: this one around the strip, and the one around the key rows below. Without
+                // them the preview showed cell dividers but no top/left/right edge, and no seam at
+                // all under the empty part of the strip — reported as "missing outline in some
+                // parts". Deliberately the same two helpers TopStrip and KeyGrid use, rather than
+                // a lookalike, so the preview cannot drift from the real thing again.
+                .let { m ->
+                    if (isGridMode) {
+                        m.gridBorderExceptBottom(theme.gridBorderColor.toComposeColor(), theme.gridBorderWidth.toDp())
+                    } else {
+                        m
+                    }
+                },
         ) {
             dev.omakey.app.keyboard.ui.SuggestionsTabContent(
                 suggestions = listOf("hello", "world"),
@@ -1764,12 +1914,25 @@ private fun ThemePreviewMock(theme: OmakeyTheme, showKeyBackgrounds: Boolean = f
                 firstSuggestionKind = dev.omakey.app.keyboard.SuggestionKind.PLAIN,
                 activeSuggestionIndex = -1,
                 theme = theme,
-                fontFamily = null,
+                fontFamily = fontFamily,
                 showKeyBackgrounds = showKeyBackgrounds,
                 onAccept = {},
                 onAcceptEmoji = {},
             )
         }
+        // Matches KeyGrid's own container border — see the strip's comment above. Its cells already
+        // draw right+bottom, so this contributes the top and left edges.
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .let { m ->
+                    if (isGridMode) {
+                        m.border(theme.gridBorderWidth.toDp(), theme.gridBorderColor.toComposeColor())
+                    } else {
+                        m
+                    }
+                },
+        ) {
         Layouts.QwertyEnUS.rows.forEachIndexed { rowIndex, row ->
             dev.omakey.app.keyboard.ui.KeyRowView(
                 rowKeys = row.keys,
@@ -1782,10 +1945,14 @@ private fun ThemePreviewMock(theme: OmakeyTheme, showKeyBackgrounds: Boolean = f
                 // ASDFGHJKL row (index 1), not the ZXCVBNM/shift row (real bug, fixed: this
                 // preview had it one row too low).
                 isHomeRow = rowIndex == 1,
+                homeRowTinted = homeRowTinted,
                 onKeyTap = {},
                 ancestorCoordinates = noOpAncestor,
                 onBoundsMeasured = {},
+                fontFamily = fontFamily,
+                alwaysShowUppercaseLetters = alwaysShowUppercaseLetters,
             )
+        }
         }
     }
 }

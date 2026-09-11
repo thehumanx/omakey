@@ -3,6 +3,7 @@ package dev.omakey.core.predict
 import dev.omakey.core.predict.eval.TestLanguageModel
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -57,6 +58,62 @@ class AutocorrectIndexTest {
         assertNull(index.correct("ab"))
     }
 
+    /**
+     * The first letter is a letter like any other.
+     *
+     * This was a documented limitation for a long time: candidates were the vocabulary words
+     * sharing the typed word's exact first letter, so a slip at position 0 put the intended word in
+     * a range that was never scanned. Cases are grouped by which of the four position-0 error types
+     * they exercise, because each one is reached by a different part of the candidate generation
+     * and a regression in one would otherwise hide behind the others.
+     *
+     * Deliberately not just "qccount" — that was the reported symptom, and a fix that only moved
+     * that one string would be indistinguishable from a fix that works.
+     */
+    @Test
+    fun `corrects a word whose first letter was typed on an adjacent key`() {
+        assertEquals("account", index.correct("qccount")) // q sits directly above a
+        assertEquals("apple", index.correct("wpple"))
+        assertEquals("world", index.correct("qorld"))
+        assertEquals("home", index.correct("gome"))
+        assertEquals("call", index.correct("xall"))
+        assertEquals("people", index.correct("oeople"))
+    }
+
+    @Test
+    fun `corrects a first-letter transposition`() {
+        // The long-standing worked example of the limitation: "the" is one transposition from
+        // "hte" but starts with a different letter, so it used to resolve to "he".
+        assertEquals("the", index.correct("hte"))
+    }
+
+    @Test
+    fun `corrects a word whose first letter was never typed`() {
+        assertEquals("account", index.correct("ccount"))
+        assertEquals("hello", index.correct("ello"))
+    }
+
+    @Test
+    fun `does not substitute a first letter from across the keyboard`() {
+        // The prune was narrowed, not removed: a first-letter *substitution* is only considered
+        // between keys that physically touch. "z" is nowhere near "a", so the "qccount" fix must
+        // not generalise into "any first letter goes" — that version was measured and made the
+        // engine worse.
+        //
+        // Not asserted as null: "zccount" legitimately reaches "count" by dropping the stray "z",
+        // which is the insertion route doing its job and has nothing to do with adjacency. The
+        // claim under test is specifically that the "a" range is not scanned from a typed "z".
+        assertNotEquals("account", index.correct("zccount"))
+    }
+
+    @Test
+    fun `leaves correctly typed words alone despite the wider candidate set`() {
+        // The guard that matters most: a wider search must not start rewriting valid words.
+        assertNull(index.correct("very"))
+        assertNull(index.correct("people"))
+        assertNull(index.correct("dinner"))
+    }
+
     @Test
     fun `learn marks a word as known so it is never corrected away`() {
         assertEquals("receive", index.correct("recieve"))
@@ -105,11 +162,11 @@ class AutocorrectIndexTest {
 
     @Test
     fun `corrects a two-edit typo when no one-edit candidate exists`() {
-        // Reaches the distance-2 fallback at all. Deliberately not asserting a specific word:
-        // "keynaord" currently resolves to "keyword" rather than "keyboard", because at equal edit
-        // distance the tie is broken purely by how common the candidate is, and "keyword" wins
-        // that. Distinguishing them needs to know where the finger actually landed — 'n' and 'b'
-        // are nowhere near each other — which is what the spatial model adds later.
+        // Reaches the distance-2 fallback at all. Deliberately not asserting a specific word: the
+        // tie between "keyboard" and "keyword" (equal edit distance) is broken by the combined
+        // channel + language score, which is sensitive to tuning in a way this test should not
+        // pin down. The comment here used to claim it resolved to "keyword"; it resolves to
+        // "keyboard", and had done since the noisy-channel scoring landed.
         assertNotNull(index.correct("keynaord"))
     }
 

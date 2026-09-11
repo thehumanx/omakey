@@ -11,6 +11,8 @@ object FontChoices {
     const val SYSTEM_DEFAULT = "system_default"
     const val POPPINS_BOLD = "poppins_bold"
     const val FIGTREE_BOLD = "figtree_bold"
+    const val SOLWAY = "solway"
+    const val ALEO = "aleo"
 }
 
 /** Persists the user's chosen keyboard font, same SharedPreferences + cross-instance-sync pattern

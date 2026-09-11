@@ -30,9 +30,25 @@ object FontCatalog {
         ),
     )
 
+    // Solway ships as static weight files, same as Poppins — Medium is the weight that holds up
+    // at keycap size without the slab serifs closing up.
+    private val SolwayMedium = FontFamily(Font(R.font.solway_medium, FontWeight.Medium))
+
+    // Aleo is a variable font, so it needs the same explicit wght-axis pin Figtree does — see that
+    // comment for why tagging FontWeight alone isn't enough.
+    private val AleoSemiBold = FontFamily(
+        Font(
+            resId = R.font.aleo_variable,
+            weight = FontWeight.SemiBold,
+            variationSettings = FontVariation.Settings(FontVariation.weight(600)),
+        ),
+    )
+
     fun resolve(fontId: String): FontFamily? = when (fontId) {
         FontChoices.POPPINS_BOLD -> PoppinsMedium
         FontChoices.FIGTREE_BOLD -> FigtreeSemiBold
+        FontChoices.SOLWAY -> SolwayMedium
+        FontChoices.ALEO -> AleoSemiBold
         else -> null
     }
 
@@ -40,5 +56,7 @@ object FontCatalog {
         FontChoices.SYSTEM_DEFAULT to "System default",
         FontChoices.POPPINS_BOLD to "Poppins",
         FontChoices.FIGTREE_BOLD to "Figtree",
+        FontChoices.SOLWAY to "Solway",
+        FontChoices.ALEO to "Aleo",
     )
 }

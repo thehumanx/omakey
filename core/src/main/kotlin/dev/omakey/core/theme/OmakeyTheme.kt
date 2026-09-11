@@ -14,6 +14,17 @@ enum class GridBorderWidth { SM, MD, LG }
 
 @Serializable
 data class ColorSpec(val argb: Long) {
+
+    /** Perceived brightness, 0 (black) to 1 (white) — the same luma weighting the theme editor
+     * already used to decide light-on-dark. Alpha is ignored: these are opaque surface colours. */
+    val luminance: Float
+        get() {
+            val red = ((argb shr 16) and 0xFF) / 255f
+            val green = ((argb shr 8) and 0xFF) / 255f
+            val blue = (argb and 0xFF) / 255f
+            return 0.299f * red + 0.587f * green + 0.114f * blue
+        }
+
     companion object {
         fun fromArgbInt(argbInt: Int) = ColorSpec(argbInt.toLong() and 0xFFFFFFFFL)
     }
@@ -61,7 +72,49 @@ data class OmakeyTheme(
     // field existed deserializes to) means "not tagged" — shown regardless of active mode, rather
     // than silently disappearing from one mode's list.
     val designedForLayoutMode: LayoutMode? = null,
-)
+    /**
+     * Label/icon colour for keys whose background is [spacebarAccentColor] or
+     * [keyBackgroundPressed] — the spacebar, a pressed cell, the caps-lock key.
+     *
+     * Null (the default, and what every theme persisted before this field existed deserializes to)
+     * means "work it out from the background", which [labelOn] does. Every preset leaves it null:
+     * their accent colours were chosen alongside [keyTextColor] and already contrast with it.
+     *
+     * It exists for the "pick accent colour from system" path, which drops an arbitrary colour into
+     * a theme whose [keyTextColor] was chosen without knowing about it. Android publishes the
+     * matching on-accent tone (see [systemAccent]), and using the OS's own answer is better than
+     * inferring one.
+     */
+    val keyTextOnAccentColor: ColorSpec? = null,
+) {
+    /**
+     * The colour to draw a label in on top of [background].
+     *
+     * [keyTextColor] normally, because a theme's own colours are chosen to go together. The
+     * exception is a background the theme did not choose — a system accent injected by
+     * `resolveEffectiveTheme` — where [keyTextColor] can land light-on-light or dark-on-dark. When
+     * the two are too close to tell apart, [keyTextOnAccentColor] wins if the palette supplied one,
+     * and otherwise a plain black/white is picked off [background]'s own brightness.
+     *
+     * A readability floor, not a restyling: for every preset, and for any custom theme whose text
+     * already contrasts with its keys, this returns [keyTextColor] unchanged.
+     */
+    fun labelOn(background: ColorSpec): ColorSpec {
+        val difference = kotlin.math.abs(background.luminance - keyTextColor.luminance)
+        if (difference >= MIN_LABEL_CONTRAST) return keyTextColor
+        keyTextOnAccentColor?.let { return it }
+        return if (background.luminance < 0.5f) ColorSpec(0xFFFFFFFF) else ColorSpec(0xFF000000)
+    }
+}
+
+/** Luma gap below which a label stops being comfortably legible on its background. Set by eye
+ * against the presets rather than derived: WCAG's contrast ratio is defined on a different
+ * (gamma-corrected) luminance than the luma weighting used here, so borrowing its 4.5:1 threshold
+ * directly would be a number that looks rigorous and means nothing.
+ *
+ * Top-level rather than in a companion because [OmakeyTheme] is `@Serializable`, whose generated
+ * `serializer()` lives on a companion that must stay public. */
+private const val MIN_LABEL_CONTRAST = 0.25f
 
 object ThemeSerializer {
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = false }
@@ -115,6 +168,18 @@ object Presets {
      * resolution is ever skipped) — resolution always replaces them before rendering. */
     val Auto = Dark.copy(id = "preset_auto", name = "Follow system")
 
+    /**
+     * **Fallback palette only.** At runtime `resolveEffectiveTheme` replaces this entire theme with
+     * one built from the device's Material You colours (`systemDynamicTheme`) — surfaces from the
+     * neutral ramps, highlight from the accent ramp, following the system's own light/dark setting.
+     *
+     * These hex values are what a device without that palette gets: pre-Android-12, or an OEM build
+     * that doesn't publish the `system_accent*`/`system_neutral*` resources. They are also what the
+     * theme *used* to be unconditionally, which was the bug — a preset named "Accent" that had
+     * nothing to do with the device's accent, reported as "where is this bluish purple coming
+     * from?". Kept rather than deleted because it is still a decent palette when there is nothing
+     * to derive one from, and because something has to exist here for the id to refer to.
+     */
     val Accent = OmakeyTheme(
         id = "preset_accent",
         name = "Accent",

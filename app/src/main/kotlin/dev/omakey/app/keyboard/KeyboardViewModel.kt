@@ -2,11 +2,15 @@ package dev.omakey.app.keyboard
 
 import android.text.InputType
 import android.view.inputmethod.EditorInfo
+import dev.omakey.core.emoji.EmojiSkinTone
 import dev.omakey.core.emoji.WordEmojiSuggestions
 import dev.omakey.core.gesture.GesturePreferences
 import dev.omakey.core.gesture.GestureSettings
+import dev.omakey.core.input.TextEdit
 import dev.omakey.core.input.TextEditor
+import dev.omakey.core.input.UndoHistory
 import dev.omakey.core.layout.KeyboardLayout
+import dev.omakey.core.layout.KeyboardPlacement
 import dev.omakey.core.layout.LayoutPreferences
 import dev.omakey.core.layout.LayoutSettings
 import dev.omakey.core.layout.Layouts
@@ -94,6 +98,12 @@ data class KeyboardUiState(
     /** True while nothing typed is being remembered — either the user toggled it, or the focused
      * field is a password. Purely a rendering hint; the authority is [IncognitoPreferences]. */
     val incognito: Boolean = false,
+    /** The quick-access tile panel is open, replacing the key grid. Same slot [activeExtensionId]
+     * drives, and mutually exclusive with it — opening one closes the other. */
+    val quickAccessOpen: Boolean = false,
+    /** Drag-to-resize is armed: the keyboard draws corner handles and a Done bar, and ordinary
+     * typing is suspended. What can be dragged depends on [LayoutSettings.placement]. */
+    val resizing: Boolean = false,
 )
 
 /**
@@ -110,8 +120,8 @@ class KeyboardViewModel(
     private val predictionPreferences: PredictionPreferences,
     private val incognitoPreferences: IncognitoPreferences,
     val extensionRegistry: ExtensionRegistry,
-    themeRepository: ThemeRepository,
-    layoutPreferences: LayoutPreferences,
+    private val themeRepository: ThemeRepository,
+    private val layoutPreferences: LayoutPreferences,
     fontPreferences: FontPreferences,
     gesturePreferences: GesturePreferences,
     private val topStripTabPreferences: TopStripTabPreferences,
@@ -121,6 +131,14 @@ class KeyboardViewModel(
     // primaryClip read for that one change — see OmakeyInputMethodService's clipboardListener for
     // why avoiding that read is what actually avoids the second "read your clipboard" toast.
     private val onClipboardCopy: (String) -> Unit = {},
+    // The clipboard's current text, or null if it holds no text (or can't be read). Injected rather
+    // than read through a ClipboardManager here so this class stays free of Android system
+    // services — and so tests can paste without one. See [onPaste] for why omakey reads the
+    // clipboard on this path at all, and why doing so is toast-free.
+    private val clipboardText: () -> CharSequence? = { null },
+    // The user's chosen emoji skin tone, read per use rather than captured — it can change from
+    // Settings while the keyboard is open.
+    private val emojiSkinTone: () -> EmojiSkinTone = { EmojiSkinTone.DEFAULT },
 ) {
     private val _uiState = MutableStateFlow(
         KeyboardUiState(
@@ -205,34 +223,37 @@ class KeyboardViewModel(
 
     /** Word/character-level undo/redo (Tools tab "Undo"/"Redo", also wired to Ctrl+Z/Ctrl+Shift+Z-
      * equivalent gestures) — scoped to raw text mutation: a word finishing (space/punctuation/
-     * Enter), a word being deleted (swipe-left), and plain character-by-character backspacing
-     * through already-committed text. Autocorrect/suggestion corrections already have their own
-     * dedicated, more precise revert gestures (backspace-reverts-the-swap, swipe up/down cycling)
-     * — folding those into this same generic stack would fight with that existing, better-suited
-     * machinery rather than complement it. Android's `InputConnection` has no standardized
-     * cross-app undo API (`performContextMenuAction(android.R.id.undo)` isn't reliably
-     * implemented by host apps), so this is necessarily omakey's own app-level history, not a
-     * passthrough to the host app's.
+     * Enter), a word being deleted (swipe-left), plain character-by-character backspacing through
+     * already-committed text, and every non-typing edit that moves text in one gesture (paste, cut,
+     * deleting a selection, an emoji chip, an extension insertion).
      *
-     * Both variants store the *exact* text involved — [Inserted.text] is the finished word plus
-     * whatever real separator followed it (space, punctuation, or newline; never assumed to be a
-     * plain space, which used to silently corrupt/drop it on undo — a real bug), and
-     * [Deleted.text] is exactly what [TextEditor.deleteWordBackward] removed (word plus whatever
-     * whitespace it actually consumed) or a single backspaced character. Undo/redo just
-     * delete-back/retype that literal string, so nothing is inferred or reconstructed wrong. */
-    private sealed class UndoEvent {
-        data class Inserted(val text: String) : UndoEvent()
-        data class Deleted(val text: String) : UndoEvent()
-    }
-    private val undoStack = ArrayDeque<UndoEvent>()
-    private val redoStack = ArrayDeque<UndoEvent>()
+     * Autocorrect/suggestion corrections are deliberately *not* here — they already have dedicated,
+     * more precise revert gestures (backspace-reverts-the-swap, swipe up/down cycling), and folding
+     * them into this generic stack would fight with that machinery rather than complement it.
+     * Android's `InputConnection` has no standardized cross-app undo API
+     * (`performContextMenuAction(android.R.id.undo)` isn't reliably implemented by host apps), so
+     * this is necessarily omakey's own app-level history, not a passthrough to the host app's.
+     *
+     * The sequencing rules — what coalesces, what breaks a run, what invalidates redo — live in
+     * [UndoHistory] in `core`, which has no Android dependency and is unit-tested directly. This
+     * class only decides *what counts as one edit* and applies the result via
+     * [TextEditor.replaceBackward]. That split is what made the rules testable at all:
+     * `KeyboardViewModel` needs a `Context` for every one of its preference dependencies and cannot
+     * be constructed in a plain JVM test.
+     *
+     * **The bug this replaced**: paste wasn't recorded at all — it went straight to
+     * `performContextMenuAction(android.R.id.paste)`, which the host app services, so omakey never
+     * learned what landed in the field. Undo then popped whatever *typed* step happened to be on
+     * top and deleted that many characters, chewing backwards through the pasted text a fragment at
+     * a time and leaving the stack describing text that no longer existed. Cut, delete-selection,
+     * emoji chips and extension insertions were untracked for the same reason.
+     *
+     * Every recorded edit carries the *exact* text on both sides, so nothing is inferred: a
+     * finished word carries whatever real separator followed it (space, punctuation, or newline;
+     * assuming a plain space used to silently corrupt it, a real bug), and a word deletion carries
+     * whatever whitespace [TextEditor.deleteWordBackward] actually consumed with it. */
+    private val undoHistory = UndoHistory()
 
-    /** True while the most recent action was a single plain backspace into already-committed
-     * text (see the last branch of [onDeleteCharacter]) — lets [recordPlainCharDelete] merge a
-     * whole backspace run into one undo step, matching how a run of backspaces reads as "one
-     * edit" in every mainstream text editor rather than needing one Ctrl+Z per character. Reset
-     * to false by every other action that mutates text or moves the cursor. */
-    private var deleteCoalesceActive = false
 
     /** How to apply whichever `suggestions[index]` the user swipes/taps to, for a word currently
      * "in focus" for the strip — unifying the three different ways a word gets there so cycling
@@ -331,8 +352,21 @@ class KeyboardViewModel(
     }
 
     val extensionHost = object : ExtensionHost {
+        /** Whatever an extension inserts is one undo step, whatever its length — tapping an entry
+         * in the clipboard-history panel is the other way a user "pastes a paragraph", and it was
+         * untracked in exactly the same way [onPaste] was. Committed as one batch rather than a
+         * character at a time, so the host app sees one edit — and so an emoji panel selection
+         * arrives as a whole code point instead of two `commitText` calls each carrying one half of
+         * a surrogate pair, which host apps happen to reassemble but are under no obligation to. */
         override fun insertText(text: String) {
-            text.forEach { textEditor.commitCharacter(it) }
+            if (text.isEmpty()) return
+            textEditor.insertText(text)
+            pushUndo(TextEdit(inserted = text))
+            currentWordBuffer.clear()
+            suggestionCycleIndex = -1
+            activeCorrection = null
+            lastAutocorrect = null
+            revertedWord = null
         }
         override fun close() {
             _uiState.update { it.copy(activeExtensionId = null) }
@@ -370,6 +404,8 @@ class KeyboardViewModel(
                 enterAction = enterAction,
                 canUndo = false,
                 canRedo = false,
+                quickAccessOpen = false,
+                resizing = false,
             )
         }
         lastCommittedWord = null
@@ -383,8 +419,93 @@ class KeyboardViewModel(
         activeCorrection = null
         // A new field is a new editing context — undo history from whatever was focused before
         // isn't meaningful here, same lifecycle as every other per-field piece of state above.
-        undoStack.clear()
-        redoStack.clear()
+        undoHistory.clear()
+        // A word staged in the field being left never gets its confirming next word, and carrying
+        // it into an unrelated field would learn it on the strength of typing that has nothing to
+        // do with it.
+        discardPendingLearn()
+    }
+
+    // --- placement (floating / one-handed / resize) ----------------------------------------------
+
+    /** Opens or closes the quick-access panel. Closes any extension panel on the way in — both use
+     * the key-grid slot, so they cannot both be showing. */
+    fun toggleQuickAccess() {
+        _uiState.update {
+            val opening = !it.quickAccessOpen
+            it.copy(
+                quickAccessOpen = opening,
+                activeExtensionId = if (opening) null else it.activeExtensionId,
+                resizing = if (opening) false else it.resizing,
+            )
+        }
+    }
+
+    fun closeQuickAccess() = _uiState.update { it.copy(quickAccessOpen = false) }
+
+    /**
+     * Switches placement, closing the panel so the result is immediately visible — the whole point
+     * of these tiles is the change they make to the keyboard behind the panel.
+     *
+     * Toggling: tapping the tile for the mode you are already in returns to [KeyboardPlacement.DOCKED],
+     * so every tile is its own off switch and there is no separate "back to normal" control.
+     */
+    fun setPlacement(placement: KeyboardPlacement) {
+        val current = layoutPreferences.settings.value.placement
+        val next = if (current == placement) KeyboardPlacement.DOCKED else placement
+        layoutPreferences.setPlacement(next)
+        _uiState.update { it.copy(quickAccessOpen = false) }
+    }
+
+    /** One-handed from a single tile: picks the right-hand side first (the majority hand), and a
+     * second tap flips sides rather than switching it off — matching the gutter's own switch-side
+     * button, so the tile and the gutter don't disagree. */
+    fun toggleOneHanded() {
+        val current = layoutPreferences.settings.value.placement
+        val next = when (current) {
+            KeyboardPlacement.ONE_HANDED_RIGHT -> KeyboardPlacement.ONE_HANDED_LEFT
+            KeyboardPlacement.ONE_HANDED_LEFT -> KeyboardPlacement.DOCKED
+            else -> KeyboardPlacement.ONE_HANDED_RIGHT
+        }
+        layoutPreferences.setPlacement(next)
+        _uiState.update { it.copy(quickAccessOpen = false) }
+    }
+
+    fun switchOneHandedSide() {
+        val next = when (layoutPreferences.settings.value.placement) {
+            KeyboardPlacement.ONE_HANDED_RIGHT -> KeyboardPlacement.ONE_HANDED_LEFT
+            else -> KeyboardPlacement.ONE_HANDED_RIGHT
+        }
+        layoutPreferences.setPlacement(next)
+    }
+
+    /** Persists the result of a resize/move drag. Called once on drag end, never per frame — the
+     * live value lives in the UI until then (see `PlacementState`). Routed through the view model
+     * so the UI layer never has to build its own [LayoutPreferences], which would register a second
+     * SharedPreferences listener per composition. */
+    fun commitPlacementBounds(widthDp: Int, heightDp: Int, xDp: Int, yDp: Int) {
+        when (val placement = layoutPreferences.settings.value.placement) {
+            KeyboardPlacement.FLOATING -> layoutPreferences.setFloatingBounds(widthDp, heightDp, xDp, yDp)
+            KeyboardPlacement.ONE_HANDED_LEFT, KeyboardPlacement.ONE_HANDED_RIGHT -> {
+                layoutPreferences.setOneHandedWidthDp(widthDp)
+                layoutPreferences.setKeyboardHeightDp(heightDp)
+            }
+            KeyboardPlacement.DOCKED -> layoutPreferences.setKeyboardHeightDp(heightDp)
+        }
+    }
+
+    fun setResizing(resizing: Boolean) =
+        _uiState.update { it.copy(resizing = resizing, quickAccessOpen = false) }
+
+    /** Cycles the four built-in presets. Custom themes are deliberately not in the cycle — there can
+     * be any number of them, and a tile that might need twenty taps to get back where it started is
+     * not a quick action. Picking a custom theme stays a Settings job. */
+    fun cycleTheme() {
+        val presets = Presets.all
+        val index = presets.indexOfFirst { it.id == themeRepository.currentTheme.value.id }
+        val next = presets[(index + 1).mod(presets.size)]
+        themeRepository.setTheme(next)
+        showBanner(next.name)
     }
 
     fun selectTopStripTab(tab: TopStripTab) {
@@ -400,11 +521,55 @@ class KeyboardViewModel(
     }
 
     fun onCut() {
-        textEditor.selectedText()?.let(onClipboardCopy)
+        val cut = textEditor.selectedText()
+        cut?.let(onClipboardCopy)
         textEditor.cutSelection()
+        // One step for the whole selection, however large — a cut is a single gesture, so it is a
+        // single undo, the same as UID_CUT is on Windows.
+        if (!cut.isNullOrEmpty()) pushUndo(TextEdit(removed = cut))
     }
 
-    fun onPaste() = textEditor.pasteFromClipboard()
+    /**
+     * Pastes, as **one** undo step covering the whole clip.
+     *
+     * Prefers committing the clip text directly over delegating to the host app's paste, for the
+     * sole reason that it is the only way to know what was inserted: `performContextMenuAction`
+     * hands the whole operation to the host, which reads the clipboard itself and reports nothing
+     * back. That left paste entirely absent from the undo history, so undoing right after a paste
+     * popped an unrelated typed step and deleted that many characters off the end of the pasted
+     * text — the reported symptom of a four-word paste undoing a word at a time.
+     *
+     * Reading the clipboard here does **not** fire Android 12+'s "pasted from your clipboard"
+     * toast: `ClipboardService.showAccessNotificationLocked` exempts the current IME, which omakey
+     * is by definition at the moment the user taps its own Paste button. (That exemption is why
+     * this is safe *here* specifically, and not a general licence to read the clipboard — see
+     * `OmakeyInputMethodService.captureCurrentClipboardIfNew`, which runs from a background
+     * listener where omakey may not be the focused IME.)
+     *
+     * Falls back to the host-app paste when the clip has no text to offer — an image, an empty
+     * clip, a `ClipboardManager` that returns null. That path still pastes correctly; it just
+     * cannot be undone, which is strictly what happened before for every paste.
+     */
+    fun onPaste() {
+        val clip = clipboardText()?.toString()
+        if (clip.isNullOrEmpty()) {
+            textEditor.pasteFromClipboard()
+            return
+        }
+        // commitText replaces the selection, so a paste over selected text is one replacement —
+        // and has to be recorded as one, or undo would put the clip back without the text it
+        // displaced.
+        val replaced = textEditor.selectedText().orEmpty()
+        textEditor.insertText(clip)
+        pushUndo(TextEdit(removed = replaced, inserted = clip))
+        // The pasted text is not typed text: none of the word-in-progress bookkeeping describes it.
+        currentWordBuffer.clear()
+        suggestionCycleIndex = -1
+        activeCorrection = null
+        lastAutocorrect = null
+        revertedWord = null
+        refreshSuggestionsAfterDeletion()
+    }
 
     fun onKeyTap(code: Int) {
         when (code) {
@@ -491,7 +656,7 @@ class KeyboardViewModel(
         flushWordBuffer()
         textEditor.sendKeyEvent(if (forward) android.view.KeyEvent.KEYCODE_DPAD_RIGHT else android.view.KeyEvent.KEYCODE_DPAD_LEFT)
         suggestionCycleIndex = -1
-        deleteCoalesceActive = false
+        undoHistory.breakCoalescing()
     }
 
     /** Cycles left through the frozen suggestions snapshot (does not re-query, so the candidate
@@ -537,7 +702,7 @@ class KeyboardViewModel(
         val word = _uiState.value.suggestions.getOrNull(index) ?: return
         lastAutocorrect = null
         revertedWord = null
-        deleteCoalesceActive = false
+        undoHistory.breakCoalescing()
         if (activeCorrection != null) {
             applyActiveCorrection(word)
             suggestionCycleIndex = index
@@ -578,7 +743,10 @@ class KeyboardViewModel(
         if (original.isBlank()) return
         if (active != null) applyActiveCorrection(original)
         suggestionCycleIndex = -1
-        deleteCoalesceActive = false
+        undoHistory.breakCoalescing()
+        // Either branch below decides this word's fate explicitly; the staged implicit learn would
+        // only duplicate or contradict it.
+        discardPendingLearn()
         when {
             autocorrectIndex.isUserAdded(original) -> {
                 autocorrectIndex.unlearn(original)
@@ -617,9 +785,11 @@ class KeyboardViewModel(
      * [flushWordBuffer]'s doc) — the word came from the suggestion strip, so it was already a
      * known word or an already-vetted correction. */
     fun onSuggestionAccepted(word: String) {
+        // Accepting a suggestion for the word just committed is the user saying it was wrong.
+        discardPendingLearn()
         lastAutocorrect = null
         revertedWord = null
-        deleteCoalesceActive = false
+        undoHistory.breakCoalescing()
         val active = activeCorrection
         if (active != null) {
             applyActiveCorrection(word)
@@ -791,7 +961,7 @@ class KeyboardViewModel(
 
     private fun commitTypedChar(rawChar: Char) {
         suggestionCycleIndex = -1
-        deleteCoalesceActive = false
+        undoHistory.breakCoalescing()
         var char = rawChar
         if (_uiState.value.shiftOn) char = char.uppercaseChar()
         // Punctuation typed directly after a word (no space) is a word boundary too — correct
@@ -990,6 +1160,9 @@ class KeyboardViewModel(
     }
 
     private fun onDeleteCharacter() {
+        // Any backspace at all retracts the staged word — see [pendingLearn] for why this is
+        // deliberately broader than "a backspace that touches it".
+        discardPendingLearn()
         // A non-empty selection (e.g. after "Select all") always takes priority over the normal
         // one-character-back deletion — deleteSurroundingText is relative to the cursor and
         // doesn't know about an active selection at all, so without this check, backspacing with
@@ -999,9 +1172,13 @@ class KeyboardViewModel(
             lastAutocorrect = null
             revertedWord = null
             suggestionCycleIndex = -1
-            deleteCoalesceActive = false
+            undoHistory.breakCoalescing()
             currentWordBuffer.clear()
+            // Read before deleting, and recorded as one step for the whole selection however big
+            // it is — "backspace over a selection" is one gesture, so it is one undo.
+            val deleted = textEditor.selectedText()
             textEditor.deleteSelection()
+            if (!deleted.isNullOrEmpty()) pushUndo(TextEdit(removed = deleted))
             refreshSuggestions()
             return
         }
@@ -1014,7 +1191,7 @@ class KeyboardViewModel(
             // committed right after the corrected word by whichever boundary triggered this.
             lastAutocorrect = null
             revertedWord = record.original
-            deleteCoalesceActive = false
+            undoHistory.breakCoalescing()
             repeat(record.corrected.length + 1) { textEditor.deleteCharacterBackward() }
             record.original.forEach { textEditor.commitCharacter(it) }
             currentWordBuffer.clear()
@@ -1030,7 +1207,7 @@ class KeyboardViewModel(
             // Inserted undo step that word eventually becomes on its own word boundary; not
             // independently undoable mid-word, same as before.
             currentWordBuffer.deleteCharAt(currentWordBuffer.length - 1)
-            deleteCoalesceActive = false
+            undoHistory.breakCoalescing()
             textEditor.deleteCharacterBackward()
             refreshSuggestionsAfterDeletion()
             return
@@ -1039,41 +1216,36 @@ class KeyboardViewModel(
         // text (the single most common backspace usage: erasing the end of a finished
         // sentence), previously untracked by undo entirely. Read the character before deleting
         // it, then record (and coalesce with any immediately preceding run of the same kind —
-        // see [deleteCoalesceActive]) so Ctrl+Z-style undo can restore it.
+        // see [UndoHistory.recordBackspace]) so Ctrl+Z-style undo can restore it.
         val deletedChar = textEditor.textBeforeCursor(1).lastOrNull()
         textEditor.deleteCharacterBackward()
         if (deletedChar != null) recordPlainCharDelete(deletedChar)
         refreshSuggestionsAfterDeletion()
     }
 
-    /** Merges a run of consecutive plain single-character backspaces into already-committed text (the
-     * final branch of [onDeleteCharacter]) into one [UndoEvent.Deleted] undo step, rather than
-     * pushing a separate one-character step per keystroke — matches how a backspace run reads as
-     * "one edit" in mainstream text editors. [deleteCoalesceActive] is reset to false by every
-     * other action that mutates text or moves the cursor, so the merge only continues across an
-     * unbroken run of exactly this kind of backspace. */
+    /** Records one plain single-character backspace into already-committed text (the final branch
+     * of [onDeleteCharacter]). [UndoHistory.recordBackspace] merges consecutive ones into a single
+     * step; every other action that mutates text or moves the cursor calls
+     * [UndoHistory.breakCoalescing], so the merge only continues across an unbroken run of exactly
+     * this kind of backspace. */
     private fun recordPlainCharDelete(char: Char) {
-        val top = undoStack.lastOrNull()
-        if (deleteCoalesceActive && top is UndoEvent.Deleted) {
-            undoStack[undoStack.lastIndex] = UndoEvent.Deleted(char + top.text)
-            redoStack.clear()
-            _uiState.update { it.copy(canUndo = true, canRedo = false) }
-        } else {
-            pushUndo(UndoEvent.Deleted(char.toString()))
-        }
-        deleteCoalesceActive = true
+        undoHistory.recordBackspace(char)
+        _uiState.update { it.copy(canUndo = undoHistory.canUndo, canRedo = undoHistory.canRedo) }
     }
 
     private fun onDeleteWord() {
+        discardPendingLearn()
         lastAutocorrect = null
         revertedWord = null
         suggestionCycleIndex = -1
-        deleteCoalesceActive = false
+        undoHistory.breakCoalescing()
         currentWordBuffer.clear()
         // Same selection-takes-priority rule as onDeleteCharacter() — swipe-left with everything
         // selected should clear the selection, not just delete one word next to the cursor.
         if (textEditor.hasSelection()) {
+            val deleted = textEditor.selectedText()
             textEditor.deleteSelection()
+            if (!deleted.isNullOrEmpty()) pushUndo(TextEdit(removed = deleted))
             refreshSuggestions()
             return
         }
@@ -1088,7 +1260,7 @@ class KeyboardViewModel(
         if (textEditor.textBeforeCursor(1).lastOrNull()?.isWhitespace() == true) {
             val deletedChar = textEditor.textBeforeCursor(1)
             textEditor.deleteCharacterBackward()
-            pushUndo(UndoEvent.Deleted(deletedChar))
+            pushUndo(TextEdit(removed = deletedChar))
             refreshSuggestionsAfterDeletion()
             return
         }
@@ -1098,7 +1270,7 @@ class KeyboardViewModel(
         // a real bug) to retype it precisely.
         val deletedText = textEditor.wordBackwardDeletionPreview()
         textEditor.deleteWordBackward()
-        if (!deletedText.isNullOrEmpty()) pushUndo(UndoEvent.Deleted(deletedText))
+        if (!deletedText.isNullOrEmpty()) pushUndo(TextEdit(removed = deletedText))
         refreshSuggestionsAfterDeletion()
     }
 
@@ -1157,53 +1329,40 @@ class KeyboardViewModel(
         _uiState.update { it.copy(suggestions = alternatives, firstSuggestionKind = SuggestionKind.CORRECTION) }
     }
 
-    private fun pushUndo(event: UndoEvent) {
-        undoStack.addLast(event)
-        if (undoStack.size > UNDO_STACK_LIMIT) undoStack.removeFirst()
-        redoStack.clear()
-        // Every caller except recordPlainCharDelete's "start a new run" branch wants this off;
-        // that one immediately sets it back to true right after calling pushUndo, so it's safe
-        // to unconditionally clear it here rather than repeat this at every call site.
-        deleteCoalesceActive = false
-        _uiState.update { it.copy(canUndo = true, canRedo = false) }
+    private fun pushUndo(event: TextEdit) {
+        undoHistory.record(event)
+        // Every caller except recordPlainCharDelete's own path wants coalescing off; UndoHistory
+        // handles that itself, so there is nothing to repeat at each call site.
+        _uiState.update { it.copy(canUndo = undoHistory.canUndo, canRedo = undoHistory.canRedo) }
     }
 
-    /** Reverses the most recent tracked text edit — see [UndoEvent]'s doc for exactly what's
-     * covered. Deletes/retypes the *exact* recorded text ([UndoEvent.Inserted.text]/
-     * [UndoEvent.Deleted.text] already include the real separator/whitespace involved), so
-     * undo/redo round-trip losslessly instead of the old scheme's hardcoded-space assumption. */
+    /** Reverses the most recent tracked text edit — see [TextEdit]'s doc for exactly what's
+     * covered. Puts back the *exact* recorded text (which already includes the real
+     * separator/whitespace involved), so undo/redo round-trip losslessly instead of the old
+     * scheme's hardcoded-space assumption. */
     fun undo() {
-        val event = undoStack.removeLastOrNull() ?: return
-        when (event) {
-            is UndoEvent.Inserted -> repeat(event.text.length) { textEditor.deleteCharacterBackward() }
-            is UndoEvent.Deleted -> textEditor.insertText(event.text)
-        }
-        redoStack.addLast(event)
-        if (redoStack.size > UNDO_STACK_LIMIT) redoStack.removeFirst()
-        currentWordBuffer.clear()
-        suggestionCycleIndex = -1
-        activeCorrection = null
-        lastAutocorrect = null
-        revertedWord = null
-        deleteCoalesceActive = false
-        _uiState.update { it.copy(canUndo = undoStack.isNotEmpty(), canRedo = true) }
-        refreshSuggestionsAfterDeletion()
+        val event = undoHistory.undo() ?: return
+        textEditor.replaceBackward(event.inserted.length, event.removed)
+        afterUndoOrRedo()
     }
 
     fun redo() {
-        val event = redoStack.removeLastOrNull() ?: return
-        when (event) {
-            is UndoEvent.Inserted -> textEditor.insertText(event.text)
-            is UndoEvent.Deleted -> repeat(event.text.length) { textEditor.deleteCharacterBackward() }
-        }
-        undoStack.addLast(event)
+        val event = undoHistory.redo() ?: return
+        textEditor.replaceBackward(event.removed.length, event.inserted)
+        afterUndoOrRedo()
+    }
+
+    /** Undo and redo land the cursor somewhere the typing-order bookkeeping can no longer describe,
+     * so all of it is dropped and suggestions are re-derived from the live text instead. */
+    private fun afterUndoOrRedo() {
+        discardPendingLearn()
+        _uiState.update { it.copy(canUndo = undoHistory.canUndo, canRedo = undoHistory.canRedo) }
         currentWordBuffer.clear()
         suggestionCycleIndex = -1
         activeCorrection = null
         lastAutocorrect = null
         revertedWord = null
-        deleteCoalesceActive = false
-        _uiState.update { it.copy(canUndo = true, canRedo = redoStack.isNotEmpty()) }
+        undoHistory.breakCoalescing()
         refreshSuggestionsAfterDeletion()
     }
 
@@ -1222,6 +1381,8 @@ class KeyboardViewModel(
      * for a word autocorrect has just rewritten — [lastAutocorrect] means what is on screen is the
      * engine's guess, not a word the user chose, and learning from it would let the engine
      * reinforce its own corrections.
+     *
+     * The learn is **deferred**, not performed here — see [pendingLearn].
      */
     private fun flushWordBuffer(separator: String = "") {
         suggestionCycleIndex = -1
@@ -1232,11 +1393,67 @@ class KeyboardViewModel(
             lastCommittedWord = word.lowercase()
             lastCommittedWordCased = word
             currentWordBuffer.clear()
-            pushUndo(UndoEvent.Inserted(word + separator))
-            if (incognitoPreferences.shouldLearn() && lastAutocorrect == null && word.all { it.isLetter() }) {
-                scope.launch { predictionEngine.recordAcceptedWord(word, previousForLearning) }
+            pushUndo(TextEdit(inserted = word + separator))
+            // Whatever was staged at the previous word boundary has now survived an entire further
+            // word without being deleted or corrected, so it counts as deliberate.
+            commitPendingLearn()
+            pendingLearn = if (incognitoPreferences.shouldLearn() && lastAutocorrect == null &&
+                word.all { it.isLetter() }
+            ) {
+                PendingLearn(word = word, previousWord = previousForLearning)
+            } else {
+                null
             }
         }
+    }
+
+    /**
+     * A word that has been committed to the text but not yet offered to the personal model.
+     *
+     * Learning used to happen the instant a word boundary was crossed, which meant the keyboard
+     * recorded words the user visibly rejected a moment later. Type "shoukd", press space, notice
+     * it, backspace and retype: "shoukd" had already been learned on the space, and nothing
+     * afterwards took it back. Same for fixing it by tapping a suggestion. It never earned
+     * correction immunity — [PersonalLanguageModel.IMPLICIT_TRUST_THRESHOLD] takes three uses for
+     * that, and that part was working — but it did pick up a ranking boost and it did show up in
+     * Settings' "Learned words" list, which is what makes it look like the keyboard is memorising
+     * typos. It is.
+     *
+     * So a word now has to *survive* to be learned. It is staged here at its own word boundary and
+     * only handed to the model at the **next** one, by which point the user has typed a whole
+     * further word without going back to fix it. Anything that suggests the word was not what they
+     * meant — a backspace, a word delete, accepting a suggestion for it, an undo, leaving the
+     * field — discards the staged word instead ([discardPendingLearn]).
+     *
+     * Deliberately conservative: a backspace anywhere discards the staged word, even one nowhere
+     * near it. Failing to learn costs nothing (the word is learned the next time it is typed
+     * cleanly) while learning a rejected word is the bug being fixed, so the asymmetry is the right
+     * way round.
+     *
+     * This is the same shape as AOSP's `UserHistoryDictionary`, which is permissive about *adding*
+     * (`FREQUENCY_FOR_TYPED = 2`) but makes entries prove themselves before they stick, via a
+     * forgetting curve and a validity flag that decide whether a given entry is even persisted.
+     * Neither Gboard nor iOS publishes its thresholds, so there is no number to copy from them —
+     * what is copyable is the principle, which all of them share: one keystroke is not evidence.
+     */
+    private data class PendingLearn(val word: String, val previousWord: String?)
+
+    private var pendingLearn: PendingLearn? = null
+
+    private fun commitPendingLearn() {
+        val pending = pendingLearn ?: return
+        pendingLearn = null
+        // Re-checked rather than trusted from staging time: the user may have switched the keyboard
+        // into incognito in between, and a word typed before that flag went up is still a word they
+        // don't want recorded.
+        if (!incognitoPreferences.shouldLearn()) return
+        scope.launch { predictionEngine.recordAcceptedWord(pending.word, pending.previousWord) }
+    }
+
+    /** Drops the staged word — the user did something that suggests it wasn't what they meant. See
+     * [pendingLearn]. */
+    private fun discardPendingLearn() {
+        pendingLearn = null
     }
 
     /** A tap while caps lock is engaged turns it off entirely (back to lowercase) — standard
@@ -1271,21 +1488,31 @@ class KeyboardViewModel(
     }
 
     fun selectExtension(id: String) {
-        _uiState.update { it.copy(activeExtensionId = id) }
+        // Closes quick access on the way in: both occupy the key-grid slot, so leaving the flag set
+        // would mean the panel reappears the moment the extension closes.
+        _uiState.update { it.copy(activeExtensionId = id, quickAccessOpen = false) }
     }
 
     /** Cheap, synchronous static-table lookup (see [WordEmojiSuggestions]) — unlike word
      * suggestions/predictions, never worth a background [refreshJob] of its own. */
     private fun updateEmojiSuggestions(word: String?) {
-        val emoji = word?.let(WordEmojiSuggestions::suggest).orEmpty()
+        // Toned for display as well as insertion, so a chip shows what tapping it produces.
+        // onEmojiSuggestionAccepted re-applies the tone to whatever it is handed, which is a no-op
+        // for an already-toned chip (apply strips before re-adding) — so the two can't disagree.
+        val tone = emojiSkinTone()
+        val emoji = word?.let(WordEmojiSuggestions::suggest).orEmpty().map(tone::apply)
         _uiState.update { it.copy(emojiSuggestions = emoji) }
     }
 
     /** Tapping an emoji-suggestion chip (see [KeyboardUiState.emojiSuggestions]) just inserts it
      * next to whatever's already there — entirely independent of [activeCorrection]/word-cycling
      * state, since the emoji isn't replacing or completing the word, only riding along with it. */
-    fun onEmojiSuggestionAccepted(emoji: String) {
+    fun onEmojiSuggestionAccepted(rawEmoji: String) {
+        val emoji = emojiSkinTone().apply(rawEmoji)
         textEditor.insertText(emoji)
+        // One tap, one undo step — and an emoji is often a surrogate pair, so "just backspace it"
+        // is not reliably one keypress either.
+        pushUndo(TextEdit(inserted = emoji))
         _uiState.update { it.copy(emojiSuggestions = emptyList()) }
     }
 
@@ -1423,7 +1650,6 @@ class KeyboardViewModel(
     private companion object {
         const val PREFERRED_EXTENSION_ID = "builtin.emoji"
         const val SUGGESTION_LIMIT = 6
-        const val UNDO_STACK_LIMIT = 50
         // Matches the ~500ms window most mainstream keyboards use for double-tap-space-for-period.
         const val DOUBLE_TAP_SPACE_WINDOW_MS = 500L
         val SYMBOLS_LAYOUT_IDS = setOf(Layouts.Symbols1.id, Layouts.Symbols2.id)

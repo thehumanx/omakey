@@ -40,6 +40,25 @@ class TextEditor(private val connectionProvider: () -> InputConnection?) {
         ic?.commitText(text, 1)
     }
 
+    /**
+     * Replaces the [charactersBefore] characters immediately before the cursor with [text], as one
+     * batched edit.
+     *
+     * This is what undo/redo needs: both directions are "take back what is there now, put back what
+     * was there before", and doing it in one batch means the host app sees a single edit. Undo used
+     * to loop [deleteCharacterBackward] once per character, which for a pasted paragraph is
+     * hundreds of separate `InputConnection` round-trips — slow, and visible as the text unwinding
+     * character by character in some apps.
+     */
+    fun replaceBackward(charactersBefore: Int, text: String) {
+        val connection = ic ?: return
+        if (charactersBefore <= 0 && text.isEmpty()) return
+        connection.beginBatchEdit()
+        if (charactersBefore > 0) connection.deleteSurroundingText(charactersBefore, 0)
+        if (text.isNotEmpty()) connection.commitText(text, 1)
+        connection.endBatchEdit()
+    }
+
     fun sendEditorAction(actionId: Int) {
         ic?.performEditorAction(actionId)
     }
@@ -228,6 +247,15 @@ class TextEditor(private val connectionProvider: () -> InputConnection?) {
         ic?.performContextMenuAction(android.R.id.cut)
     }
 
+    /**
+     * Delegates the paste to the host app, which reads the clipboard itself.
+     *
+     * Used only when the clipboard's text isn't available to omakey (an image, an empty clip, a
+     * `ClipboardManager` read that came back null). It is the more compatible path, but the
+     * inserted text is unknowable from here, so a paste made this way cannot be recorded as an undo
+     * step — see `KeyboardViewModel.onPaste`, which prefers [insertText] with the known clip text
+     * precisely so that undo can treat the paste as one atomic edit.
+     */
     fun pasteFromClipboard() {
         ic?.performContextMenuAction(android.R.id.paste)
     }

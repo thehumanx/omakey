@@ -29,14 +29,27 @@ import kotlin.math.pow
  * silently marked "known" and became **immune to correction forever**, confirmed on a device.
  * Learning was disabled entirely in response.
  *
- * So the two consequences of learning are separated:
+ * ## Counting a word is not the same as having learned it
  *
- *  - **Ranking** ([adjust]) applies to everything typed. A typo picks up a small, decaying boost;
- *    it cannot promote itself into a plausible correction target, and it ages out.
- *  - **Correction immunity** ([isTrusted]) is much harder to earn. An explicit swipe-up save grants
- *    it immediately — the user said so. Implicit learning grants it only after
- *    [IMPLICIT_TRUST_THRESHOLD] separate uses, on the reasoning that a typo is a slip and a slip
- *    does not reliably repeat, whereas a name does.
+ * A word must be *used* [IMPLICIT_TRUST_THRESHOLD] times before it affects anything at all. Until
+ * then its count is recorded — it has to be, or there would be nothing to count with, and the IME
+ * process is killed often enough that an in-memory tally would almost never reach three — but the
+ * word is **not admitted**: it does not influence ranking ([adjust]), does not appear in
+ * completions ([matching]), is not trusted against autocorrect ([isTrusted]), does not contribute
+ * to the personal probability mass, and is not listed in Settings' "Learned words".
+ *
+ * An explicit swipe-up save is admitted at once — [EXPLICIT_SAVE_WEIGHT] clears the threshold on
+ * its own, and the user said so outright.
+ *
+ * This replaced a split where a word was admitted for *ranking* on its first use and only needed
+ * three uses for correction immunity. The reasoning for that (one use of an unusual word is enough
+ * to lift it above corpus words of similar rarity) was sound in isolation, but it meant a typo the
+ * user typed once still changed what the keyboard suggested, and still showed up on a screen
+ * labelled "Learned words". A single keystroke is not evidence of anything. The cost is real and
+ * accepted: a name typed once no longer completes until its third use.
+ *
+ * [record] is therefore best read as "note that this happened", and admission as the actual act of
+ * learning.
  *
  * ## Recency
  *
@@ -132,8 +145,13 @@ class PersonalLanguageModel(private val clock: () -> Long = { System.currentTime
      * doc — this is deliberately much harder to earn than mere presence. */
     fun isTrusted(word: String): Boolean {
         val entry = byWord[word.lowercase()] ?: return false
-        return entry.explicit || entry.decayedCount(clock()) >= IMPLICIT_TRUST_THRESHOLD
+        return entry.isAdmitted(clock())
     }
+
+    /** Whether [entry] has been used enough to count as learned rather than merely seen. Every
+     * effect this model has is gated on it; see the class doc. */
+    private fun Entry.isAdmitted(now: Long): Boolean =
+        explicit || decayedCount(now) >= IMPLICIT_TRUST_THRESHOLD
 
     /** Whether the user saved this deliberately — exactly what decides if a second swipe-up can
      * un-learn it, so a casually-typed word is never removable that way. */
@@ -166,7 +184,11 @@ class PersonalLanguageModel(private val clock: () -> Long = { System.currentTime
      */
     private fun interpolate(entry: Entry, staticLogProbability: Float): Float {
         if (totalCount <= 0f) return staticLogProbability
-        val personal = entry.decayedCount(clock()) / totalCount
+        val now = clock()
+        // Not yet learned — see the class doc. Returning the corpus probability unchanged is what
+        // makes "recorded" and "admitted" different things in practice.
+        if (!entry.isAdmitted(now)) return staticLogProbability
+        val personal = entry.decayedCount(now) / totalCount
         val corpus = exp(staticLogProbability.toDouble())
         val mixed = (1.0 - PERSONAL_WEIGHT) * corpus + PERSONAL_WEIGHT * personal
         return if (mixed <= 0.0) staticLogProbability else ln(mixed).toFloat()
@@ -180,7 +202,7 @@ class PersonalLanguageModel(private val clock: () -> Long = { System.currentTime
         if (prefix.isEmpty() || limit <= 0 || byWord.isEmpty()) return emptyList()
         val now = clock()
         return byWord.values.asSequence()
-            .filter { it.word.startsWith(prefix) && it.word != prefix }
+            .filter { it.isAdmitted(now) && it.word.startsWith(prefix) && it.word != prefix }
             .sortedByDescending { it.decayedCount(now) }
             .take(limit)
             .map { it.word }
@@ -213,9 +235,14 @@ class PersonalLanguageModel(private val clock: () -> Long = { System.currentTime
             ?.let { byVocabularyId[it] = entry }
     }
 
+    /** Personal probability mass, over **admitted** entries only. Counting provisional words here
+     * would dilute every learned word's share by however many one-off typos happen to be sitting in
+     * the table, which is the opposite of what the mass is meant to represent. */
     private fun recomputeTotal() {
         val now = clock()
-        totalCount = byWord.values.fold(0f) { sum, entry -> sum + entry.decayedCount(now) }
+        totalCount = byWord.values.fold(0f) { sum, entry ->
+            if (entry.isAdmitted(now)) sum + entry.decayedCount(now) else sum
+        }
     }
 
     /** Keeps the model bounded, dropping whatever has decayed furthest. Explicit saves are evicted
@@ -235,8 +262,11 @@ class PersonalLanguageModel(private val clock: () -> Long = { System.currentTime
     }
 
     companion object {
-        /** Uses needed before implicit learning grants correction immunity. A typo is a slip and
-         * slips do not reliably repeat; a name does. */
+        /** Uses needed before a typed word counts as learned — below this it is counted and
+         * nothing else. A typo is a slip and slips do not reliably repeat; a name does.
+         *
+         * One threshold, not two: this gates ranking, completion, correction immunity and Settings
+         * visibility alike, so there is no state in which the keyboard half-believes a word. */
         const val IMPLICIT_TRUST_THRESHOLD = 3f
 
         /** An explicit save counts for this many ordinary uses, so a deliberately saved word ranks

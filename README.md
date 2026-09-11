@@ -40,9 +40,13 @@ updates — nothing you type, copy, or type into any app ever leaves your phone.
 
 ## What you won't find in most keyboards
 
+- A floating keyboard you can put anywhere on screen — and still tap the app behind it, which
+  most floating keyboards won't let you do.
+- One-handed mode and drag-to-resize, reachable from the keyboard itself rather than buried in
+  settings. Each mode remembers its own size.
 - Inline calculator — type `12+7=` and `12+7=19` shows up in the suggestion strip, ready to tap.
 - Undo/redo — two buttons that step back and forward through your last several typed or deleted
-  words.
+  words, treating a paste as one thing rather than unwinding it a word at a time.
 - Clipboard history — text and images, several at once, not just whatever you last copied.
 - Grid layout mode — a bordered, edge-to-edge key style, separate from whichever color theme
   you're using.
@@ -89,6 +93,8 @@ updates — nothing you type, copy, or type into any app ever leaves your phone.
 - Optional double-tap (or double-swipe-right) space for a period, off by default.
 - Keyboard height and position, adjustable in one screen: drag to resize, drag to lift it off the
   bottom edge for easier one-handed reach. Capped so it can never cover what you're typing into.
+- Optional padding down the left and right edges, so the outer keys aren't flush against a curved
+  or bezel-less screen edge.
 
 ### Gestures — the whole point
 
@@ -109,12 +115,30 @@ menus involved:
 | **Swipe left/right in the emoji panel** | Slides between emoji categories. |
 | Adjustable swipe sensitivity | A Settings slider tunes how far a swipe has to travel before it registers. |
 
+### Put the keyboard where you want it
+
+A button at the left of the suggestion strip opens Quick access — the things you decide in the
+moment, while looking at whatever you're typing into:
+
+- **Floating** — detach the keyboard and drag it anywhere. The app behind it stays visible *and*
+  usable: tapping outside the keyboard reaches the app, and the app isn't shoved upward the way a
+  docked keyboard shoves it.
+- **One-handed** — shrink it to the left or right so your thumb reaches everything, with buttons
+  alongside to switch sides, go back to full width, or resize.
+- **Resize** — drag the corners, in whichever mode you're in. Floating, one-handed and normal each
+  remember their own size, so resizing one doesn't disturb the others.
+- **Theme** — cycle Light, Dark, Follow-system and Accent without leaving the keyboard.
+- **Settings** — one tap, instead of knowing to long-press the extensions key.
+
 ### Suggestions and autocorrect
 
 - Real autocorrect — typos get fixed the moment you finish the word, not just quietly offered for
   you to notice and tap. Got it wrong? One backspace undoes it, and it won't just re-correct back.
 - Catches typos that need two fixes at once — a swapped letter pair *and* a wrong character — not
   just single-letter slips.
+- Fixes the *first* letter too — "qccount" becomes "account", "hte" becomes "the" — as long as the
+  slip is a plausible one: a neighbouring key, a stray leading character, two letters swapped, or a
+  first letter missed entirely.
 - Catches "real-word" mistakes too — "thus" when you meant "this" — based on the words around it,
   without ever auto-applying something that risky on its own.
 - Offers alternatives even when what you typed is already a valid word, because only you know
@@ -125,10 +149,10 @@ menus involved:
   typos of contractions too.
 - Knows what usually comes next — suggestions are ranked by the words on either side, not just by
   which word is commonest overall.
-- Learns the words *you* use. Names, slang, jargon, project names: type one a few times and it
-  stops being flagged as a typo and starts turning up as a suggestion. It takes a few uses before
-  a word counts as real, so an occasional slip doesn't get learned — and words you stop using fade
-  out on their own.
+- Learns the words *you* use. Names, slang, jargon, project names: type one three times and it
+  stops being flagged as a typo and starts turning up as a suggestion. Nothing counts as learned
+  before that, so an occasional slip doesn't stick — and a word you delete or correct straight
+  after typing is never learned at all. Words you stop using fade out on their own.
 - **Incognito** — an eye button in the tools row pauses learning whenever you want it, and password
   fields are never learned from at all, automatically. None of it ever leaves your phone.
 - Optional next-word prediction, off by default.
@@ -144,7 +168,8 @@ menus involved:
 
 Swipe to the Tools tab for:
 
-- **Undo / Redo** for your last several typed or deleted words.
+- **Undo / Redo** for your last several typed or deleted words. A paste, a cut or a deleted
+  selection counts as one step, however much text it moved.
 - **Select all / Copy / Cut / Paste**, without leaving the keyboard.
 - **Clipboard history** — every recent copy, text and images, one tap away. Long-press to delete
   an item. Opening clipboard mode dims everything else so it's clearly its own space.
@@ -156,19 +181,24 @@ Swipe to the Tools tab for:
 - A dedicated kaomoji category — `(^_^)`, `ヽ(´▽\`)/`, sized properly instead of squeezed into the
   same grid as single-character emoji.
 - A special-characters picker for °, ™, §, arrows, math symbols.
+- Six skin tones, set once in Settings and applied to hands, faces and people everywhere emoji
+  turn up — including the suggestion chips.
 - Smooth directional slides switching categories or leaving the panel.
 
 ### Make it feel like yours
 
-- Built-in themes — Light, Dark, Follow-system, Accent — with an option to pull the spacebar's
-  color straight from your device's own wallpaper palette.
+- Built-in themes — Light, Dark, Follow-system, and Accent, which builds the whole keyboard from
+  your device's own Material You palette and follows your system light/dark setting. Plus an
+  option to pull just the spacebar and pressed keys from that palette on any theme.
+- A live keyboard preview in Settings that reflects your theme, layout style, font, key
+  backgrounds, home-row highlight and capitalization as you change them.
 - **Grid layout mode**, independent of whichever color theme you're on — bordered, edge-to-edge
   cells with no gaps, a pressed key filling solid instead of just dimming. Border color and
   thickness (Small/Medium/Large) are both yours to set.
 - A full custom theme builder — HSV picker, a hex field you can type into or copy from, and a
   live, full-size keyboard preview the whole time you're editing. Custom themes remember which
   layout they were built for, so you're only ever shown ones that actually fit.
-- Adjustable key font.
+- Adjustable key font — System, Poppins, Figtree, Solway or Aleo.
 - A home-row highlight, so you can find your place by feel without looking down.
 - A consistent icon set for Shift, Backspace, and every Enter state.
 - Capital letters always shown, or lowercase-until-Shift — your call.
@@ -204,11 +234,11 @@ never any auto-download or auto-install.
 
 ## Status
 
-omakey is on release 3.0.0, which rebuilt the suggestion engine from the ground up — the word data,
-how suggestions are ranked, and the ability to learn the words you actually use. Typing, gestures,
-autocorrect, prediction, both layout styles, the clipboard manager, and the emoji panel are all
-working today and getting updated regularly — see [CHANGELOG.md](CHANGELOG.md) for the full
-history.
+omakey is on release 4.0.0, which made the keyboard movable — floating, one-handed, and resizable
+from the keyboard itself — and fixed autocorrect's long-standing blind spot around the first letter
+of a word. Typing, gestures, autocorrect, prediction, both layout styles, the clipboard manager, and
+the emoji panel are all working today and getting updated regularly — see
+[CHANGELOG.md](CHANGELOG.md) for the full history.
 
 ## Getting started
 

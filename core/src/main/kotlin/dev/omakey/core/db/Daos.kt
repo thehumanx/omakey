@@ -26,9 +26,25 @@ interface WordDao {
     @Query("SELECT * FROM words WHERE isUserAdded = 1")
     suspend fun allUserAdded(): List<WordEntity>
 
-    /** Backs the Settings "Learned words" screen — newest-used first, optionally filtered. */
-    @Query("SELECT * FROM words WHERE isUserAdded = 1 AND word LIKE :query || '%' ORDER BY lastUsedTimestamp DESC LIMIT :limit")
-    suspend fun findUserAdded(query: String = "", limit: Int = 500): List<WordEntity>
+    /**
+     * Backs the Settings "Learned words" screen — newest-used first, optionally filtered.
+     *
+     * Only words that have actually been **learned**: an explicit swipe-up save, or a typed word
+     * that reached [dev.omakey.core.predict.PersonalLanguageModel.IMPLICIT_TRUST_THRESHOLD] uses.
+     * Words below that are still stored (they have to be — the count has to accumulate across IME
+     * process restarts, and [allUserAdded] is what reloads it) but they influence nothing, so
+     * listing them on a screen called "Learned words" would be claiming something untrue. This is
+     * why the filter lives here rather than in the storage flag: `isUserAdded` decides what gets
+     * *reloaded*, and provisional words must be.
+     *
+     * [minFrequency] is the threshold scaled by [WordEntity.COUNT_SCALE], passed in by the caller
+     * rather than hardcoded so it cannot drift from the model's own constant.
+     */
+    @Query(
+        "SELECT * FROM words WHERE isUserAdded = 1 AND (explicit = 1 OR frequency >= :minFrequency) " +
+            "AND word LIKE :query || '%' ORDER BY lastUsedTimestamp DESC LIMIT :limit",
+    )
+    suspend fun findUserAdded(query: String = "", minFrequency: Int, limit: Int = 500): List<WordEntity>
 
     /** Settings "Learned words" screen's delete action. Only affects Room — a running IME's
      * in-memory `PersonalLanguageModel` isn't live-notified, so a forgotten word stops being protected

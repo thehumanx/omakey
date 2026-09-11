@@ -18,20 +18,32 @@ import org.junit.Test
  * ## Scorecard by phase
  *
  * ```
- *                                        baseline   phase 1   phase 2
- * dictionary coverage of intended words    96.50 %   99.10 %   99.10 %
+ *                                        baseline   phase 1   phase 2   phase 3
+ * dictionary coverage of intended words    96.50 %   99.10 %   99.10 %   99.10 %
  * CORRECTION
- *   fixed correctly                        18.34 %   25.38 %   32.67 %
- *   changed to the wrong word              35.98 %   34.64 %   36.38 %
- *   left uncorrected                       45.67 %   39.98 %   30.95 %
- *   intended word offered in strip         38.60 %   42.73 %   55.20 %
+ *   fixed correctly                        18.34 %   25.38 %   32.67 %   31.79 %
+ *   changed to the wrong word              35.98 %   34.64 %   36.38 %   37.61 %
+ *   left uncorrected                       45.67 %   39.98 %   30.95 %   30.60 %
+ *   intended word offered in strip         38.60 %   42.73 %   55.20 %   53.53 %
  * DAMAGE
- *   falsely corrected                       0.40 %    0.63 %    0.73 %
+ *   falsely corrected                       0.40 %    0.63 %    0.73 %    0.73 %
  * PREDICTION
- *   next word in top 3 (no prefix)          7.82 %   25.28 %   25.28 %
- *   next word in top 3 (2-char prefix)     53.79 %   62.67 %   62.67 %
- * median correct() latency                    171 us    163 us    283 us
+ *   next word in top 3 (no prefix)          7.82 %   25.28 %   25.28 %   25.28 %
+ *   next word in top 3 (2-char prefix)     53.79 %   62.67 %   62.67 %   62.67 %
+ * median correct() latency                    171 us    163 us    283 us    444 us
  * ```
+ *
+ * **Read phase 3 against [SpatialModelTest], not against this column.** It made the word's first
+ * letter correctable, and on *this* corpus it is a small loss — under a point of accuracy, a point
+ * of miscorrection, no change in damage to correctly-typed words. On simulated touchscreen typing
+ * the same change is worth **+12.5 points fixed and −7.9 points wrong** at moderate noise, and it
+ * moves both numbers the right way at every noise level measured. That is not a contradiction, it
+ * is the two corpora measuring different error distributions: a thumb slips onto the key next to
+ * the one it wanted at position 0 as readily as at position 4, whereas a *cognitive* misspelling
+ * almost always keeps the first letter (the writer knows what word they mean), so widening
+ * position 0 there adds candidates without adding answers. See [SpatialModelTest]'s note on why
+ * tuning exclusively against cognitive misspellings pushes the spatial parameters the wrong way —
+ * this is the same trap, and the reason the trade is taken.
  *
  * **Baseline** measured the engine as shipped: a rank-seeded SQLite dictionary whose bigram table
  * had been written out in alphabetical order. The two numbers that gave the game away were
@@ -62,18 +74,24 @@ import org.junit.Test
  *    **worse** (32.4% → 31.3%) and miscorrection worse (36.6% → 39.4%), while costing 14× the
  *    latency (314µs → 4.6ms). The extra candidates are overwhelmingly unrelated words that happen
  *    to fall within two edits, and they win often enough to do net harm. The original design
- *    comment defending this prune was right.
+ *    comment defending this prune was right *about removing it wholesale*. Phase 3 revisits this
+ *    with a narrower claim that survived measurement — the prune belongs on how plausible the slip
+ *    is, not on letter identity — so read this entry as "an unbounded search is not the fix",
+ *    which it still is, rather than "the first letter is not worth reaching".
  *  - *"Ranking is the bottleneck."* [RecallDiagnosticTest] attributes the failures: only 53% of
  *    intended words are reachable at all, and the dominant cause is **edit distance above 2**
  *    (30.3%), far ahead of the frequency floor (7.5%) or a mistyped first letter (8.2%). Ranking
- *    can only choose among what the search reaches.
+ *    can only choose among what the search reaches. Still true, and still the dominant cause after
+ *    phase 3: reachability moved only 53.10% → 53.82% on this corpus, because a cognitive
+ *    misspelling that does change the first letter usually changes much more than that too.
  *
  * Raising the bound to three edits was then measured rather than assumed: it finds 1.6 points more
  * correct answers and produces 9.9 points more wrong ones. So the bound stays at 2 for silent
  * auto-apply and is 3 for the browsable strip, where the user adjudicates — the same evidence
  * pointing opposite ways for two paths with different costs of being wrong.
  *
- * **Still outstanding**: miscorrection (36.4%) remains higher than accuracy (32.7%). The
+ * **Still outstanding**: miscorrection (37.6%) remains higher than accuracy (31.8%) *on this
+ * corpus* — the reverse of the touchscreen one, where it is now 66% against 13%. The
  * diagnostic says most of the remaining gap is misspellings 3+ edits from their target, which a
  * keyboard arguably *should not* silently correct. Note also what this corpus cannot measure: it
  * contains **cognitive** misspellings, where a geometry-aware channel is near-useless because
@@ -96,7 +114,7 @@ class EngineEvaluationTest {
         println(report.format())
 
         assertTrue(
-            "Suggestion-strip recall regressed to ${report.suggestionRecall} (phase 2: 0.5520).",
+            "Suggestion-strip recall regressed to ${report.suggestionRecall} (phase 3: 0.5353).",
             report.suggestionRecall > 0.52,
         )
         assertTrue(
@@ -108,15 +126,15 @@ class EngineEvaluationTest {
         // is to catch a regression, and a floor above the current value would just fail forever.
         // Raise them as each phase lands.
         assertTrue(
-            "Correction accuracy regressed to ${report.correctionAccuracy} (phase 2: 0.3267).",
+            "Correction accuracy regressed to ${report.correctionAccuracy} (phase 3: 0.3179).",
             report.correctionAccuracy > 0.30,
         )
         assertTrue(
-            "Next-word recall regressed to ${report.nextWordRecall} (phase 2: 0.2528).",
+            "Next-word recall regressed to ${report.nextWordRecall} (phase 3: 0.2528).",
             report.nextWordRecall > 0.22,
         )
         assertTrue(
-            "False-correction rate rose to ${report.falseCorrectionRate} (phase 2: 0.0073) — " +
+            "False-correction rate rose to ${report.falseCorrectionRate} (phase 3: 0.0073) — " +
                 "correctly-typed words are being mangled.",
             report.falseCorrectionRate < 0.015,
         )

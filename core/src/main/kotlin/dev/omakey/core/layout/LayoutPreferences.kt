@@ -28,11 +28,42 @@ data class LayoutSettings(
      * held-key thing). On by default; off makes ordinary taps give no extra visual feedback
      * beyond the key's own press state. */
     val showTapPreview: Boolean = true,
+    /** Blank gutters down the left and right of the keyboard, so the outermost keys (Q/P, shift,
+     * backspace) don't sit flush against the screen edge. On a bezel-less phone with curved glass
+     * that edge is where a thumb slides off, or where the display itself starts to distort — the
+     * same reason Fleksy offered this. Off by default: it costs key width, which on a narrow
+     * device is the more common complaint. */
+    val edgePadding: Boolean = false,
+    /** Docked, floating, or one-handed to either side. See [KeyboardPlacement]. */
+    val placement: KeyboardPlacement = KeyboardPlacement.DOCKED,
+    /** Size and position of the *floating* keyboard, held separately from [keyboardHeightDp] and
+     * full width. That separation is the point: resizing while floating must not silently resize
+     * the docked keyboard too, and vice versa — "resize in the current mode" is the whole feature.
+     * [floatingYDp] is measured up from the window's bottom edge, see
+     * [KeyboardPlacementGeometry.clampFloatingY]. */
+    val floatingWidthDp: Int = DEFAULT_FLOATING_WIDTH_DP,
+    val floatingHeightDp: Int = DEFAULT_FLOATING_HEIGHT_DP,
+    /** -1 means "not positioned yet" — the first switch to floating centres it rather than
+     * dropping it in a corner. Any real position, including 0, is honoured. */
+    val floatingXDp: Int = UNSET_POSITION,
+    val floatingYDp: Int = KeyboardPlacementGeometry.DEFAULT_FLOATING_Y_DP,
+    /** Width of the one-handed keyboard; the rest of the row is the gutter holding its side
+     * buttons. Independent of the floating size for the same reason as above. */
+    val oneHandedWidthDp: Int = DEFAULT_ONE_HANDED_WIDTH_DP,
 ) {
     companion object {
         const val DEFAULT_HEIGHT_DP = 260
         const val MIN_HEIGHT_DP = 180
         const val MAX_HEIGHT_DP = 360
+
+        /** Width of each gutter when [edgePadding] is on. A fixed dp rather than a percentage:
+         * this is compensating for a physical bezel/curve, which doesn't scale with screen width. */
+        const val EDGE_PADDING_DP = 10
+
+        const val DEFAULT_FLOATING_WIDTH_DP = 320
+        const val DEFAULT_FLOATING_HEIGHT_DP = 240
+        const val DEFAULT_ONE_HANDED_WIDTH_DP = 300
+        const val UNSET_POSITION = -1
     }
 }
 
@@ -68,6 +99,17 @@ class LayoutPreferences(context: Context) {
     fun setShowMiddleRowStripe(show: Boolean) = update { it.copy(showMiddleRowStripe = show) }
     fun setAlwaysShowUppercaseLetters(show: Boolean) = update { it.copy(alwaysShowUppercaseLetters = show) }
     fun setShowTapPreview(show: Boolean) = update { it.copy(showTapPreview = show) }
+    fun setEdgePadding(enabled: Boolean) = update { it.copy(edgePadding = enabled) }
+
+    fun setPlacement(placement: KeyboardPlacement) = update { it.copy(placement = placement) }
+
+    /** [xDp]/[yDp] are expected to already be clamped by the caller, which is the only party that
+     * knows the live window size — same contract as [setBottomOffsetDp]. */
+    fun setFloatingBounds(widthDp: Int, heightDp: Int, xDp: Int, yDp: Int) = update {
+        it.copy(floatingWidthDp = widthDp, floatingHeightDp = heightDp, floatingXDp = xDp, floatingYDp = yDp)
+    }
+
+    fun setOneHandedWidthDp(widthDp: Int) = update { it.copy(oneHandedWidthDp = widthDp) }
 
     /** [offsetDp] is expected to already be clamped by the caller (the placement-mode drag UI,
      * which knows the live screen height) — only a non-negative floor is enforced here. */
@@ -82,6 +124,13 @@ class LayoutPreferences(context: Context) {
             .putInt(KEY_BOTTOM_OFFSET, next.bottomOffsetDp)
             .putBoolean(KEY_ALWAYS_UPPERCASE, next.alwaysShowUppercaseLetters)
             .putBoolean(KEY_SHOW_TAP_PREVIEW, next.showTapPreview)
+            .putBoolean(KEY_EDGE_PADDING, next.edgePadding)
+            .putString(KEY_PLACEMENT, next.placement.name)
+            .putInt(KEY_FLOATING_WIDTH, next.floatingWidthDp)
+            .putInt(KEY_FLOATING_HEIGHT, next.floatingHeightDp)
+            .putInt(KEY_FLOATING_X, next.floatingXDp)
+            .putInt(KEY_FLOATING_Y, next.floatingYDp)
+            .putInt(KEY_ONE_HANDED_WIDTH, next.oneHandedWidthDp)
             .apply()
         _settings.value = next
     }
@@ -93,6 +142,16 @@ class LayoutPreferences(context: Context) {
         bottomOffsetDp = prefs.getInt(KEY_BOTTOM_OFFSET, 0),
         alwaysShowUppercaseLetters = prefs.getBoolean(KEY_ALWAYS_UPPERCASE, true),
         showTapPreview = prefs.getBoolean(KEY_SHOW_TAP_PREVIEW, true),
+        edgePadding = prefs.getBoolean(KEY_EDGE_PADDING, false),
+        // Stored by name, and an unrecognised one falls back to DOCKED rather than throwing —
+        // a downgrade after this enum ever gains a case must not brick the keyboard.
+        placement = runCatching { KeyboardPlacement.valueOf(prefs.getString(KEY_PLACEMENT, null) ?: "") }
+            .getOrDefault(KeyboardPlacement.DOCKED),
+        floatingWidthDp = prefs.getInt(KEY_FLOATING_WIDTH, LayoutSettings.DEFAULT_FLOATING_WIDTH_DP),
+        floatingHeightDp = prefs.getInt(KEY_FLOATING_HEIGHT, LayoutSettings.DEFAULT_FLOATING_HEIGHT_DP),
+        floatingXDp = prefs.getInt(KEY_FLOATING_X, LayoutSettings.UNSET_POSITION),
+        floatingYDp = prefs.getInt(KEY_FLOATING_Y, KeyboardPlacementGeometry.DEFAULT_FLOATING_Y_DP),
+        oneHandedWidthDp = prefs.getInt(KEY_ONE_HANDED_WIDTH, LayoutSettings.DEFAULT_ONE_HANDED_WIDTH_DP),
     )
 
     private companion object {
@@ -103,5 +162,12 @@ class LayoutPreferences(context: Context) {
         const val KEY_BOTTOM_OFFSET = "keyboard_bottom_offset_dp"
         const val KEY_ALWAYS_UPPERCASE = "always_show_uppercase_letters"
         const val KEY_SHOW_TAP_PREVIEW = "show_tap_preview"
+        const val KEY_EDGE_PADDING = "edge_padding"
+        const val KEY_PLACEMENT = "placement"
+        const val KEY_FLOATING_WIDTH = "floating_width_dp"
+        const val KEY_FLOATING_HEIGHT = "floating_height_dp"
+        const val KEY_FLOATING_X = "floating_x_dp"
+        const val KEY_FLOATING_Y = "floating_y_dp"
+        const val KEY_ONE_HANDED_WIDTH = "one_handed_width_dp"
     }
 }

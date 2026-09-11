@@ -10,6 +10,10 @@ import org.junit.Test
 
 class PersonalLanguageModelTest {
 
+    /** Uses a typed word needs before the model acts on it at all. Read from the model rather than
+     * written out, so these tests follow the constant instead of pinning it. */
+    private val THRESHOLD = PersonalLanguageModel.IMPLICIT_TRUST_THRESHOLD.toInt()
+
     private var now = 1_700_000_000_000L
     private val model = TestLanguageModel.load()
     private val personal = PersonalLanguageModel { now }.apply { load(emptyList(), model) }
@@ -70,11 +74,37 @@ class PersonalLanguageModelTest {
         val rareId = model.indexOf(rare)
         val baseline = model.unigramLogProbability(rareId)
 
-        personal.record("kubernetes", explicit = false)
-        personal.record("kubernetes", explicit = false)
+        // Three uses, because that is now admission — see the class doc. This used to pass with
+        // two, back when a word influenced ranking from its first use.
+        repeat(THRESHOLD) { personal.record("kubernetes", explicit = false) }
         val boosted = personal.adjust("kubernetes", baseline)
 
         assertTrue("personal word should outscore its corpus baseline", boosted > baseline)
+    }
+
+    @Test
+    fun `a word typed fewer times than the threshold changes nothing`() {
+        // The reported bug: typing "shoukd" once must not alter ranking, must not appear as a
+        // completion, and must not be trusted. It is counted, and that is all it is.
+        val baseline = -9f
+        repeat(THRESHOLD - 1) { personal.record("shoukd", explicit = false) }
+
+        assertTrue("the count still has to accumulate somewhere", personal.contains("shoukd"))
+        assertEquals(baseline, personal.adjust("shoukd", baseline), 0.0001f)
+        assertTrue(personal.matching("shou", 5).isEmpty())
+        assertFalse(personal.isTrusted("shoukd"))
+    }
+
+    @Test
+    fun `provisional words do not dilute the personal mass`() {
+        // A personal probability is a share of personal mass, so counting words that influence
+        // nothing would shrink every genuinely learned word's share for no reason.
+        repeat(THRESHOLD) { personal.record("kubernetes", explicit = false) }
+        val alone = personal.adjust("kubernetes", -9f)
+
+        repeat(10) { index -> personal.record("typo$index", explicit = false) }
+
+        assertEquals(alone, personal.adjust("kubernetes", -9f), 0.0001f)
     }
 
     @Test
@@ -157,9 +187,17 @@ class PersonalLanguageModelTest {
 
     @Test
     fun `matching offers learned words by prefix, most used first`() {
-        personal.record("kubernetes", explicit = false)
-        repeat(3) { personal.record("kubectl", explicit = false) }
+        // Both need to clear the admission threshold to be offered at all; "kubectl" is used more,
+        // so it leads.
+        repeat(THRESHOLD) { personal.record("kubernetes", explicit = false) }
+        repeat(THRESHOLD + 2) { personal.record("kubectl", explicit = false) }
         assertEquals(listOf("kubectl", "kubernetes"), personal.matching("kub", 5))
+    }
+
+    @Test
+    fun `matching ignores a word that has not reached the threshold`() {
+        repeat(THRESHOLD - 1) { personal.record("kubernetes", explicit = false) }
+        assertTrue(personal.matching("kub", 5).isEmpty())
     }
 
     @Test

@@ -1,6 +1,7 @@
 package dev.omakey.core.predict.eval
 
 import dev.omakey.core.predict.lm.LanguageModel
+import dev.omakey.core.predict.spatial.KeyboardGeometry
 import org.junit.Test
 import kotlin.math.abs
 
@@ -28,10 +29,11 @@ class RecallDiagnosticTest {
         val sorted = FloatArray(model.vocabularySize) { model.unigramLogProbability(it) }
         sorted.sort()
         val correctionFloor = sorted[sorted.size - 1 - CORRECTION_RANK]
+        val strictFloor = sorted[sorted.size - 1 - STRICT_RANK]
 
         var outOfVocabulary = 0
         var belowFloor = 0
-        var firstLetterDiffers = 0
+        var firstLetterUnreachable = 0
         var tooManyEdits = 0
         var reachable = 0
 
@@ -40,12 +42,22 @@ class RecallDiagnosticTest {
         for (pair in pairs) {
             val id = model.indexOf(pair.correct)
             if (id == LanguageModel.NO_WORD) { outOfVocabulary++; continue }
-            if (model.unigramLogProbability(id) < correctionFloor) { belowFloor++; continue }
+
+            // The first letter is no longer required to match exactly: a slip onto an adjacent key,
+            // a stray leading character, a transposition or a dropped first letter all still reach
+            // the intended word. What they don't get is the ordinary floor — a candidate found by
+            // assuming the first letter was wrong is held to the stricter one.
+            val offFirstLetter = pair.typo.firstOrNull() != pair.correct.firstOrNull()
+            if (offFirstLetter && !firstLetterReachable(pair.typo, pair.correct)) {
+                firstLetterUnreachable++
+                continue
+            }
+            val floor = if (offFirstLetter) maxOf(correctionFloor, strictFloor) else correctionFloor
+            if (model.unigramLogProbability(id) < floor) { belowFloor++; continue }
 
             val distance = damerauLevenshtein(pair.typo, pair.correct)
             editHistogram[distance.coerceAtMost(editHistogram.size - 1)]++
 
-            if (pair.typo.firstOrNull() != pair.correct.firstOrNull()) { firstLetterDiffers++; continue }
             if (distance > MAX_EDITS) { tooManyEdits++; continue }
             reachable++
         }
@@ -60,7 +72,7 @@ class RecallDiagnosticTest {
         println("  ---- unreachable, by cause ----")
         println("  edit distance > $MAX_EDITS                              ${percent(tooManyEdits)}")
         println("  intended word below the correction floor       ${percent(belowFloor)}")
-        println("  first letter differs                           ${percent(firstLetterDiffers)}")
+        println("  first letter differs, and not by a slip        ${percent(firstLetterUnreachable)}")
         println("  not in the vocabulary at all                   ${percent(outOfVocabulary)}")
         println("-".repeat(66))
         println("edit distance between typo and intended word:")
@@ -68,6 +80,25 @@ class RecallDiagnosticTest {
             if (editHistogram[d] > 0) println("  distance $d${if (d == editHistogram.size - 1) "+" else " "}  ${percent(editHistogram[d])}")
         }
         println("=".repeat(66))
+    }
+
+    /**
+     * Whether `AutocorrectIndex`'s candidate generation can reach [correct] from [typo] despite
+     * their first letters differing — the four position-0 error types it now covers. Deliberately
+     * restated here rather than shared with production code: a diagnostic that asks the
+     * implementation whether it can find something can only ever answer yes.
+     */
+    private fun firstLetterReachable(typo: String, correct: String): Boolean {
+        val typed = typo.firstOrNull() ?: return false
+        val intended = correct.firstOrNull() ?: return false
+        // Slip onto a neighbouring key.
+        if (KeyboardGeometry.areAdjacent(typed, intended)) return true
+        // Stray leading character, or the first two letters transposed — both leave the intended
+        // word starting with the typo's second letter.
+        if (typo.length > 1 && typo[1] == intended) return true
+        // First letter never typed: the intended word is the typo with one letter prepended.
+        if (correct.length == typo.length + 1 && correct.substring(1) == typo) return true
+        return false
     }
 
     private fun damerauLevenshtein(a: String, b: String): Int {
@@ -88,6 +119,7 @@ class RecallDiagnosticTest {
 
     private companion object {
         const val CORRECTION_RANK = 25_000
+        const val STRICT_RANK = 8_000
         const val MAX_EDITS = 2
     }
 }
