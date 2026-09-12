@@ -3,29 +3,6 @@
 All notable changes to omakey are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
-## [4.2.0] — 2026-09-12
-
-### Fixed
-- **Dragging the floating keyboard was jerky and slow.** Three separate causes: the position was
-  rounded to whole pixels on every frame, so a slow drag moved the keyboard nowhere at all and a
-  faster one moved it in visible steps; the whole keyboard was being redrawn each frame instead of
-  just repositioned; and the keyboard's window was being resized sixty times a second while you
-  dragged vertically. All three are gone — it should track your finger now.
-
-### Changed
-- **"Resize" is now "Size & position", and it repositions.** Quick access → Size & position lets
-  you raise a normal or one-handed keyboard off the bottom edge by dragging the grip in the middle,
-  not just resize it. That was previously only possible in Settings, which meant the on-keyboard
-  version was missing half of what the Settings version did.
-
-## [4.1.1] — 2026-09-12
-
-### Fixed
-- **The floating keyboard's move handle was invisible.** 4.1.0 added a grab bar along the top of a
-  floating keyboard, but the keyboard's window wasn't made any taller to fit it, so the handle sat
-  just above the visible area — there, but off screen and impossible to touch. It's visible now.
-- The handle is also drawn in a colour that can't vanish on a custom theme.
-
 ## [4.1.0] — 2026-09-12
 
 A maintenance release. Floating mode was broken in a way that wasn't obvious, clipboard history was
@@ -35,13 +12,17 @@ keeping things it shouldn't, and clipboard pinning turned out to be nearly finis
 - **Floating mode actually works.** The app underneath was still being pushed up as though the
   keyboard were docked, and the whole screen swallowed taps even where the keyboard wasn't — so
   everywhere outside the floating keyboard was a dead zone. Both were the same disconnected wire.
-- **The floating keyboard can be moved directly.** Dragging worked before, but only after opening
-  Quick access and entering Resize, so repositioning was hidden behind a mode. There's a grab bar
-  along the top of a floating keyboard now.
+- **The floating keyboard can be moved directly**, by a grab bar along its top. Dragging worked
+  before, but only after opening Quick access and entering Resize, so repositioning was hidden
+  behind a mode.
+- **Dragging it is smooth.** Three separate problems: the position was rounded to whole pixels
+  every frame, so a slow drag moved the keyboard nowhere at all and a faster one moved it in
+  visible steps; the whole keyboard was redrawn each frame instead of just repositioned; and the
+  keyboard's window was being resized sixty times a second while dragging vertically.
 - **Passwords no longer land in clipboard history.** Copying from a password manager while omakey
-  was open saved the value to the device. Clips that an app marks as sensitive are now never
-  saved, and nothing is saved while incognito is on or a password field is focused. Typed
-  passwords were already protected; copied ones weren't.
+  was open saved the value to the device. Clips an app marks as sensitive are now never saved, and
+  nothing is saved while incognito is on or a password field is focused. Typed passwords were
+  already protected; copied ones weren't.
 - **Copied images no longer pile up.** Images that aged out of clipboard history left their files
   behind for good, invisible and never cleaned up. They're removed properly now, including ones
   left behind by earlier versions, and a single copied image is capped in size.
@@ -59,14 +40,19 @@ keeping things it shouldn't, and clipboard pinning turned out to be nearly finis
   without deleting what's already there.
 - **The build number is shown** next to the version in Settings → About.
 
+### Changed
+- **Quick access "Resize" is now "Size & position".** It repositions as well: drag the grip in the
+  middle to raise a normal or one-handed keyboard off the bottom edge for easier thumb reach. That
+  was previously only possible in Settings, so the on-keyboard version had half the capability.
+
 ### Removed
 - The unfinished GIF search placeholder. Searching would have meant sending what you type to a
   third-party service, which isn't a trade this keyboard should make quietly.
 
 ### Internal
-- Large parts of the codebase were reorganised and given tests — roughly 90 new ones, including the
-  database upgrade path, which had never been tested despite holding the one thing you can't get
-  back: the words you've taught it. No behaviour change intended from any of that.
+- Large parts of the codebase were reorganised and given tests — roughly 100 new ones, including
+  the database upgrade path, which had never been tested despite holding the one thing you can't
+  get back: the words you've taught it. No behaviour change intended from any of that.
 
 ## [4.0.0] — 2026-09-11
 

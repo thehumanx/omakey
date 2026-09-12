@@ -255,12 +255,11 @@ never any auto-download or auto-install.
 
 ## Status
 
-omakey is on release 4.2.0, which smoothed out dragging the floating keyboard and made Quick
-access able to reposition the keyboard as well as resize it. 4.1.x before it fixed floating mode —
-it looked right, but the app underneath was still being pushed up and taps outside the keyboard
-went nowhere — stopped clipboard history from saving passwords, and finished clipboard pinning.
-4.0.0 made the keyboard movable in the first place, and fixed autocorrect's blind spot around the
-first letter of a word.
+omakey is on release 4.1.0, a maintenance release that fixed floating mode — it looked right, but
+the app underneath was still being pushed up and taps outside the keyboard went nowhere — added a
+grab bar for moving it, stopped clipboard history from saving passwords, and finished clipboard
+pinning. 4.0.0 before it made the keyboard movable in the first place, and fixed autocorrect's
+blind spot around the first letter of a word.
 
 Typing, gestures, autocorrect, prediction, both layout styles, the clipboard manager, and the emoji
 panel are all working today and getting updated regularly — see [CHANGELOG.md](CHANGELOG.md) for the
