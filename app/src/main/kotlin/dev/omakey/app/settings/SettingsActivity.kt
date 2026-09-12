@@ -105,6 +105,7 @@ import dev.omakey.app.keyboard.ui.gridBorderExceptBottom
 import dev.omakey.app.keyboard.ui.toDp
 import dev.omakey.core.layout.Layouts
 import dev.omakey.core.predict.AutocorrectPreferences
+import dev.omakey.core.predict.AutocorrectSettings
 import dev.omakey.core.predict.IncognitoPreferences
 import dev.omakey.core.predict.PersonalLanguageModel
 import dev.omakey.core.predict.PredictionPreferences
@@ -277,6 +278,10 @@ private fun SettingsScreen(
     // actual keycaps rather than only in the picker's own label.
     val previewFontFamily = remember(currentFontId) { dev.omakey.app.keyboard.ui.FontCatalog.resolve(currentFontId) }
     val layoutSettings by layoutPreferences.settings.collectAsState()
+    // Collected once here and passed down. Each of these used to be collected again inside every
+    // toggle that read it — five separate collectors on layoutPreferences.settings and three on
+    // autocorrectPreferences.settings, so touching any one field recomposed all of them.
+    val autocorrectSettings by autocorrectPreferences.settings.collectAsState()
     var showTestOverlay by remember { mutableStateOf(false) }
     var showLearnedWordsOverlay by remember { mutableStateOf(false) }
     var showSizePositionOverlay by remember { mutableStateOf(false) }
@@ -375,9 +380,9 @@ private fun SettingsScreen(
                         )
                     }
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    AppearanceLayoutToggles(layoutPreferences)
-                    CapitalizationToggleSection(layoutPreferences)
-                    EdgePaddingToggle(layoutPreferences)
+                    AppearanceLayoutToggles(layoutSettings, layoutPreferences)
+                    CapitalizationToggleSection(layoutSettings, layoutPreferences)
+                    EdgePaddingToggle(layoutSettings, layoutPreferences)
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     ClickableSettingRow(
                         title = "Keyboard size & position",
@@ -395,12 +400,12 @@ private fun SettingsScreen(
 
             item {
                 SettingsSection(title = "Typing") {
-                    AutocorrectToggle(autocorrectPreferences)
-                    AutoCapitalizeToggle(autocorrectPreferences)
-                    DoubleTapSpaceForPeriodToggle(autocorrectPreferences)
+                    AutocorrectToggle(autocorrectSettings, autocorrectPreferences)
+                    AutoCapitalizeToggle(autocorrectSettings, autocorrectPreferences)
+                    DoubleTapSpaceForPeriodToggle(autocorrectSettings, autocorrectPreferences)
                     NextWordPredictionToggle(predictionPreferences)
                     ImplicitLearningToggle(incognitoPreferences)
-                    TapPreviewToggle(layoutPreferences)
+                    TapPreviewToggle(layoutSettings, layoutPreferences)
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     ClickableSettingRow(
                         title = "Learned words",
@@ -1042,8 +1047,7 @@ private fun EmojiSkinTonePicker(preferences: EmojiSkinTonePreferences) {
 }
 
 @Composable
-private fun AutocorrectToggle(autocorrectPreferences: AutocorrectPreferences) {
-    val settings by autocorrectPreferences.settings.collectAsState()
+private fun AutocorrectToggle(settings: AutocorrectSettings, autocorrectPreferences: AutocorrectPreferences) {
     SettingToggle(
         title = "Autocorrect",
         description = "Automatically fixes likely typos the moment you finish a word, without " +
@@ -1056,8 +1060,7 @@ private fun AutocorrectToggle(autocorrectPreferences: AutocorrectPreferences) {
 }
 
 @Composable
-private fun AutoCapitalizeToggle(autocorrectPreferences: AutocorrectPreferences) {
-    val settings by autocorrectPreferences.settings.collectAsState()
+private fun AutoCapitalizeToggle(settings: AutocorrectSettings, autocorrectPreferences: AutocorrectPreferences) {
     SettingToggle(
         title = "Auto-capitalize",
         description = "Capitalizes the first letter of a new field and after sentence-ending " +
@@ -1068,8 +1071,7 @@ private fun AutoCapitalizeToggle(autocorrectPreferences: AutocorrectPreferences)
 }
 
 @Composable
-private fun DoubleTapSpaceForPeriodToggle(autocorrectPreferences: AutocorrectPreferences) {
-    val settings by autocorrectPreferences.settings.collectAsState()
+private fun DoubleTapSpaceForPeriodToggle(settings: AutocorrectSettings, autocorrectPreferences: AutocorrectPreferences) {
     SettingToggle(
         title = "Double-tap space for period",
         description = "Tap (or swipe right, if that's enabled) space twice quickly to insert " +
@@ -1116,8 +1118,7 @@ private fun ImplicitLearningToggle(incognitoPreferences: IncognitoPreferences) {
  * looks (themes, fonts, key shapes) put it where nobody would look for it. Distinct from
  * `GestureSettings.showKeyPopup`, the long-press accent popup, which is in Gestures. */
 @Composable
-private fun TapPreviewToggle(layoutPreferences: LayoutPreferences) {
-    val settings by layoutPreferences.settings.collectAsState()
+private fun TapPreviewToggle(settings: LayoutSettings, layoutPreferences: LayoutPreferences) {
     SettingToggle(
         title = "Show key press popup",
         description = "Briefly shows an enlarged copy of the letter above your finger on " +
@@ -1132,8 +1133,7 @@ private fun TapPreviewToggle(layoutPreferences: LayoutPreferences) {
  * reason — on a phone with no side bezel the outer keys sit where the glass curves away, which is
  * exactly where a thumb slides off. */
 @Composable
-private fun EdgePaddingToggle(layoutPreferences: LayoutPreferences) {
-    val settings by layoutPreferences.settings.collectAsState()
+private fun EdgePaddingToggle(settings: LayoutSettings, layoutPreferences: LayoutPreferences) {
     SettingToggle(
         title = "Add padding",
         description = "Leave a gap down the left and right edges, so the outer keys aren't flush " +
@@ -1144,8 +1144,7 @@ private fun EdgePaddingToggle(layoutPreferences: LayoutPreferences) {
 }
 
 @Composable
-private fun AppearanceLayoutToggles(layoutPreferences: LayoutPreferences) {
-    val settings by layoutPreferences.settings.collectAsState()
+private fun AppearanceLayoutToggles(settings: LayoutSettings, layoutPreferences: LayoutPreferences) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         SettingToggle(
             title = "Key backgrounds",
@@ -1164,8 +1163,7 @@ private fun AppearanceLayoutToggles(layoutPreferences: LayoutPreferences) {
 }
 
 @Composable
-private fun CapitalizationToggleSection(layoutPreferences: LayoutPreferences) {
-    val settings by layoutPreferences.settings.collectAsState()
+private fun CapitalizationToggleSection(settings: LayoutSettings, layoutPreferences: LayoutPreferences) {
     SettingToggle(
         title = "Always show capital letters",
         description = "Keycaps always show uppercase letters, regardless of shift state " +
