@@ -38,6 +38,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import dev.omakey.core.theme.LocalKeyboardLayoutMode
 import dev.omakey.core.theme.LocalOmakeyTheme
 import dev.omakey.core.theme.LayoutMode
@@ -91,7 +92,9 @@ class ClipboardHistoryExtension : OmakeyExtension {
     override fun PanelContent(host: ExtensionHost) {
         val scope = rememberCoroutineScope()
         var items by remember { mutableStateOf(emptyList<ClipboardItem>()) }
-        var itemToDelete by remember { mutableStateOf<ClipboardItem?>(null) }
+        // Long-press opens an action sheet rather than going straight to delete: pinning needs
+        // an affordance too, and a clipboard row is too small to carry two separate ones.
+        var actionsFor by remember { mutableStateOf<ClipboardItem?>(null) }
 
         suspend fun reload() {
             items = extensionContext?.clipboardRepository?.recent() ?: emptyList()
@@ -131,7 +134,7 @@ class ClipboardHistoryExtension : OmakeyExtension {
                                 keyBackground = theme.keyboardBackground.toComposeColor(),
                                 keyBackgroundPressed = theme.keyBackgroundPressed.toComposeColor(),
                                 onClick = { if (item.contentType == ClipboardContentType.TEXT) host.insertText(item.content) },
-                                onLongClick = { itemToDelete = item },
+                                onLongClick = { actionsFor = item },
                             )
                         }
                     }
@@ -142,7 +145,7 @@ class ClipboardHistoryExtension : OmakeyExtension {
                                 item = item,
                                 textColor = textColor,
                                 onClick = { if (item.contentType == ClipboardContentType.TEXT) host.insertText(item.content) },
-                                onLongClick = { itemToDelete = item },
+                                onLongClick = { actionsFor = item },
                             )
                         }
                     }
@@ -161,12 +164,12 @@ class ClipboardHistoryExtension : OmakeyExtension {
             // process, reported as "long-press closes the keyboard." Replaced with a plain
             // in-tree overlay instead of a system Dialog — same trick every other popup in this
             // app (AccentDragPopup, SymbolModeOverlay, KeyboardRoot's own banner) already uses.
-            itemToDelete?.let { item ->
+            actionsFor?.let { item ->
                 Box(
                     Modifier
                         .fillMaxSize()
                         .background(Color.Black.copy(alpha = 0.5f))
-                        .combinedClickable(onClick = { itemToDelete = null }, onLongClick = {}),
+                        .combinedClickable(onClick = { actionsFor = null }, onLongClick = {}),
                     contentAlignment = Alignment.Center,
                 ) {
                     Column(
@@ -176,14 +179,24 @@ class ClipboardHistoryExtension : OmakeyExtension {
                             .padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        Text(text = "Remove this item?", color = textColor)
+                        Text(
+                            text = if (item.pinned) "Pinned item" else "Clipboard item",
+                            color = textColor,
+                        )
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                            OutlinedButton(onClick = { itemToDelete = null }, modifier = Modifier.weight(1f)) {
-                                Text("Cancel")
-                            }
+                            OutlinedButton(
+                                onClick = {
+                                    actionsFor = null
+                                    scope.launch {
+                                        extensionContext?.clipboardRepository?.pin(item.id, !item.pinned)
+                                        reload()
+                                    }
+                                },
+                                modifier = Modifier.weight(1f),
+                            ) { Text(if (item.pinned) "Unpin" else "Pin") }
                             Button(
                                 onClick = {
-                                    itemToDelete = null
+                                    actionsFor = null
                                     scope.launch {
                                         extensionContext?.clipboardRepository?.delete(item.id)
                                         reload()
@@ -191,6 +204,9 @@ class ClipboardHistoryExtension : OmakeyExtension {
                                 },
                                 modifier = Modifier.weight(1f),
                             ) { Text("Remove") }
+                        }
+                        OutlinedButton(onClick = { actionsFor = null }, modifier = Modifier.fillMaxWidth()) {
+                            Text("Cancel")
                         }
                     }
                 }
@@ -212,16 +228,30 @@ private fun ClipboardListRow(
         .combinedClickable(onClick = onClick, onLongClick = onLongClick)
         .background(Color.Transparent)
         .padding(8.dp)
-    val imagePath = item.imagePath
-    if (item.contentType == ClipboardContentType.IMAGE && imagePath != null) {
-        ClipboardImageOrPlaceholder(
-            imagePath = imagePath,
-            textColor = textColor,
-            modifier = rowModifier.height(80.dp).background(Color.Black.copy(alpha = 0.1f), RoundedCornerShape(8.dp)),
-        )
-    } else {
-        Text(text = item.content, color = textColor, modifier = rowModifier, maxLines = 2)
+    Row(rowModifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (item.pinned) PinMarker(textColor)
+        val imagePath = item.imagePath
+        if (item.contentType == ClipboardContentType.IMAGE && imagePath != null) {
+            ClipboardImageOrPlaceholder(
+                imagePath = imagePath,
+                textColor = textColor,
+                modifier = Modifier
+                    .weight(1f)
+                    .height(80.dp)
+                    .background(Color.Black.copy(alpha = 0.1f), RoundedCornerShape(8.dp)),
+            )
+        } else {
+            Text(text = item.content, color = textColor, modifier = Modifier.weight(1f), maxLines = 2)
+        }
     }
+}
+
+/** Pinned items already sort to the top, but "top of the list" is indistinguishable from "most
+ * recently copied" — which is what the top of the list normally means. The marker is what makes
+ * the state readable rather than merely present. */
+@Composable
+private fun PinMarker(textColor: Color) {
+    Text(text = "📌", color = textColor, fontSize = 12.sp)
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -253,6 +283,9 @@ private fun ClipboardGridCell(
             ClipboardImageOrPlaceholder(imagePath = imagePath, textColor = textColor, modifier = Modifier.fillMaxSize())
         } else {
             Text(text = item.content, color = textColor, maxLines = 4)
+        }
+        if (item.pinned) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopEnd) { PinMarker(textColor) }
         }
     }
 }

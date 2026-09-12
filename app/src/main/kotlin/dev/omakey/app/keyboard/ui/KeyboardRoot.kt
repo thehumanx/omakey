@@ -91,6 +91,10 @@ private fun ColorSpec.toComposeColor() = Color(argb.toInt())
 
 private const val SUGGESTION_STRIP_HEIGHT_DP = 44
 
+/** Height of the floating keyboard's move handle. Only floating keyboards have one, so it is added
+ * to the placement container's height in that mode alone — see [FloatingMoveHandle]. */
+private const val FLOATING_HANDLE_HEIGHT_DP = 22
+
 /** Opacity for every suggestion-strip candidate except the currently-focused one (index 0) —
  * see [SuggestionsTabContent]. */
 private const val SUGGESTION_FADED_ALPHA = 0.45f
@@ -386,6 +390,16 @@ fun KeyboardRoot(
                 },
             ),
     ) {
+        // A floating keyboard is the one placement with nowhere to grab: docked and one-handed
+        // keyboards don't move, so their position needs no affordance. Dragging already worked in
+        // resize mode, but only there — the user had to know to open Quick Access and enter a
+        // separate mode before the keyboard could be moved at all, which is a discoverability
+        // problem rather than a missing capability. This handle makes the common half of that
+        // (reposition, not resize) directly available.
+        if (placement == KeyboardPlacement.FLOATING) {
+            FloatingMoveHandle(theme = theme, place = place)
+        }
+
         // Which of the 3 "TopStrip is visible" bottom-content modes is active — used only to
         // drive the Crossfade below, not the branching itself (that's still the same explicit
         // if/else it always was). Keeping this a plain nullable key (not the bottom content
@@ -582,7 +596,8 @@ fun KeyboardRoot(
                 theme = theme,
                 placement = placement,
                 place = place,
-                totalHeightDp = SUGGESTION_STRIP_HEIGHT_DP + gridHeightDp,
+                totalHeightDp = SUGGESTION_STRIP_HEIGHT_DP + gridHeightDp +
+                    if (placement == KeyboardPlacement.FLOATING) FLOATING_HANDLE_HEIGHT_DP else 0,
                 edgePaddingDp = if (layoutSettings.edgePadding && placement == KeyboardPlacement.DOCKED) {
                     LayoutSettings.EDGE_PADDING_DP
                 } else {
@@ -2273,7 +2288,12 @@ private class PlacementState(
     val floatingXDp: Int get() = floatingXDpFloat.roundToInt()
     val floatingBottomDp: Int get() = floatingBottomDpFloat.roundToInt()
 
-    private val totalHeightDp: Float get() = keyboardHeightDpFloat + SUGGESTION_STRIP_HEIGHT_DP
+    /** What [move]'s vertical clamp measures against, so it has to match what is actually on
+     * screen: a floating keyboard also carries [FloatingMoveHandle] above the strip, and omitting
+     * it here would let the top of the keyboard be dragged that far past the top edge. */
+    private val totalHeightDp: Float
+        get() = keyboardHeightDpFloat + SUGGESTION_STRIP_HEIGHT_DP +
+            if (placement == KeyboardPlacement.FLOATING) FLOATING_HANDLE_HEIGHT_DP else 0
 
     fun resizeWidth(deltaDp: Float) {
         widthDp = when {
@@ -2550,6 +2570,49 @@ private fun OneHandedGutter(
  * showing a ghost that snaps into place on release. The value is written to preferences once, on
  * release (see [PlacementState.commit]).
  */
+/**
+ * The grab bar along the top of a floating keyboard.
+ *
+ * Drags move the keyboard live and write the new position once on release, the same contract
+ * [ResizeOverlay] uses — [PlacementState] already owns the clamping and the single commit, so this
+ * adds an affordance rather than a second source of truth for where the keyboard is.
+ *
+ * A dedicated strip rather than making the whole keyboard draggable: every other pixel of a
+ * keyboard is a key, and a drag that starts on a key has to stay a swipe gesture. This is the only
+ * surface that can afford to mean "move me".
+ *
+ * `consume()` on each change matters more here than it looks — without it the drag would also reach
+ * the key grid's own pointer loop underneath and be read as a surface swipe.
+ */
+@Composable
+private fun FloatingMoveHandle(theme: OmakeyTheme, place: PlacementState) {
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .height(FLOATING_HANDLE_HEIGHT_DP.dp)
+            .pointerInput(Unit) {
+                detectDragGestures(onDragEnd = { place.commit() }) { change, dragAmount ->
+                    change.consume()
+                    with(density) { place.move(dragAmount.x.toDp().value, dragAmount.y.toDp().value) }
+                }
+            }
+            .semantics { contentDescription = "Move keyboard" },
+        contentAlignment = Alignment.Center,
+    ) {
+        // The usual short pill. Drawn in the pressed-key colour so it reads as part of the
+        // keyboard's own furniture rather than a floating artefact.
+        Box(
+            Modifier
+                .size(width = 36.dp, height = 4.dp)
+                .background(
+                    theme.keyBackgroundPressed.toComposeColor(),
+                    androidx.compose.foundation.shape.RoundedCornerShape(2.dp),
+                ),
+        )
+    }
+}
+
 @Composable
 private fun androidx.compose.foundation.layout.BoxScope.ResizeOverlay(
     viewModel: KeyboardViewModel,

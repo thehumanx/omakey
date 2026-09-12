@@ -388,7 +388,9 @@ class OmakeyInputMethodService :
                         imagePath = it.imagePath,
                     )
                 }
-            override suspend fun pin(id: Long, pinned: Boolean) = Unit // v1: pin toggling deferred
+            override suspend fun pin(id: Long, pinned: Boolean) {
+                database.clipboardDao().setPinned(id, pinned)
+            }
             override suspend fun delete(id: Long) {
                 // Delete the backing image file too, if any — otherwise removing a clipboard row
                 // would leave an orphaned file in app-private storage indefinitely.
