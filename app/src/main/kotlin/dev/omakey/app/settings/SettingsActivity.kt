@@ -90,6 +90,9 @@ import dev.omakey.app.keyboard.SoundCatalog
 import dev.omakey.app.keyboard.VibratorKeyboardFeedback
 import dev.omakey.app.keyboard.ui.FontCatalog
 import dev.omakey.core.icons.PhosphorCopy
+import dev.omakey.core.clipboard.ClipboardHistoryStore
+import dev.omakey.core.clipboard.ClipboardPreferences
+import dev.omakey.core.db.ClipboardEntity
 import dev.omakey.core.db.OmakeyDatabase
 import dev.omakey.core.db.WordDao
 import dev.omakey.core.db.WordEntity
@@ -149,7 +152,13 @@ class SettingsActivity : ComponentActivity() {
         val emojiSkinTonePreferences = EmojiSkinTonePreferences(applicationContext)
         val updatePreferences = dev.omakey.core.update.UpdatePreferences(applicationContext)
         val feedback = VibratorKeyboardFeedback(applicationContext, hapticSoundPreferences)
-        val wordDao = OmakeyDatabase.getInstance(applicationContext).wordDao()
+        val database = OmakeyDatabase.getInstance(applicationContext)
+        val wordDao = database.wordDao()
+        val clipboardPreferences = ClipboardPreferences(applicationContext)
+        val clipboardDao = database.clipboardDao()
+        // Same store the IME uses, so "clear history" removes the image files too rather than
+        // leaving them orphaned — the exact failure the trim path used to have.
+        val clipboardHistory = ClipboardHistoryStore(applicationContext, clipboardDao)
         // Idempotent (see UpdateWorkScheduler's own doc) — also scheduled from the IME service,
         // this covers the case where Settings is opened before the keyboard has ever been enabled.
         if (updatePreferences.settings.value.autoCheckEnabled) {
@@ -172,6 +181,9 @@ class SettingsActivity : ComponentActivity() {
                         emojiSkinTonePreferences = emojiSkinTonePreferences,
                         updatePreferences = updatePreferences,
                         wordDao = wordDao,
+                        clipboardPreferences = clipboardPreferences,
+                        clipboardDao = clipboardDao,
+                        clipboardHistory = clipboardHistory,
                         feedback = feedback,
                         onOpenSystemSettings = {
                             startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS))
@@ -261,6 +273,9 @@ private fun SettingsScreen(
     emojiSkinTonePreferences: EmojiSkinTonePreferences,
     updatePreferences: dev.omakey.core.update.UpdatePreferences,
     wordDao: WordDao,
+    clipboardPreferences: ClipboardPreferences,
+    clipboardDao: dev.omakey.core.db.ClipboardDao,
+    clipboardHistory: ClipboardHistoryStore,
     feedback: VibratorKeyboardFeedback,
     onOpenSystemSettings: () -> Unit,
     onSwitchKeyboard: () -> Unit,
@@ -284,6 +299,7 @@ private fun SettingsScreen(
     val autocorrectSettings by autocorrectPreferences.settings.collectAsState()
     var showTestOverlay by remember { mutableStateOf(false) }
     var showLearnedWordsOverlay by remember { mutableStateOf(false) }
+    var showClipboardHistoryOverlay by remember { mutableStateOf(false) }
     var showSizePositionOverlay by remember { mutableStateOf(false) }
     // Hoisted up from ThemePicker (which lives inside a LazyColumn item) rather than kept local
     // there — ThemeEditorOverlay's Modifier.verticalScroll() crashes with "measured with an
@@ -413,6 +429,14 @@ private fun SettingsScreen(
                             "search, or remove any that shouldn't have been learned.",
                         onClick = { showLearnedWordsOverlay = true },
                     )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    ClipboardHistoryToggle(clipboardPreferences)
+                    ClickableSettingRow(
+                        title = "Clipboard history",
+                        description = "Everything the keyboard has saved from your clipboard — " +
+                            "view it, unpin or remove single entries, or clear the lot.",
+                        onClick = { showClipboardHistoryOverlay = true },
+                    )
                     GestureSettingsSection(gesturePreferences)
                 }
             }
@@ -478,6 +502,13 @@ private fun SettingsScreen(
     }
     if (showLearnedWordsOverlay) {
         LearnedWordsOverlay(wordDao = wordDao, onClose = { showLearnedWordsOverlay = false })
+    }
+    if (showClipboardHistoryOverlay) {
+        ClipboardHistoryOverlay(
+            clipboardDao = clipboardDao,
+            clipboardHistory = clipboardHistory,
+            onClose = { showClipboardHistoryOverlay = false },
+        )
     }
     if (showSizePositionOverlay) {
         KeyboardSizePositionOverlay(
@@ -672,6 +703,150 @@ private val LEARNED_WORD_MIN_FREQUENCY =
  * here only touches Room — an already-running IME's in-memory `AutocorrectIndex` reloads fresh
  * from Room at its own next startup rather than being live-notified, same load-once-at-startup
  * design as the rest of the dictionary (see AGENTS.md §6). */
+@Composable
+private fun ClipboardHistoryToggle(clipboardPreferences: ClipboardPreferences) {
+    val settings by clipboardPreferences.settings.collectAsState()
+    SettingToggle(
+        title = "Save clipboard history",
+        description = "Keeps what you copy while the keyboard is open, so you can paste it again " +
+            "from the clipboard panel. Clips an app marks as sensitive (passwords, mostly) are " +
+            "never saved, and nothing is saved while incognito is on or a password field is " +
+            "focused. Turning this off stops new entries — it doesn't delete what's already there.",
+        checked = settings.historyEnabled,
+        onCheckedChange = clipboardPreferences::setHistoryEnabled,
+    )
+}
+
+/**
+ * Everything clipboard history is currently holding, and the means to get rid of it.
+ *
+ * The keyboard's own clipboard panel can already delete and unpin single entries, so this is not
+ * simply a second copy of that. It exists because history is the one thing omakey stores that the
+ * user did not type at it, and reviewing or clearing it should not require opening a keyboard over
+ * some unrelated app's text field first. "Clear everything" in particular has nowhere else to live.
+ */
+@Composable
+private fun ClipboardHistoryOverlay(
+    clipboardDao: dev.omakey.core.db.ClipboardDao,
+    clipboardHistory: ClipboardHistoryStore,
+    onClose: () -> Unit,
+) {
+    BackHandler(onBack = onClose)
+    val scope = rememberCoroutineScope()
+    var entries by remember { mutableStateOf<List<ClipboardEntity>>(emptyList()) }
+    var showClearAllConfirm by remember { mutableStateOf(false) }
+
+    suspend fun reload() {
+        entries = clipboardDao.recent()
+    }
+    LaunchedEffect(Unit) { reload() }
+
+    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(text = "Clipboard history", style = MaterialTheme.typography.titleMedium)
+                TextButton(onClick = onClose) { Text(text = "Close") }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = if (entries.isEmpty()) "Nothing saved" else "${entries.size} item(s)",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                if (entries.isNotEmpty()) {
+                    TextButton(onClick = { showClearAllConfirm = true }) { Text(text = "Clear all") }
+                }
+            }
+
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                items(entries, key = { it.id }) { entry ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(
+                            // An image row stores a placeholder string, not the pixels — showing
+                            // the file path instead would be noise the user can't act on.
+                            text = if (entry.contentType == ClipboardEntity.TYPE_IMAGE) {
+                                "Image"
+                            } else {
+                                entry.content
+                            },
+                            style = MaterialTheme.typography.bodyLarge,
+                            maxLines = 2,
+                            modifier = Modifier.weight(1f),
+                        )
+                        if (entry.pinned) {
+                            TextButton(
+                                onClick = {
+                                    scope.launch {
+                                        clipboardDao.setPinned(entry.id, false)
+                                        reload()
+                                    }
+                                },
+                            ) { Text(text = "Unpin") }
+                        }
+                        TextButton(
+                            onClick = {
+                                scope.launch {
+                                    clipboardHistory.delete(entry.id)
+                                    reload()
+                                }
+                            },
+                        ) { Text(text = "Remove") }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showClearAllConfirm) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showClearAllConfirm = false },
+            title = { Text(text = "Clear clipboard history?") },
+            text = {
+                Text(
+                    text = "Removes every saved entry, pinned ones included, along with any copied " +
+                        "images stored on this device. Your current clipboard itself isn't affected.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showClearAllConfirm = false
+                        scope.launch {
+                            clipboardHistory.clearAll()
+                            reload()
+                        }
+                    },
+                ) { Text(text = "Clear all") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearAllConfirm = false }) { Text(text = "Cancel") }
+            },
+        )
+    }
+}
+
 @Composable
 private fun LearnedWordsOverlay(wordDao: WordDao, onClose: () -> Unit) {
     BackHandler(onBack = onClose)

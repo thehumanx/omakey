@@ -96,6 +96,13 @@ interface ClipboardDao {
     @Query("DELETE FROM clipboard_history WHERE id = :id")
     suspend fun delete(id: Long)
 
+    /** Backs the explicit "Clear clipboard history" action in Settings. Pinned rows included:
+     * exempting them would leave history non-empty right after the user was told it was cleared.
+     * Always go through [dev.omakey.core.clipboard.ClipboardHistoryStore.clearAll], which also
+     * removes the image files these rows point at. */
+    @Query("DELETE FROM clipboard_history")
+    suspend fun deleteAll()
+
     /** Every image file still referenced by a surviving row. Used to reconcile the image directory
      * against the table after a trim: [trimUnpinned] is raw SQL and cannot delete files, so
      * without this every image aged out of the history window would leak its PNG forever. */

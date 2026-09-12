@@ -22,6 +22,8 @@ import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import dev.omakey.app.keyboard.ui.KeyboardRoot
+import dev.omakey.core.clipboard.ClipboardHistoryStore
+import dev.omakey.core.clipboard.ClipboardPreferences
 import dev.omakey.core.db.ClipboardEntity
 import dev.omakey.core.db.WordEntity
 import dev.omakey.core.db.OmakeyDatabase
@@ -98,6 +100,8 @@ class OmakeyInputMethodService :
     private var keyboardViewModel: KeyboardViewModel? = null
 
     private lateinit var clipboardManager: ClipboardManager
+    private lateinit var clipboardPreferences: ClipboardPreferences
+    private lateinit var clipboardHistory: ClipboardHistoryStore
     private var lastCapturedClipText: String? = null
     private var lastCapturedClipUri: String? = null
     // Set right before omakey's own Copy/Cut buttons trigger a system clipboard change (see
@@ -126,11 +130,11 @@ class OmakeyInputMethodService :
             suppressNextClipboardRead = true
             lastCapturedClipText = text
             lastCapturedClipUri = null
-            if (!incognitoPreferences.incognito.value) {
+            if (clipboardPreferences.settings.value.historyEnabled && !incognitoPreferences.incognito.value) {
                 serviceScope.launch {
                     database.clipboardDao()
                         .insert(ClipboardEntity(content = text, timestamp = System.currentTimeMillis()))
-                    trimClipboardHistory()
+                    clipboardHistory.trim()
                 }
             }
         }
@@ -188,7 +192,7 @@ class OmakeyInputMethodService :
                     imagePath = path,
                 ),
             )
-            trimClipboardHistory()
+            clipboardHistory.trim()
             return
         }
         val text = item.coerceToText(this)?.toString()?.trim()
@@ -196,7 +200,7 @@ class OmakeyInputMethodService :
         lastCapturedClipText = text
         lastCapturedClipUri = null
         database.clipboardDao().insert(ClipboardEntity(content = text, timestamp = System.currentTimeMillis()))
-        trimClipboardHistory()
+        clipboardHistory.trim()
     }
 
     /**
@@ -224,53 +228,14 @@ class OmakeyInputMethodService :
     // can set the extra in the first place.
     @Suppress("InlinedApi")
     private fun shouldCaptureClip(description: android.content.ClipDescription?): Boolean {
+        if (!clipboardPreferences.settings.value.historyEnabled) return false
         if (incognitoPreferences.incognito.value) return false
         val sensitive = description?.extras?.getBoolean(android.content.ClipDescription.EXTRA_IS_SENSITIVE) == true
         return !sensitive
     }
 
-    private val clipboardImagesDir: java.io.File get() = java.io.File(filesDir, "clipboard_images")
-
-    private fun copyClipboardImage(uri: android.net.Uri): String? = runCatching {
-        val dir = clipboardImagesDir.apply { mkdirs() }
-        val file = java.io.File(dir, "clip_${System.currentTimeMillis()}.png")
-        val input = contentResolver.openInputStream(uri) ?: return null
-        // Capped rather than copied wholesale: the source is an arbitrary content:// stream from
-        // another app, of unknown and unbounded length, being written to app-private storage the
-        // user never sees. A clip too large to keep is dropped entirely (partial file deleted, null
-        // returned) so no half-written PNG is ever referenced by a row.
-        val copied = input.use { stream -> file.outputStream().use { stream.copyTo(it) } }
-        if (copied > MAX_CLIPBOARD_IMAGE_BYTES) {
-            file.delete()
-            return null
-        }
-        file.absolutePath
-    }.getOrNull()
-
-    /**
-     * Trims the history table, then reconciles the image directory against what survived.
-     *
-     * The reconciliation is the part that has to exist: [ClipboardDao.trimUnpinned] is raw SQL and
-     * cannot touch the filesystem, and the only file deletion in the codebase was on the
-     * single-item `delete(id)` path. So every image that aged out of the 50-row window — full
-     * resolution screenshots, no age cap — orphaned its PNG in app-private storage permanently,
-     * invisible to the user and never reclaimed.
-     *
-     * Deleting strays (files no surviving row references) rather than deleting per trimmed row is
-     * deliberate: it is self-healing, so files already orphaned by earlier versions are cleaned up
-     * on the next capture instead of leaking forever. Best-effort throughout — a file that can't be
-     * deleted is not worth failing a clipboard capture over.
-     */
-    private suspend fun trimClipboardHistory() {
-        val dao = database.clipboardDao()
-        dao.trimUnpinned()
-        runCatching {
-            val referenced = dao.referencedImagePaths().toHashSet()
-            clipboardImagesDir.listFiles()?.forEach { file ->
-                if (file.absolutePath !in referenced) file.delete()
-            }
-        }
-    }
+    private fun copyClipboardImage(uri: android.net.Uri): String? =
+        contentResolver.openInputStream(uri)?.let { clipboardHistory.saveImage(it) }
 
     override fun onCreate() {
         super.onCreate()
@@ -349,6 +314,8 @@ class OmakeyInputMethodService :
         // even while omakey wasn't visible — surprising and needlessly clipboard-hungry for a
         // keyboard that isn't currently in front of the user.
         clipboardManager = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboardPreferences = ClipboardPreferences(applicationContext)
+        clipboardHistory = ClipboardHistoryStore(applicationContext, database.clipboardDao())
     }
 
     private fun buildExtensionContext(): ExtensionContext = object : ExtensionContext {
@@ -389,14 +356,7 @@ class OmakeyInputMethodService :
             override suspend fun pin(id: Long, pinned: Boolean) {
                 database.clipboardDao().setPinned(id, pinned)
             }
-            override suspend fun delete(id: Long) {
-                // Delete the backing image file too, if any — otherwise removing a clipboard row
-                // would leave an orphaned file in app-private storage indefinitely.
-                database.clipboardDao().findById(id)?.imagePath?.let { path ->
-                    runCatching { java.io.File(path).delete() }
-                }
-                database.clipboardDao().delete(id)
-            }
+            override suspend fun delete(id: Long) = clipboardHistory.delete(id)
             override suspend fun captureCurrentClipboard() = captureCurrentClipboardIfNew()
         }
         override val emojiRecents: dev.omakey.extapi.EmojiRecentsRepository = object : dev.omakey.extapi.EmojiRecentsRepository {
@@ -573,6 +533,7 @@ class OmakeyInputMethodService :
         // but "we rely on an implementation detail nobody chose to rely on" is a worse position
         // than releasing what we took, and the service has a definite end of life to do it at.
         incognitoPreferences.close()
+        clipboardPreferences.close()
         autocorrectPreferences.close()
         predictionPreferences.close()
         themeRepository.close()
