@@ -342,8 +342,6 @@ class OmakeyInputMethodService :
         extensionRegistry = LazyExtensionRegistry(contextProvider = ::buildExtensionContext)
         extensionRegistry.registerFactory(ClipboardHistoryExtension().id) { ClipboardHistoryExtension() }
         extensionRegistry.registerFactory(EmojiPanelExtension().id) { EmojiPanelExtension() }
-        // GifSearchExtension is a stub — a real implementation needs INTERNET, which the app
-        // deliberately doesn't request. Hidden from the panel tab strip until that's built for real.
 
         // NOT registered here — see onStartInputView()/onFinishInputView() below. Registering for
         // the whole service lifetime meant this listener (and the Android 12+ "app read your
