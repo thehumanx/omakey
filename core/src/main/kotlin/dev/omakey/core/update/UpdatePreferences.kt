@@ -2,7 +2,7 @@ package dev.omakey.core.update
 
 import android.content.Context
 import android.content.SharedPreferences
-import kotlinx.coroutines.flow.MutableStateFlow
+import dev.omakey.core.prefs.PreferenceStore
 import kotlinx.coroutines.flow.StateFlow
 
 data class UpdateSettings(
@@ -20,22 +20,13 @@ data class UpdateSettings(
  * HapticSoundPreferences for why the change listener matters: Settings and the periodic worker
  * each construct their own instance). */
 class UpdatePreferences(context: Context) {
-    private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val store = PreferenceStore(context, PREFS_NAME, ::load)
+    val settings: StateFlow<UpdateSettings> = store.settings
 
-    private val _settings = MutableStateFlow(load())
-    val settings: StateFlow<UpdateSettings> = _settings
-
-    private val prefsChangeListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
-        _settings.value = load()
-    }
-
-    init {
-        prefs.registerOnSharedPreferenceChangeListener(prefsChangeListener)
-    }
+    fun close() = store.close()
 
     fun setAutoCheckEnabled(enabled: Boolean) {
-        prefs.edit().putBoolean(KEY_AUTO_CHECK_ENABLED, enabled).apply()
-        _settings.value = _settings.value.copy(autoCheckEnabled = enabled)
+        store.edit { putBoolean(KEY_AUTO_CHECK_ENABLED, enabled) }
     }
 
     /** The latest version the background worker has already notified about — checked before
@@ -43,13 +34,13 @@ class UpdatePreferences(context: Context) {
      * tick doesn't re-notify for the same release over and over. Reset implicitly the moment a
      * *newer* version is seen (see `UpdateCheckWorker`'s own call site), not cleared on app
      * update — if the user is still on an old build, there's nothing to "reset." */
-    fun lastNotifiedVersion(): String? = prefs.getString(KEY_LAST_NOTIFIED_VERSION, null)
+    fun lastNotifiedVersion(): String? = store.prefs.getString(KEY_LAST_NOTIFIED_VERSION, null)
 
     fun setLastNotifiedVersion(version: String) {
-        prefs.edit().putString(KEY_LAST_NOTIFIED_VERSION, version).apply()
+        store.edit { putString(KEY_LAST_NOTIFIED_VERSION, version) }
     }
 
-    private fun load() = UpdateSettings(
+    private fun load(prefs: SharedPreferences) = UpdateSettings(
         autoCheckEnabled = prefs.getBoolean(KEY_AUTO_CHECK_ENABLED, true),
     )
 

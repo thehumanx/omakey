@@ -16,9 +16,18 @@ object WordEmojiSuggestions {
 
     private const val MAX_SUGGESTIONS = 2
 
-    private val table: Map<String, List<String>> = buildMap {
+    /**
+     * Every word → emoji pairing, as a flat list rather than a map.
+     *
+     * The map is derived from this, not built directly, for one reason: a map silently keeps the
+     * last write, so listing the same word under two entries used to be invisible — the earlier
+     * pairing would just stop working, with nothing to notice it. A list preserves the collision so
+     * `WordEmojiSuggestionsTest` can fail on it. That is the whole safety mechanism for a table
+     * that is 376 hand-written lines and grows by hand.
+     */
+    internal val pairs: List<Pair<String, List<String>>> = buildList {
         fun put(emoji: List<String>, vararg words: String) {
-            words.forEach { this[it] = emoji }
+            words.forEach { add(it to emoji) }
         }
 
         put(listOf("😊", "😄", "🙂"), "happy", "glad")
@@ -419,4 +428,7 @@ object WordEmojiSuggestions {
         put(listOf("📍"), "location")
         put(listOf("🧭"), "compass", "direction")
     }
+
+    /** Derived, so the list above stays the single source of truth. */
+    private val table: Map<String, List<String>> = pairs.toMap()
 }

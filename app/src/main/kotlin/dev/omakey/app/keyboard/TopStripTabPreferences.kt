@@ -2,7 +2,7 @@ package dev.omakey.app.keyboard
 
 import android.content.Context
 import android.content.SharedPreferences
-import kotlinx.coroutines.flow.MutableStateFlow
+import dev.omakey.core.prefs.PreferenceStore
 import kotlinx.coroutines.flow.StateFlow
 
 /** Persists which of the suggestion strip's swipeable pages (Suggestions/Numbers/Tools) was last
@@ -11,25 +11,16 @@ import kotlinx.coroutines.flow.StateFlow
  * listener is necessary, not optional: `KeyboardViewModel` and any other holder of this class are
  * separate objects, and a plain in-memory `StateFlow` alone wouldn't see a write made elsewhere). */
 class TopStripTabPreferences(context: Context) {
-    private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-
-    private val _tab = MutableStateFlow(load())
-    val tab: StateFlow<TopStripTab> = _tab
-
-    private val prefsChangeListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
-        _tab.value = load()
-    }
-
-    init {
-        prefs.registerOnSharedPreferenceChangeListener(prefsChangeListener)
-    }
+    private val store = PreferenceStore(context, PREFS_NAME, ::load)
+    val tab: StateFlow<TopStripTab> = store.settings
 
     fun setTab(tab: TopStripTab) {
-        prefs.edit().putString(KEY_TAB, tab.name).apply()
-        _tab.value = tab
+        store.edit { putString(KEY_TAB, tab.name) }
     }
 
-    private fun load(): TopStripTab {
+    fun close() = store.close()
+
+    private fun load(prefs: SharedPreferences): TopStripTab {
         val name = prefs.getString(KEY_TAB, null) ?: return TopStripTab.SUGGESTIONS
         return runCatching { TopStripTab.valueOf(name) }.getOrDefault(TopStripTab.SUGGESTIONS)
     }

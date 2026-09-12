@@ -73,8 +73,20 @@ interface ClipboardDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insert(entry: ClipboardEntity)
 
+    /** Pinning an item exempts it from [trimUnpinned] and floats it to the top of [recent]. */
+    @Query("UPDATE clipboard_history SET pinned = :pinned WHERE id = :id")
+    suspend fun setPinned(id: Long, pinned: Boolean)
+
+    /**
+     * Keeps the [keep] newest **unpinned** entries and deletes the rest; pinned entries are never
+     * deleted and don't count against the cap.
+     *
+     * The inner query filters on `pinned = 0` too. Without that, pinned items occupied slots in the
+     * keep-window, so pinning enough of them would start evicting unpinned history immediately —
+     * unnoticeable while nothing could set the flag, and wrong the moment something could.
+     */
     @Query("DELETE FROM clipboard_history WHERE pinned = 0 AND id NOT IN " +
-        "(SELECT id FROM clipboard_history ORDER BY timestamp DESC LIMIT :keep)")
+        "(SELECT id FROM clipboard_history WHERE pinned = 0 ORDER BY timestamp DESC LIMIT :keep)")
     suspend fun trimUnpinned(keep: Int = 50)
 
     /** Long-press-to-delete on a single clipboard item. Deliberately doesn't also delete the
@@ -84,6 +96,16 @@ interface ClipboardDao {
     @Query("DELETE FROM clipboard_history WHERE id = :id")
     suspend fun delete(id: Long)
 
+    /** Backs the explicit "Clear clipboard history" action in Settings. Pinned rows included:
+     * exempting them would leave history non-empty right after the user was told it was cleared.
+     * Always go through [dev.omakey.core.clipboard.ClipboardHistoryStore.clearAll], which also
+     * removes the image files these rows point at. */
     @Query("DELETE FROM clipboard_history")
     suspend fun deleteAll()
+
+    /** Every image file still referenced by a surviving row. Used to reconcile the image directory
+     * against the table after a trim: [trimUnpinned] is raw SQL and cannot delete files, so
+     * without this every image aged out of the history window would leak its PNG forever. */
+    @Query("SELECT imagePath FROM clipboard_history WHERE imagePath IS NOT NULL")
+    suspend fun referencedImagePaths(): List<String>
 }

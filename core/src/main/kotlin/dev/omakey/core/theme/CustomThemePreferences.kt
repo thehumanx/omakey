@@ -2,7 +2,7 @@ package dev.omakey.core.theme
 
 import android.content.Context
 import android.content.SharedPreferences
-import kotlinx.coroutines.flow.MutableStateFlow
+import dev.omakey.core.prefs.PreferenceStore
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
@@ -13,25 +13,18 @@ import kotlinx.serialization.json.Json
  * pattern as [ThemeRepository] itself. A dedicated Room table would only pay off at a scale users
  * of a single keyboard's custom-theme list are never going to reach. */
 class CustomThemePreferences(context: Context) {
-    private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = false }
     private val listSerializer = ListSerializer(OmakeyTheme.serializer())
 
-    private val _themes = MutableStateFlow(load())
-    val themes: StateFlow<List<OmakeyTheme>> = _themes
-
-    private val prefsChangeListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
-        _themes.value = load()
-    }
-
-    init {
-        prefs.registerOnSharedPreferenceChangeListener(prefsChangeListener)
-    }
+    private val store = PreferenceStore(context, PREFS_NAME, ::load)
+    val themes: StateFlow<List<OmakeyTheme>> = store.settings
 
     /** Inserts [theme], or replaces the existing entry with the same [OmakeyTheme.id] if one
      * already exists (editing a previously-saved custom theme keeps its id and its position). */
+    fun close() = store.close()
+
     fun save(theme: OmakeyTheme) {
-        val current = _themes.value
+        val current = store.value
         val next = if (current.any { it.id == theme.id }) {
             current.map { if (it.id == theme.id) theme else it }
         } else {
@@ -41,15 +34,14 @@ class CustomThemePreferences(context: Context) {
     }
 
     fun delete(id: String) {
-        persist(_themes.value.filterNot { it.id == id })
+        persist(store.value.filterNot { it.id == id })
     }
 
     private fun persist(themes: List<OmakeyTheme>) {
-        prefs.edit().putString(KEY_THEMES_JSON, json.encodeToString(listSerializer, themes)).apply()
-        _themes.value = themes
+        store.edit { putString(KEY_THEMES_JSON, json.encodeToString(listSerializer, themes)) }
     }
 
-    private fun load(): List<OmakeyTheme> {
+    private fun load(prefs: SharedPreferences): List<OmakeyTheme> {
         val raw = prefs.getString(KEY_THEMES_JSON, null) ?: return emptyList()
         return runCatching { json.decodeFromString(listSerializer, raw) }.getOrDefault(emptyList())
     }

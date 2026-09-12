@@ -1,5 +1,8 @@
 package dev.omakey.core.predict
 
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+
 /**
  * A [PredictionEngine] handle that exists before the engine behind it does.
  *
@@ -20,10 +23,25 @@ package dev.omakey.core.predict
  */
 class DeferredPredictionEngine : PredictionEngine {
 
+    private val _ready = MutableStateFlow(false)
+
+    /**
+     * Whether the model has finished loading.
+     *
+     * A flow rather than the plain `isReady` boolean this used to be: nothing could observe a
+     * boolean, so nothing did, and it sat unread while the suggestion strip stayed silently empty
+     * during a cold start — indistinguishable from "no suggestions for this word". Something has to
+     * be *told* when loading finishes, because by then the user is already typing and no further
+     * recomposition is guaranteed.
+     */
+    val ready: StateFlow<Boolean> = _ready
+
     @Volatile
     var delegate: PredictionEngine? = null
-
-    val isReady: Boolean get() = delegate != null
+        set(value) {
+            field = value
+            _ready.value = value != null
+        }
 
     override suspend fun suggestNext(
         beforePreviousWord: String?,

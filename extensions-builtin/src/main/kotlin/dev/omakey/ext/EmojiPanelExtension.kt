@@ -43,35 +43,25 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.omakey.core.icons.PhosphorBackspace
+import dev.omakey.core.theme.toComposeColor
+import dev.omakey.core.theme.toDp
+import dev.omakey.core.theme.gridCellBorder
 import dev.omakey.core.theme.LocalOmakeyTheme
 import dev.omakey.extapi.ExtensionContext
 import dev.omakey.extapi.ExtensionHost
 import dev.omakey.extapi.ExtensionIcon
 import dev.omakey.extapi.OmakeyExtension
 
-private fun dev.omakey.core.theme.ColorSpec.toComposeColor() = Color(argb.toInt())
 
 // Same single-draw border model as KeyboardRoot.kt's identically-named/documented GRID_BORDER_WIDTH
 // doc comment (see there for the full history) — every cell draws only its own right+bottom edge
 // (so adjacent cells never double up).
-private fun dev.omakey.core.theme.GridBorderWidth.toDp(): androidx.compose.ui.unit.Dp = when (this) {
-    dev.omakey.core.theme.GridBorderWidth.SM -> 1.dp
-    dev.omakey.core.theme.GridBorderWidth.MD -> 1.5.dp
-    dev.omakey.core.theme.GridBorderWidth.LG -> 2.5.dp
-}
 
 // includeLeft defaults to false — the standard right+bottom-only model already covers the left
 // edge via whichever cell sits before it. Backspace is the one exception: it sits right after a
 // *scrollable* LazyRow of category tabs, and got its own explicit left edge below rather than
 // trust that the last (possibly partially visible) tab's own right edge lines up reliably (real
 // bug, reported as "heart and X look like the same box").
-private fun Modifier.gridCellBorder(color: Color, strokeWidth: androidx.compose.ui.unit.Dp = 1.5.dp, includeLeft: Boolean = false): Modifier = this.drawBehind {
-    val strokePx = strokeWidth.toPx()
-    val half = strokePx / 2f
-    drawLine(color, androidx.compose.ui.geometry.Offset(size.width - half, 0f), androidx.compose.ui.geometry.Offset(size.width - half, size.height), strokePx)
-    drawLine(color, androidx.compose.ui.geometry.Offset(0f, size.height - half), androidx.compose.ui.geometry.Offset(size.width, size.height - half), strokePx)
-    if (includeLeft) drawLine(color, androidx.compose.ui.geometry.Offset(half, 0f), androidx.compose.ui.geometry.Offset(half, size.height), strokePx)
-}
 
 /** Bundled static emoji data, no network. Recently-used emoji are tracked via
  * ExtensionContext.emojiRecents and shown as a synthetic first category. */

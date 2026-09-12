@@ -1,7 +1,7 @@
 package dev.omakey.app.keyboard
 
-import android.text.InputType
 import android.view.inputmethod.EditorInfo
+import dev.omakey.core.locale.KeyboardLocale
 import dev.omakey.core.emoji.EmojiSkinTone
 import dev.omakey.core.emoji.WordEmojiSuggestions
 import dev.omakey.core.gesture.GesturePreferences
@@ -9,9 +9,16 @@ import dev.omakey.core.gesture.GestureSettings
 import dev.omakey.core.input.TextEdit
 import dev.omakey.core.input.TextEditor
 import dev.omakey.core.input.UndoHistory
+import dev.omakey.core.input.isSensitiveField
+import dev.omakey.core.predict.matchCase
+import dev.omakey.core.predict.splitCorrection
+import dev.omakey.core.input.WordTracker
 import dev.omakey.core.layout.KeyboardLayout
 import dev.omakey.core.layout.KeyboardPlacement
 import dev.omakey.core.layout.LayoutPreferences
+import dev.omakey.core.layout.flippedOneHandedSide
+import dev.omakey.core.layout.nextOneHanded
+import dev.omakey.core.layout.toggledWith
 import dev.omakey.core.layout.LayoutSettings
 import dev.omakey.core.layout.Layouts
 import dev.omakey.core.layout.SpecialKeyCode
@@ -21,6 +28,7 @@ import dev.omakey.core.predict.IncognitoPreferences
 import dev.omakey.core.predict.Calculator
 import dev.omakey.core.predict.PredictionEngine
 import dev.omakey.core.predict.PredictionPreferences
+import dev.omakey.core.predict.SuggestionComposer
 import dev.omakey.core.theme.FontChoices
 import dev.omakey.core.theme.FontPreferences
 import dev.omakey.core.theme.OmakeyTheme
@@ -41,70 +49,6 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
 
-/** What the strip above the key grid is currently showing. Fleksy-style: one shared strip slot,
- * not three permanently-visible rows — suggestions is the default/most-used tab, the other two
- * are a tap away. */
-enum class TopStripTab { SUGGESTIONS, TOOLS, NUMBERS }
-
-/** Whether `suggestions[0]` is an [AutocorrectIndex.alternatives] result (a fix/variant of a
- * specific word — quoted in the strip) or an ordinary next-word prediction (unquoted). Purely a
- * rendering hint; *how* accepting a suggestion is applied is governed by
- * [KeyboardViewModel.ActiveCorrection], not this. */
-enum class SuggestionKind { PLAIN, CORRECTION }
-
-data class KeyboardUiState(
-    val layout: KeyboardLayout = Layouts.QwertyEnUS,
-    val shiftOn: Boolean = false,
-    /** True once shift has been long-pressed into caps-lock — every letter is capitalized until
-     * shift is tapped again, unlike plain [shiftOn] which is a one-shot "capitalize just the next
-     * letter" that clears itself after a single character (see [commitTypedChar]). */
-    val capsLockOn: Boolean = false,
-    val suggestions: List<String> = emptyList(),
-    /** Emoji matching the word currently being typed/just finished (see
-     * [dev.omakey.core.emoji.WordEmojiSuggestions]), rendered as extra chips alongside
-     * [suggestions] — an entirely separate, independent row: tapping one inserts the emoji next
-     * to the word rather than replacing/cycling it, so it never interacts with [firstSuggestionKind]
-     * / [activeSuggestionIndex] / correction-cycling state at all. */
-    val emojiSuggestions: List<String> = emptyList(),
-    val theme: OmakeyTheme = Presets.Dark,
-    /** Mirrors [ThemeRepository.useSystemAccent] — kept alongside [theme] rather than inside it
-     * since it's an orthogonal flag (see `resolveEffectiveTheme`, which is what actually applies
-     * it), not a property of the theme data itself. */
-    val useSystemAccent: Boolean = false,
-    /** Mirrors [ThemeRepository.layoutMode] — Normal vs. Grid keyboard structure, orthogonal to
-     * [theme]'s color. See [dev.omakey.core.theme.LayoutMode]'s doc. */
-    val layoutMode: dev.omakey.core.theme.LayoutMode = dev.omakey.core.theme.LayoutMode.NORMAL,
-    val activeExtensionId: String? = null,
-    val layoutSettings: LayoutSettings = LayoutSettings(),
-    val fontId: String = FontChoices.SYSTEM_DEFAULT,
-    val gestureSettings: GestureSettings = GestureSettings(),
-    val topStripTab: TopStripTab = TopStripTab.SUGGESTIONS,
-    val firstSuggestionKind: SuggestionKind = SuggestionKind.PLAIN,
-    /** Mirrors the private `suggestionCycleIndex` in [KeyboardViewModel] — -1 means "nothing's
-     * been cycled yet, treat index 0 as the highlighted candidate," >=0 is the actual index into
-     * [suggestions] currently applied via swipe up/down cycling. The suggestion strip highlights
-     * this index (falling back to 0 when -1), not always index 0. */
-    val activeSuggestionIndex: Int = -1,
-    /** Resolved from the focused field's [EditorInfo.imeOptions] each time a new field is
-     * focused — drives both the Enter key's label (e.g. "Go", "Send") and what it actually does
-     * on tap. [EditorInfo.IME_ACTION_NONE] (the default) means "just insert a newline." */
-    val enterAction: Int = EditorInfo.IME_ACTION_NONE,
-    val canUndo: Boolean = false,
-    val canRedo: Boolean = false,
-    /** A short-lived confirmation ("hello learned"/"hello unlearned") shown as an overlay above
-     * whichever extension bar content is currently active, for ~0.5s — see
-     * [KeyboardViewModel.showBanner]. */
-    val bannerMessage: String? = null,
-    /** True while nothing typed is being remembered — either the user toggled it, or the focused
-     * field is a password. Purely a rendering hint; the authority is [IncognitoPreferences]. */
-    val incognito: Boolean = false,
-    /** The quick-access tile panel is open, replacing the key grid. Same slot [activeExtensionId]
-     * drives, and mutually exclusive with it — opening one closes the other. */
-    val quickAccessOpen: Boolean = false,
-    /** Drag-to-resize is armed: the keyboard draws corner handles and a Done bar, and ordinary
-     * typing is suspended. What can be dragged depends on [LayoutSettings.placement]. */
-    val resizing: Boolean = false,
-)
 
 /**
  * Owns the current typing session's state: active layout, shift state, suggestions, and which
@@ -115,6 +59,10 @@ data class KeyboardUiState(
 class KeyboardViewModel(
     private val textEditor: TextEditor,
     private val predictionEngine: PredictionEngine,
+    /** Emits once the language model is mapped. Separate from [predictionEngine] itself because the
+     * engine handed in during a cold start is a [dev.omakey.core.predict.DeferredPredictionEngine]
+     * that answers every call with nothing until then. */
+    private val predictionReady: StateFlow<Boolean> = MutableStateFlow(true),
     private val autocorrectIndex: AutocorrectIndex,
     private val autocorrectPreferences: AutocorrectPreferences,
     private val predictionPreferences: PredictionPreferences,
@@ -153,33 +101,16 @@ class KeyboardViewModel(
     )
     val uiState: StateFlow<KeyboardUiState> = _uiState.asStateFlow()
 
-    private var lastCommittedWord: String? = null
+    /**
+     * The word being typed and the two finished before it — see [WordTracker], which owns the
+     * three-field invariant these used to maintain by hand at eight separate call sites.
+     */
+    private val words = WordTracker()
 
-    /** Same word as [lastCommittedWord], exactly as typed (mixed case preserved) rather than
-     * forced to lowercase — [lastCommittedWord] is lowercased everywhere it's set because that's
-     * what bigram lookups ([predictionEngine.bigramRank]/[PredictionEngine.suggestNext]) key on,
-     * but [wordAlternatives]/[matchCase] need the *actual* casing to offer "Hello" instead of
-     * "hello" for a word typed as "Hwllo" — real bug, fixed: the RETROACTIVE contextual-correction
-     * branch of [refreshSuggestions] used to pass the already-lowercased [lastCommittedWord] as
-     * both the correction target *and* the case template, so [matchCase] saw an all-lowercase
-     * "typed" word and had nothing to restore capitalization from. Mirrored at every
-     * [lastCommittedWord] assignment site. */
-    private var lastCommittedWordCased: String? = null
-
-    /** Whatever [lastCommittedWord] was immediately *before* the current [lastCommittedWord] —
-     * i.e. the bigram context for the word that was just finished. Needed to rank real-word
-     * alternatives by what actually fits the surrounding sentence (see [refreshSuggestions]).
-     * Captured before [lastCommittedWord] is overwritten by the next word. */
-    private var previousToLastCommittedWord: String? = null
-
-    /** The literal separator text that ended [lastCommittedWord] — a space, a newline (Enter
-     * inserting one rather than firing an editor action), or a punctuation character. Needed by
-     * [ActiveCorrection] (`RETROACTIVE` mode) to know exactly how many characters sit between the
-     * target word and the cursor, and what to retype after it; hardcoding a space there would
-     * silently corrupt "word.<fix>" into "word.<fix> " (extra space) or "word\n<fix>" into
-     * "word\n<fix> " (newline replaced by a space). */
-    private var lastWordBoundarySeparator: String = " "
-    private var currentWordBuffer = StringBuilder()
+    /** Owns candidate selection; this class owns *when* to ask and what to do with the answer.
+     * Constructed here rather than injected because both its dependencies are already constructor
+     * parameters — it is a regrouping of what this class already had, not a new collaborator. */
+    private val suggestionComposer = SuggestionComposer(autocorrectIndex, predictionEngine, SUGGESTION_LIMIT)
 
     /** When the most recent space was actually committed — 0 means "none yet this session, or
      * already consumed by a double-tap conversion." Powers [onSpace]'s double-tap-space-for-
@@ -262,11 +193,11 @@ class KeyboardViewModel(
      * the word is (updated after every cycle step, since each candidate can be a different
      * length) — not the original word's length, except before the first step. */
     private enum class CorrectionApplyMode {
-        /** Word is still being actively typed ([currentWordBuffer] is it) — delete the buffer,
+        /** Word is still being actively typed (the [WordTracker] buffer is it) — delete the buffer,
          * retype, leave it open for further editing (matches ordinary completion-cycling). */
         LIVE_BUFFER,
 
-        /** Word was just finished (space/punctuation/Enter already committed [lastWordBoundarySeparator]
+        /** Word was just finished (space/punctuation/Enter already committed [WordTracker.boundarySeparator]
          * right after it) — delete back through the word *and* the separator, retype both. */
         RETROACTIVE,
 
@@ -310,38 +241,16 @@ class KeyboardViewModel(
         incognitoPreferences.incognito
             .onEach { enabled -> _uiState.update { it.copy(incognito = enabled) } }
             .launchIn(scope)
-    }
-
-    /**
-     * Whether a field must never be learned from.
-     *
-     * Covers the three password variants (text, web, numeric — they are distinct constants, and
-     * checking only `TYPE_TEXT_VARIATION_PASSWORD` would miss the web login form that most people
-     * actually type passwords into), plus visible-password fields, and any field that has asked
-     * not to receive suggestions at all. `IME_FLAG_NO_PERSONALIZED_LEARNING` is the platform's
-     * explicit way for an app to say "don't remember this" and is honoured directly.
-     *
-     * Variations live in the low bits of `inputType` and must be masked out before comparison;
-     * testing `inputType and VARIATION == VARIATION` without the mask matches unrelated fields.
-     */
-    private fun isSensitiveField(info: EditorInfo?): Boolean {
-        val editorInfo = info ?: return false
-        if ((editorInfo.imeOptions and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING) != 0) return true
-        val inputType = editorInfo.inputType
-        val classType = inputType and InputType.TYPE_MASK_CLASS
-        val variation = inputType and InputType.TYPE_MASK_VARIATION
-        if (classType == InputType.TYPE_CLASS_NUMBER &&
-            variation == InputType.TYPE_NUMBER_VARIATION_PASSWORD
-        ) {
-            return true
-        }
-        if (classType == InputType.TYPE_CLASS_TEXT) {
-            return variation == InputType.TYPE_TEXT_VARIATION_PASSWORD ||
-                variation == InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD ||
-                variation == InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD ||
-                (inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS) != 0
-        }
-        return false
+        predictionReady
+            .onEach { ready ->
+                _uiState.update { it.copy(suggestionsLoading = !ready) }
+                // The strip was built from an engine that could not answer yet, so whatever is on
+                // screen right now is the degraded result. Re-deriving it is what turns the
+                // placeholder into real suggestions for the word already being typed, rather than
+                // leaving the user to type another character before anything appears.
+                if (ready) refreshSuggestions()
+            }
+            .launchIn(scope)
     }
 
     /** Manual incognito toggle, from the keyboard's own toolbar. Deliberately session state rather
@@ -362,11 +271,7 @@ class KeyboardViewModel(
             if (text.isEmpty()) return
             textEditor.insertText(text)
             pushUndo(TextEdit(inserted = text))
-            currentWordBuffer.clear()
-            suggestionCycleIndex = -1
-            activeCorrection = null
-            lastAutocorrect = null
-            revertedWord = null
+            resetTypingState()
         }
         override fun close() {
             _uiState.update { it.copy(activeExtensionId = null) }
@@ -391,7 +296,7 @@ class KeyboardViewModel(
         }
         _uiState.update {
             it.copy(
-                layout = Layouts.QwertyEnUS,
+                layout = KeyboardLocale.Default.letterLayout,
                 shiftOn = autocorrectPreferences.settings.value.autoCapitalizeEnabled && textEditor.textBeforeCursor(1).isEmpty(),
                 capsLockOn = false,
                 suggestions = emptyList(),
@@ -408,10 +313,7 @@ class KeyboardViewModel(
                 resizing = false,
             )
         }
-        lastCommittedWord = null
-        lastCommittedWordCased = null
-        previousToLastCommittedWord = null
-        currentWordBuffer.clear()
+        words.clear()
         symbolTypedInSymbolsMode = false
         suggestionCycleIndex = -1
         lastAutocorrect = null
@@ -451,9 +353,7 @@ class KeyboardViewModel(
      * so every tile is its own off switch and there is no separate "back to normal" control.
      */
     fun setPlacement(placement: KeyboardPlacement) {
-        val current = layoutPreferences.settings.value.placement
-        val next = if (current == placement) KeyboardPlacement.DOCKED else placement
-        layoutPreferences.setPlacement(next)
+        layoutPreferences.setPlacement(layoutPreferences.settings.value.placement.toggledWith(placement))
         _uiState.update { it.copy(quickAccessOpen = false) }
     }
 
@@ -461,36 +361,33 @@ class KeyboardViewModel(
      * second tap flips sides rather than switching it off — matching the gutter's own switch-side
      * button, so the tile and the gutter don't disagree. */
     fun toggleOneHanded() {
-        val current = layoutPreferences.settings.value.placement
-        val next = when (current) {
-            KeyboardPlacement.ONE_HANDED_RIGHT -> KeyboardPlacement.ONE_HANDED_LEFT
-            KeyboardPlacement.ONE_HANDED_LEFT -> KeyboardPlacement.DOCKED
-            else -> KeyboardPlacement.ONE_HANDED_RIGHT
-        }
-        layoutPreferences.setPlacement(next)
+        layoutPreferences.setPlacement(layoutPreferences.settings.value.placement.nextOneHanded())
         _uiState.update { it.copy(quickAccessOpen = false) }
     }
 
     fun switchOneHandedSide() {
-        val next = when (layoutPreferences.settings.value.placement) {
-            KeyboardPlacement.ONE_HANDED_RIGHT -> KeyboardPlacement.ONE_HANDED_LEFT
-            else -> KeyboardPlacement.ONE_HANDED_RIGHT
-        }
-        layoutPreferences.setPlacement(next)
+        layoutPreferences.setPlacement(layoutPreferences.settings.value.placement.flippedOneHandedSide())
     }
 
     /** Persists the result of a resize/move drag. Called once on drag end, never per frame — the
      * live value lives in the UI until then (see `PlacementState`). Routed through the view model
      * so the UI layer never has to build its own [LayoutPreferences], which would register a second
      * SharedPreferences listener per composition. */
-    fun commitPlacementBounds(widthDp: Int, heightDp: Int, xDp: Int, yDp: Int) {
-        when (val placement = layoutPreferences.settings.value.placement) {
+    fun commitPlacementBounds(widthDp: Int, heightDp: Int, xDp: Int, yDp: Int, bottomOffsetDp: Int) {
+        when (layoutPreferences.settings.value.placement) {
             KeyboardPlacement.FLOATING -> layoutPreferences.setFloatingBounds(widthDp, heightDp, xDp, yDp)
             KeyboardPlacement.ONE_HANDED_LEFT, KeyboardPlacement.ONE_HANDED_RIGHT -> {
                 layoutPreferences.setOneHandedWidthDp(widthDp)
                 layoutPreferences.setKeyboardHeightDp(heightDp)
+                layoutPreferences.setBottomOffsetDp(bottomOffsetDp)
             }
-            KeyboardPlacement.DOCKED -> layoutPreferences.setKeyboardHeightDp(heightDp)
+            // Docked and one-handed keyboards can be raised off the bottom edge as well as
+            // resized — the quick-access overlay does both now, matching Settings. Floating has no
+            // bottom offset: its position is already free.
+            KeyboardPlacement.DOCKED -> {
+                layoutPreferences.setKeyboardHeightDp(heightDp)
+                layoutPreferences.setBottomOffsetDp(bottomOffsetDp)
+            }
         }
     }
 
@@ -563,11 +460,7 @@ class KeyboardViewModel(
         textEditor.insertText(clip)
         pushUndo(TextEdit(removed = replaced, inserted = clip))
         // The pasted text is not typed text: none of the word-in-progress bookkeeping describes it.
-        currentWordBuffer.clear()
-        suggestionCycleIndex = -1
-        activeCorrection = null
-        lastAutocorrect = null
-        revertedWord = null
+        resetTypingState()
         refreshSuggestionsAfterDeletion()
     }
 
@@ -592,7 +485,7 @@ class KeyboardViewModel(
             }
             SpecialKeyCode.LETTERS -> {
                 symbolTypedInSymbolsMode = false
-                switchLayout(Layouts.QwertyEnUS)
+                switchLayout(KeyboardLocale.Default.letterLayout)
             }
             SpecialKeyCode.EXTENSIONS -> toggleExtensionPanel()
             else -> onCharacter(code)
@@ -609,7 +502,7 @@ class KeyboardViewModel(
      * normally does — see [onSwipeUp]/[onSwipeDown]). */
     private val punctuationCycle = listOf('.', ',', '!', '?', ';', ':', '\'', '"')
 
-    /** Only fires when the cursor isn't inside a word-in-progress ([currentWordBuffer] empty —
+    /** Only fires when the cursor isn't inside a word-in-progress (the [WordTracker] buffer is empty —
      * a live word is what "cursor is inside the word" means here, since a mid-word cursor from
      * navigation is otherwise indistinguishable from "just finished typing") and one of
      * [punctuationCycle]'s characters sits immediately left of the cursor, *or* exactly one space
@@ -621,7 +514,7 @@ class KeyboardViewModel(
      * true; returns false (no-op) otherwise so the caller falls through to its normal suggestion-
      * cycling behavior. */
     private fun tryCyclePunctuation(forward: Boolean): Boolean {
-        if (currentWordBuffer.isNotEmpty()) return false
+        if (words.isBufferNotEmpty) return false
         val before = textEditor.textBeforeCursor(2)
         val last = before.lastOrNull() ?: return false
         val trailingSpace = last == ' ' && before.length >= 2
@@ -734,12 +627,12 @@ class KeyboardViewModel(
      * user wants remembered — so this now applies uniformly to any mode. */
     private fun revertAndMaybeSave() {
         val active = activeCorrection
-        // currentWordBuffer is already empty once a trailing separator (space, punctuation) has
+        // The buffer is already empty once a trailing separator (space, punctuation) has
         // flushed it — e.g. cursor sitting right after "bibek " with nothing typed since. Falling
         // back to wordBeforeCursor() recovers "bibek" (not "bibek " — its separator is reported
         // separately and never included) instead of silently no-op'ing the swipe-up-to-save.
         val original = active?.originalWord
-            ?: currentWordBuffer.toString().ifBlank { textEditor.wordBeforeCursor()?.word.orEmpty() }
+            ?: words.bufferedWord.ifBlank { textEditor.wordBeforeCursor()?.word.orEmpty() }
         if (original.isBlank()) return
         if (active != null) applyActiveCorrection(original)
         suggestionCycleIndex = -1
@@ -797,13 +690,9 @@ class KeyboardViewModel(
                 // "Done with this word" — close it out with a trailing space, same as accepting a
                 // plain next-word prediction below. RETROACTIVE/CURSOR corrections are already
                 // sitting in finished text; nothing more to close out for those.
-                val finished = currentWordBuffer.toString()
-                if (finished.isNotEmpty()) {
+                if (words.isBufferNotEmpty) {
                     textEditor.commitCharacter(' ')
-                    currentWordBuffer.clear()
-                    previousToLastCommittedWord = lastCommittedWord
-                    lastCommittedWord = finished.lowercase()
-                    lastCommittedWordCased = finished
+                    words.commitBufferedWord()
                 }
             }
             suggestionCycleIndex = -1
@@ -811,12 +700,10 @@ class KeyboardViewModel(
             return
         }
         commitCorrection(word)
-        val finished = currentWordBuffer.toString()
         textEditor.commitCharacter(' ')
-        currentWordBuffer.clear()
-        previousToLastCommittedWord = lastCommittedWord
-        lastCommittedWord = finished.lowercase()
-        lastCommittedWordCased = finished
+        // An empty buffer records nothing, where the previous open-coded version would have stored
+        // an empty string as the last committed word.
+        words.commitBufferedWord()
         refreshSuggestions()
     }
 
@@ -834,23 +721,13 @@ class KeyboardViewModel(
         when (active.mode) {
             CorrectionApplyMode.LIVE_BUFFER -> {
                 repeat(active.occupiedBefore) { textEditor.deleteCharacterBackward() }
-                val spaceIndex = replacement.indexOf(' ')
-                if (spaceIndex <= 0 || spaceIndex == replacement.length - 1) {
+                val split = splitCorrection(replacement)
+                if (split == null) {
                     replacement.forEach { textEditor.commitCharacter(it) }
-                    currentWordBuffer.clear()
-                    currentWordBuffer.append(replacement)
+                    words.replaceBuffer(replacement)
                     active.occupiedBefore = replacement.length
                 } else {
-                    val firstWord = replacement.substring(0, spaceIndex)
-                    val secondWord = replacement.substring(spaceIndex + 1)
-                    firstWord.forEach { textEditor.commitCharacter(it) }
-                    textEditor.commitCharacter(' ')
-                    previousToLastCommittedWord = lastCommittedWord
-                    lastCommittedWord = firstWord.lowercase()
-                    lastCommittedWordCased = firstWord
-                    secondWord.forEach { textEditor.commitCharacter(it) }
-                    currentWordBuffer.clear()
-                    currentWordBuffer.append(secondWord)
+                    commitSplitCorrection(split)
                     activeCorrection = null
                 }
             }
@@ -858,8 +735,7 @@ class KeyboardViewModel(
                 repeat(active.occupiedBefore + active.separator.length) { textEditor.deleteCharacterBackward() }
                 replacement.forEach { textEditor.commitCharacter(it) }
                 active.separator.forEach { textEditor.commitCharacter(it) }
-                lastCommittedWord = replacement.lowercase()
-                lastCommittedWordCased = replacement
+                words.retargetLastCommitted(replacement)
                 active.occupiedBefore = replacement.length
             }
             CorrectionApplyMode.CURSOR -> {
@@ -884,31 +760,35 @@ class KeyboardViewModel(
      * flushed (bookkeeping only, no learning) while the second becomes the new active buffer.
      * Returns true if [replacement] was a two-word split, false for a plain single word. */
     private fun commitCorrection(replacement: String): Boolean {
-        repeat(currentWordBuffer.length) { textEditor.deleteCharacterBackward() }
-        currentWordBuffer.clear()
+        repeat(words.bufferLength) { textEditor.deleteCharacterBackward() }
 
-        val spaceIndex = replacement.indexOf(' ')
-        if (spaceIndex <= 0 || spaceIndex == replacement.length - 1) {
+        val split = splitCorrection(replacement)
+        if (split == null) {
             replacement.forEach { textEditor.commitCharacter(it) }
-            currentWordBuffer.append(replacement)
+            words.replaceBuffer(replacement)
             return false
         }
+        commitSplitCorrection(split)
+        return true
+    }
 
-        val firstWord = replacement.substring(0, spaceIndex)
-        val secondWord = replacement.substring(spaceIndex + 1)
+    /** Commits both halves of a [splitCorrection]: the first word is finished then and there
+     * (bookkeeping only, no learning — see [flushWordBuffer]'s doc), the second becomes the new
+     * live buffer. Shared by [commitCorrection] and [applyActiveCorrection], which each carried
+     * their own copy of this — including the [WordTracker] assignments, the exact invariant that
+     * had already been got wrong once by being written out more than once. */
+    private fun commitSplitCorrection(split: Pair<String, String>) {
+        val (firstWord, secondWord) = split
         firstWord.forEach { textEditor.commitCharacter(it) }
         textEditor.commitCharacter(' ')
-        previousToLastCommittedWord = lastCommittedWord
-        lastCommittedWord = firstWord.lowercase()
-        lastCommittedWordCased = firstWord
+        words.commitWord(firstWord)
         secondWord.forEach { textEditor.commitCharacter(it) }
-        currentWordBuffer.append(secondWord)
-        return true
+        words.replaceBuffer(secondWord)
     }
 
     /** Called whenever the cursor/selection changes for a reason outside the normal typing flow —
      * a tap elsewhere in the text, arrow-key navigation, autofill, etc (see
-     * `OmakeyInputMethodService.onUpdateSelection`). Independent of [currentWordBuffer]'s typing-
+     * `OmakeyInputMethodService.onUpdateSelection`). Independent of the [WordTracker] buffer's typing-
      * order tracking entirely: derives "the word at the cursor" straight from the live text via
      * [TextEditor.wordAtCursor] and looks up alternatives for *that* word, which is the only way
      * to catch "cursor moved into the middle of an already-committed word" — nothing about normal
@@ -921,7 +801,7 @@ class KeyboardViewModel(
         // it), so this only needs to act when the cursor is somewhere *else*.
         val isOrdinaryTypingPosition = wordAtCursor != null &&
             wordAtCursor.charsAfterCursor == 0 &&
-            wordAtCursor.word == currentWordBuffer.toString()
+            wordAtCursor.word == words.bufferedWord
         if (wordAtCursor == null || isOrdinaryTypingPosition) {
             if (activeCorrection?.mode == CorrectionApplyMode.CURSOR) {
                 activeCorrection = null
@@ -972,18 +852,18 @@ class KeyboardViewModel(
         textEditor.commitCharacter(char)
         if (_uiState.value.layout.id in SYMBOLS_LAYOUT_IDS) symbolTypedInSymbolsMode = true
         if (char.isLetter()) {
-            currentWordBuffer.append(char)
+            words.appendToBuffer(char)
             refreshSuggestions()
         } else {
             flushWordBuffer(separator = char.toString())
-            lastWordBoundarySeparator = char.toString()
+            words.boundarySeparator = char.toString()
             // Real bug, fixed: this used to pass checkContextualCorrection = true for *every*
             // non-letter character, including digits and arbitrary symbols-page characters (@, #,
             // $, ...) that never actually end a word the way sentence punctuation does. Since
-            // currentWordBuffer is empty for these (nothing was being typed), refreshSuggestions'
-            // "just finished a word" branch fired off lastCommittedWordCased instead — the last
+            // words is empty for these (nothing was being typed), refreshSuggestions'
+            // "just finished a word" branch fired off words.lastCommittedCased instead — the last
             // word actually finished with a *real* separator, which for a fresh digit run could be
-            // from several words ago (typing digits never itself updates lastCommittedWord). This
+            // from several words ago (typing digits never itself updates words.lastCommitted). This
             // made the suggestion strip appear "stuck" on whatever word was last genuinely
             // committed, reappearing every time the user typed a digit/symbol with no live word
             // buffered. Only [punctuationCycle]'s actual sentence-ending/quoting characters (also
@@ -1015,7 +895,7 @@ class KeyboardViewModel(
      * (non-calculator) suggestion logic instead.
      *
      * Scoped to plain `+ - * /` per [Calculator]'s own doc — deliberately not reusing
-     * [currentWordBuffer] (letters-only, never sees digits/operators in the first place), a
+     * the [WordTracker] buffer (letters-only, never sees digits/operators in the first place), a
      * separate read of the actual committed text instead. */
     private fun tryShowCalculatorResult(): Boolean {
         val textBefore = textEditor.textBeforeCursor(64)
@@ -1046,11 +926,11 @@ class KeyboardViewModel(
         maybeAutocorrectBufferedWord()
         flushWordBuffer(separator = " ")
         textEditor.insertSpace()
-        lastWordBoundarySeparator = " "
+        words.boundarySeparator = " "
         lastSpaceCommitAtMs = System.currentTimeMillis()
         if (symbolTypedInSymbolsMode) {
             symbolTypedInSymbolsMode = false
-            switchLayout(Layouts.QwertyEnUS)
+            switchLayout(KeyboardLocale.Default.letterLayout)
         }
         refreshSuggestions(checkContextualCorrection = true)
         maybeAutoCapitalize()
@@ -1087,7 +967,7 @@ class KeyboardViewModel(
         // of the old word behind every time (e.g. "hello. " cycling to "hhell. "). See
         // [ActiveCorrection.separator]'s doc — it's retyped verbatim after the replacement on
         // every cycle step, so it must match the real on-screen separator exactly.
-        lastWordBoundarySeparator = ". "
+        words.boundarySeparator = ". "
         lastSpaceCommitAtMs = 0L
         refreshSuggestions(checkContextualCorrection = true)
         maybeAutoCapitalize()
@@ -1112,7 +992,7 @@ class KeyboardViewModel(
         flushWordBuffer(separator = if (willInsertNewline) "\n" else "")
         if (willInsertNewline) {
             textEditor.insertNewline()
-            lastWordBoundarySeparator = "\n"
+            words.boundarySeparator = "\n"
             refreshSuggestions(checkContextualCorrection = true)
             maybeAutoCapitalize()
         } else {
@@ -1133,7 +1013,7 @@ class KeyboardViewModel(
      * only ever fire for something that plainly isn't a real word, never a "well" -> "we'll" style
      * variant of something already valid; those stay opt-in, offered on the suggestion strip. */
     private fun maybeAutocorrectBufferedWord() {
-        val typed = currentWordBuffer.toString()
+        val typed = words.bufferedWord
         // The user just backspaced this exact word back to what they actually typed — respect
         // that as a rejection instead of immediately re-correcting it right back on the very next
         // word boundary (Gboard/iOS convention: reverting once "sticks" for that word).
@@ -1153,12 +1033,6 @@ class KeyboardViewModel(
         lastAutocorrect = AutocorrectRecord(original = typed, corrected = corrected)
     }
 
-    private fun matchCase(typed: String, correctedLower: String): String = when {
-        typed.all { it.isUpperCase() } -> correctedLower.uppercase()
-        typed.first().isUpperCase() -> correctedLower.replaceFirstChar { it.uppercase() }
-        else -> correctedLower
-    }
-
     private fun onDeleteCharacter() {
         // Any backspace at all retracts the staged word — see [pendingLearn] for why this is
         // deliberately broader than "a backspace that touches it".
@@ -1169,11 +1043,9 @@ class KeyboardViewModel(
         // everything selected would just nibble one character next to the cursor instead of
         // clearing the selection the way every other text editor on the platform does.
         if (textEditor.hasSelection()) {
-            lastAutocorrect = null
-            revertedWord = null
-            suggestionCycleIndex = -1
+            forgetCorrectionMemory()
             undoHistory.breakCoalescing()
-            currentWordBuffer.clear()
+            words.clearBuffer()
             // Read before deleting, and recorded as one step for the whole selection however big
             // it is — "backspace over a selection" is one gesture, so it is one undo.
             val deleted = textEditor.selectedText()
@@ -1183,7 +1055,7 @@ class KeyboardViewModel(
             return
         }
         val record = lastAutocorrect
-        if (record != null && currentWordBuffer.isEmpty()) {
+        if (record != null && words.isBufferEmpty) {
             // First backspace immediately after an autocorrect swap (the buffer was cleared by
             // the boundary commit that triggered it) reverts to what was actually typed — same
             // convention as Gboard/iOS — instead of just deleting one character of the "fixed"
@@ -1194,19 +1066,16 @@ class KeyboardViewModel(
             undoHistory.breakCoalescing()
             repeat(record.corrected.length + 1) { textEditor.deleteCharacterBackward() }
             record.original.forEach { textEditor.commitCharacter(it) }
-            currentWordBuffer.clear()
-            currentWordBuffer.append(record.original)
+            words.replaceBuffer(record.original)
             refreshSuggestions()
             return
         }
-        lastAutocorrect = null
-        revertedWord = null
-        suggestionCycleIndex = -1
-        if (currentWordBuffer.isNotEmpty()) {
+        forgetCorrectionMemory()
+        if (words.isBufferNotEmpty) {
             // Backspacing within a word still open for editing — absorbed into whichever
             // Inserted undo step that word eventually becomes on its own word boundary; not
             // independently undoable mid-word, same as before.
-            currentWordBuffer.deleteCharAt(currentWordBuffer.length - 1)
+            words.deleteLastBufferedChar()
             undoHistory.breakCoalescing()
             textEditor.deleteCharacterBackward()
             refreshSuggestionsAfterDeletion()
@@ -1235,11 +1104,9 @@ class KeyboardViewModel(
 
     private fun onDeleteWord() {
         discardPendingLearn()
-        lastAutocorrect = null
-        revertedWord = null
-        suggestionCycleIndex = -1
+        forgetCorrectionMemory()
         undoHistory.breakCoalescing()
-        currentWordBuffer.clear()
+        words.clearBuffer()
         // Same selection-takes-priority rule as onDeleteCharacter() — swipe-left with everything
         // selected should clear the selection, not just delete one word next to the cursor.
         if (textEditor.hasSelection()) {
@@ -1276,8 +1143,8 @@ class KeyboardViewModel(
 
     /** Deleting a word/character can leave the cursor sitting right after a *previously*
      * committed word instead of at an empty/ordinary typing position — e.g. "okay i wont do "
-     * with "do" deleted leaves "okay i wont " with nothing in [currentWordBuffer]. Plain
-     * [refreshSuggestions] only reacts to [lastCommittedWord] (typing-order bookkeeping that a
+     * with "do" deleted leaves "okay i wont " with nothing in the [WordTracker] buffer. Plain
+     * [refreshSuggestions] only reacts to [WordTracker.lastCommitted] (typing-order bookkeeping that a
      * deletion doesn't update) or the still-open buffer, so it would otherwise show nothing for
      * "wont" here — this instead derives the word actually sitting before the cursor straight
      * from the live text (via [TextEditor.wordBeforeCursor], same "don't trust typing-order
@@ -1297,7 +1164,7 @@ class KeyboardViewModel(
         // "12+7=19" leaves the cursor sitting right after "12+7=" again, which should show the
         // calculator suggestion again rather than falling through to plain word logic.
         if (tryShowCalculatorResult()) return
-        if (currentWordBuffer.isNotEmpty()) {
+        if (words.isBufferNotEmpty) {
             refreshSuggestions()
             return
         }
@@ -1307,7 +1174,7 @@ class KeyboardViewModel(
             return
         }
         // Set directly (not via refreshSuggestions(), which would immediately overwrite it based
-        // on currentWordBuffer/lastCommittedWord — neither necessarily matches wordBeforeCursor
+        // on words/words.lastCommitted — neither necessarily matches wordBeforeCursor
         // here, since this whole branch exists precisely for the case where a deletion left the
         // cursor sitting after a word neither of those is tracking).
         updateEmojiSuggestions(wordBeforeCursor.word)
@@ -1323,10 +1190,36 @@ class KeyboardViewModel(
             occupiedAfter = 0,
             separator = wordBeforeCursor.separator,
         )
-        lastCommittedWord = wordBeforeCursor.word.lowercase()
-        lastCommittedWordCased = wordBeforeCursor.word
+        words.retargetLastCommitted(wordBeforeCursor.word)
         suggestionCycleIndex = -1
         _uiState.update { it.copy(suggestions = alternatives, firstSuggestionKind = SuggestionKind.CORRECTION) }
+    }
+
+    /**
+     * Drops everything that describes a word in progress, for an edit that puts text on screen
+     * which the typing-order bookkeeping cannot account for — a paste, an extension insertion, an
+     * undo. None of it describes the new text, and leaving any of it set makes the next correction
+     * act on a word that is no longer where it thinks.
+     *
+     * Note this deliberately does *not* clear the committed-word history: the text before the
+     * insertion point is unchanged, so it is still valid context for prediction. That is the
+     * difference between this and [WordTracker.clear], which a new field warrants and this does
+     * not.
+     */
+    private fun resetTypingState() {
+        words.clearBuffer()
+        activeCorrection = null
+        forgetCorrectionMemory()
+    }
+
+    /** Forgets that an autocorrect just happened, and that one was just reverted — so the next
+     * backspace can't undo a swap that is no longer the most recent thing to have occurred, and
+     * the next word boundary can't re-apply a correction the user already rejected. Cycling stops
+     * too, since the candidate list it indexes into is about to be replaced. */
+    private fun forgetCorrectionMemory() {
+        lastAutocorrect = null
+        revertedWord = null
+        suggestionCycleIndex = -1
     }
 
     private fun pushUndo(event: TextEdit) {
@@ -1357,11 +1250,7 @@ class KeyboardViewModel(
     private fun afterUndoOrRedo() {
         discardPendingLearn()
         _uiState.update { it.copy(canUndo = undoHistory.canUndo, canRedo = undoHistory.canRedo) }
-        currentWordBuffer.clear()
-        suggestionCycleIndex = -1
-        activeCorrection = null
-        lastAutocorrect = null
-        revertedWord = null
+        resetTypingState()
         undoHistory.breakCoalescing()
         refreshSuggestionsAfterDeletion()
     }
@@ -1386,24 +1275,21 @@ class KeyboardViewModel(
      */
     private fun flushWordBuffer(separator: String = "") {
         suggestionCycleIndex = -1
-        val word = currentWordBuffer.toString()
-        if (word.isNotEmpty()) {
-            previousToLastCommittedWord = lastCommittedWord
-            val previousForLearning = lastCommittedWord
-            lastCommittedWord = word.lowercase()
-            lastCommittedWordCased = word
-            currentWordBuffer.clear()
-            pushUndo(TextEdit(inserted = word + separator))
-            // Whatever was staged at the previous word boundary has now survived an entire further
-            // word without being deleted or corrected, so it counts as deliberate.
-            commitPendingLearn()
-            pendingLearn = if (incognitoPreferences.shouldLearn() && lastAutocorrect == null &&
-                word.all { it.isLetter() }
-            ) {
-                PendingLearn(word = word, previousWord = previousForLearning)
-            } else {
-                null
-            }
+        val committed = words.commitBufferedWord() ?: return
+        val word = committed.word
+        pushUndo(TextEdit(inserted = word + separator))
+        // Whatever was staged at the previous word boundary has now survived an entire further
+        // word without being deleted or corrected, so it counts as deliberate.
+        commitPendingLearn()
+        pendingLearn = if (incognitoPreferences.shouldLearn() && lastAutocorrect == null &&
+            word.all { it.isLetter() }
+        ) {
+            // The word before this one, read before the commit shifted it — see
+            // [WordTracker.commitWord] for why that comes back from the call rather than being
+            // read off a field afterwards.
+            PendingLearn(word = word, previousWord = committed.previousWord)
+        } else {
+            null
         }
     }
 
@@ -1516,33 +1402,17 @@ class KeyboardViewModel(
         _uiState.update { it.copy(emojiSuggestions = emptyList()) }
     }
 
-    /** [checkContextualCorrection] is true right after any word-boundary commit that leaves a
-     * definite, known separator behind the finished word — space, punctuation, or Enter inserting
-     * a literal newline (see [onSpace]/[commitTypedChar]/[onEnter], and [lastWordBoundarySeparator]
-     * for why an editor action like "Go"/"Send" doesn't qualify).
-     *
-     * Three distinct outcomes, in priority order:
-     * 1. **Still typing a word** ([currentWordBuffer] non-empty): alternatives for *that* word
-     *    (see [wordAlternatives]) merged with prefix completions, `activeCorrection` = LIVE_BUFFER.
-     * 2. **Just finished a word** (buffer empty, [checkContextualCorrection] true): alternatives
-     *    for [lastCommittedWord], scored against what the word *before* it makes likely — e.g.
-     *    "thus" only outranks "this" here if the preceding word actually favours it.
-     *    `activeCorrection` = RETROACTIVE if any alternatives exist.
-     * 3. **Neither** (nothing to vary): falls back to plain next-word prediction, gated by the
-     *    separate next-word-prediction toggle; no `activeCorrection` — accepting one of these
-     *    types a fresh word rather than replacing anything. */
     private fun refreshSuggestions(checkContextualCorrection: Boolean = false) {
         // Cancels any in-flight query from the previous keystroke first — without this, a slow
         // query for an earlier (now-stale) prefix can resolve after a faster later one and
         // overwrite the suggestion strip with outdated results.
         refreshJob?.cancel()
-        val prefix = currentWordBuffer.toString()
-        updateEmojiSuggestions(prefix.ifEmpty { lastCommittedWord.takeIf { checkContextualCorrection } })
+        val prefix = words.bufferedWord
+        updateEmojiSuggestions(prefix.ifEmpty { words.lastCommitted.takeIf { checkContextualCorrection } })
 
         if (prefix.isNotEmpty()) {
-            // activeCorrection is set synchronously (cheap — just bookkeeping) so cycling/revert
-            // logic has it available immediately; the expensive Damerau-Levenshtein scan itself
-            // (wordAlternatives) runs off the main thread below so it never blocks the next tap.
+            // Set synchronously — it is only bookkeeping, and cycling/revert need it available
+            // before the expensive candidate scan finishes on another thread.
             activeCorrection = ActiveCorrection(
                 mode = CorrectionApplyMode.LIVE_BUFFER,
                 originalWord = prefix,
@@ -1551,47 +1421,33 @@ class KeyboardViewModel(
                 separator = "",
             )
             refreshJob = scope.launch {
-                val alternatives = withContext(Dispatchers.Default) { wordAlternatives(prefix) }
-                val predicted = predictionEngine.suggestNext(
-                    beforePreviousWord = previousToLastCommittedWord,
-                    previousWord = lastCommittedWord,
-                    currentPrefix = prefix,
-                    limit = SUGGESTION_LIMIT,
+                show(
+                    suggestionComposer.forWordInProgress(
+                        prefix = prefix,
+                        previousWord = words.lastCommitted,
+                        beforePreviousWord = words.previousToLastCommitted,
+                    ),
                 )
-                val suggestions = (alternatives + predicted.filterNot { p -> alternatives.any { it.equals(p, ignoreCase = true) } })
-                    .take(SUGGESTION_LIMIT)
-                _uiState.update {
-                    it.copy(
-                        suggestions = suggestions,
-                        firstSuggestionKind = if (alternatives.isNotEmpty()) SuggestionKind.CORRECTION else SuggestionKind.PLAIN,
-                    )
-                }
             }
             return
         }
 
-        val target = lastCommittedWordCased.takeIf { checkContextualCorrection }
+        val target = words.lastCommittedCased.takeIf { checkContextualCorrection }
         if (target != null) {
-            // The word being corrected here is `lastCommittedWord` itself, so its left context is
-            // the word *before* it — not [correctionContext], which would place the word under
-            // correction inside its own context and bias scoring toward candidates that plausibly
-            // follow themselves. Only one word of context is available in this direction; nothing
-            // earlier than `previousToLastCommittedWord` is tracked.
-            val context = autocorrectIndex.contextOf(previousToLastCommittedWord, null)
             refreshJob = scope.launch {
-                val rawAlternatives = withContext(Dispatchers.Default) { wordAlternatives(target, context) }
-                if (rawAlternatives.isNotEmpty()) {
-                    activeCorrection = ActiveCorrection(
-                        mode = CorrectionApplyMode.RETROACTIVE,
-                        originalWord = target,
-                        occupiedBefore = target.length,
-                        occupiedAfter = 0,
-                        separator = lastWordBoundarySeparator,
-                    )
-                    _uiState.update { it.copy(suggestions = rawAlternatives, firstSuggestionKind = SuggestionKind.CORRECTION) }
-                } else {
+                val result = suggestionComposer.forFinishedWord(target, words.previousToLastCommitted)
+                if (result.isEmpty) {
                     refreshPlainPrediction()
+                    return@launch
                 }
+                activeCorrection = ActiveCorrection(
+                    mode = CorrectionApplyMode.RETROACTIVE,
+                    originalWord = target,
+                    occupiedBefore = target.length,
+                    occupiedAfter = 0,
+                    separator = words.boundarySeparator,
+                )
+                show(result)
             }
             return
         }
@@ -1599,53 +1455,47 @@ class KeyboardViewModel(
         refreshPlainPrediction()
     }
 
-    /** Nothing to correct/vary — plain next-word prediction if enabled, no active correction
-     * (accepting one of these types a fresh word, doesn't replace anything). */
+    /** Nothing to correct or vary — plain next-word prediction if enabled, and no active
+     * correction, so accepting one of these types a fresh word rather than replacing anything. */
     private fun refreshPlainPrediction() {
         activeCorrection = null
         if (!predictionPreferences.settings.value.nextWordPredictionEnabled) {
-            _uiState.update { it.copy(suggestions = emptyList(), firstSuggestionKind = SuggestionKind.PLAIN) }
+            show(SuggestionComposer.Suggestions.None)
             return
         }
         refreshJob = scope.launch {
-            val predicted = predictionEngine.suggestNext(
-                beforePreviousWord = previousToLastCommittedWord,
-                previousWord = lastCommittedWord,
-                currentPrefix = "",
-                limit = SUGGESTION_LIMIT,
-            )
-            _uiState.update { it.copy(suggestions = predicted, firstSuggestionKind = SuggestionKind.PLAIN) }
+            show(suggestionComposer.nextWord(words.lastCommitted, words.previousToLastCommitted))
         }
     }
 
-    /** [AutocorrectIndex.alternatives] for [word], case-matched against it — except a curated
-     * contraction result (already correctly cased, e.g. "I'm") or a two-word split (left as
-     * lowercase, reads fine either way), neither of which should have [matchCase]'s single-word
-     * casing rules applied on top. */
-    private fun wordAlternatives(
-        word: String,
-        context: AutocorrectIndex.Context = correctionContext(),
-    ): List<String> {
-        val contraction = autocorrectIndex.contractionFor(word)
-        return autocorrectIndex.alternatives(word, SUGGESTION_LIMIT, context).map { alt ->
-            when {
-                alt == contraction -> alt
-                alt.contains(' ') -> alt
-                else -> matchCase(word, alt)
-            }
-        }
-    }
+    /** [SuggestionComposer.alternatives] for a word the cursor happens to be sitting on, rather
+     * than one being typed — used by the two cursor-driven paths ([onCursorMoved],
+     * [refreshSuggestionsAfterDeletion]), which know the word but have no in-progress buffer. */
+    private fun wordAlternatives(word: String): List<String> =
+        suggestionComposer.alternatives(word, correctionContext())
 
-    /** Left context for correction scoring: the two words before whatever is being corrected.
+    /**
+     * Left context for correction scoring: the two words before whatever is being corrected.
      *
      * `AutocorrectIndex` ranks candidates by `-channelCost + λ·logP(candidate | context)`, so
      * supplying this is what lets "thus" lose to "this" when the preceding words actually favour
      * it. This replaced a separate `reorderByContext` pass that re-sorted the finished candidate
      * list by bigram count after the fact — which could only ever reorder what frequency had
      * already selected, and could not help a context-appropriate word that never made the list.
-     * Scoring with context up front subsumes it, and reaches the trigram tier besides. */
+     */
     private fun correctionContext(): AutocorrectIndex.Context =
-        autocorrectIndex.contextOf(lastCommittedWord, previousToLastCommittedWord)
+        autocorrectIndex.contextOf(words.lastCommitted, words.previousToLastCommitted)
+
+    /** The single place suggestions reach the UI, so the strip and [SuggestionKind] can never
+     * disagree about whether the first entry replaces a word or appends one. */
+    private fun show(result: SuggestionComposer.Suggestions) {
+        _uiState.update {
+            it.copy(
+                suggestions = result.words,
+                firstSuggestionKind = if (result.fromCorrection) SuggestionKind.CORRECTION else SuggestionKind.PLAIN,
+            )
+        }
+    }
 
     private companion object {
         const val PREFERRED_EXTENSION_ID = "builtin.emoji"

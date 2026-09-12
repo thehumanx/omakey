@@ -64,13 +64,14 @@ class UpdateCheckWorker(context: Context, params: WorkerParameters) : CoroutineW
             return false
         }
         val manager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            manager.createNotificationChannel(
-                NotificationChannel(CHANNEL_ID, "Updates", NotificationManager.IMPORTANCE_DEFAULT).apply {
-                    description = "Lets you know when a new omakey release is available"
-                },
-            )
-        }
+        // No SDK_INT guard: minSdk is 26, so notification channels always exist. The guard that
+        // used to be here was dead, and a dead version check reads as "this is conditional" to the
+        // next person deciding whether the call is safe.
+        manager.createNotificationChannel(
+            NotificationChannel(CHANNEL_ID, "Updates", NotificationManager.IMPORTANCE_DEFAULT).apply {
+                description = "Lets you know when a new omakey release is available"
+            },
+        )
         val viewIntent = Intent(Intent.ACTION_VIEW, Uri.parse(releaseUrl))
         val pendingIntent = PendingIntent.getActivity(
             applicationContext, 0, viewIntent,

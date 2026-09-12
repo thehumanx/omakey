@@ -22,6 +22,8 @@ import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import dev.omakey.app.keyboard.ui.KeyboardRoot
+import dev.omakey.core.clipboard.ClipboardHistoryStore
+import dev.omakey.core.clipboard.ClipboardPreferences
 import dev.omakey.core.db.ClipboardEntity
 import dev.omakey.core.db.WordEntity
 import dev.omakey.core.db.OmakeyDatabase
@@ -31,6 +33,7 @@ import dev.omakey.core.feedback.HapticSoundPreferences
 import dev.omakey.core.gesture.GesturePreferences
 import dev.omakey.core.input.TextEditor
 import dev.omakey.core.layout.KeyboardPlacement
+import dev.omakey.core.locale.KeyboardLocale
 import dev.omakey.core.layout.LayoutPreferences
 import dev.omakey.core.predict.AutocorrectIndex
 import dev.omakey.core.predict.AutocorrectPreferences
@@ -98,6 +101,8 @@ class OmakeyInputMethodService :
     private var keyboardViewModel: KeyboardViewModel? = null
 
     private lateinit var clipboardManager: ClipboardManager
+    private lateinit var clipboardPreferences: ClipboardPreferences
+    private lateinit var clipboardHistory: ClipboardHistoryStore
     private var lastCapturedClipText: String? = null
     private var lastCapturedClipUri: String? = null
     // Set right before omakey's own Copy/Cut buttons trigger a system clipboard change (see
@@ -118,12 +123,20 @@ class OmakeyInputMethodService :
     private val onClipboardCopy: (String) -> Unit = { rawText ->
         val text = rawText.trim()
         if (text.isNotEmpty()) {
+            // Set even when the copy won't be recorded: suppression exists to stop the listener
+            // re-reading primaryClip for a change omakey itself caused (which fires the OS's "read
+            // your clipboard" toast). That read is pointless whether or not we go on to store the
+            // text, and skipping the flag while incognito would trade a privacy fix for a spurious
+            // toast every time the user copies out of a password field.
             suppressNextClipboardRead = true
             lastCapturedClipText = text
             lastCapturedClipUri = null
-            serviceScope.launch {
-                database.clipboardDao().insert(ClipboardEntity(content = text, timestamp = System.currentTimeMillis()))
-                database.clipboardDao().trimUnpinned()
+            if (clipboardPreferences.settings.value.historyEnabled && !incognitoPreferences.incognito.value) {
+                serviceScope.launch {
+                    database.clipboardDao()
+                        .insert(ClipboardEntity(content = text, timestamp = System.currentTimeMillis()))
+                    clipboardHistory.trim()
+                }
             }
         }
     }
@@ -161,6 +174,7 @@ class OmakeyInputMethodService :
      * finishing before reloading its own list, instead of racing a detached coroutine. */
     private suspend fun captureCurrentClipboardIfNew() {
         val clip = clipboardManager.primaryClip?.takeIf { it.itemCount > 0 } ?: return
+        if (!shouldCaptureClip(clip.description)) return
         val item = clip.getItemAt(0)
         val imageUri = item.uri?.takeIf { clip.description?.hasMimeType("image/*") == true }
         if (imageUri != null) {
@@ -179,7 +193,7 @@ class OmakeyInputMethodService :
                     imagePath = path,
                 ),
             )
-            database.clipboardDao().trimUnpinned()
+            clipboardHistory.trim()
             return
         }
         val text = item.coerceToText(this)?.toString()?.trim()
@@ -187,16 +201,42 @@ class OmakeyInputMethodService :
         lastCapturedClipText = text
         lastCapturedClipUri = null
         database.clipboardDao().insert(ClipboardEntity(content = text, timestamp = System.currentTimeMillis()))
-        database.clipboardDao().trimUnpinned()
+        clipboardHistory.trim()
     }
 
-    private fun copyClipboardImage(uri: android.net.Uri): String? = runCatching {
-        val dir = java.io.File(filesDir, "clipboard_images").apply { mkdirs() }
-        val file = java.io.File(dir, "clip_${System.currentTimeMillis()}.png")
-        val input = contentResolver.openInputStream(uri) ?: return null
-        input.use { stream -> file.outputStream().use { stream.copyTo(it) } }
-        file.absolutePath
-    }.getOrNull()
+    /**
+     * Whether a clip may be written to clipboard history at all. History is a convenience; a
+     * plaintext on-device copy of a secret is not a tradeoff a keyboard gets to make on the user's
+     * behalf, so both gates here fail closed.
+     *
+     * Two independent reasons to refuse:
+     *
+     *  - **The clip is marked sensitive.** Password managers and any app that has thought about it
+     *    set `ClipDescription.EXTRA_IS_SENSITIVE` (API 33+) precisely so that keyboards and
+     *    clipboard managers don't retain the value. It is a compile-time String constant, so
+     *    naming it here is safe on older releases — the extra simply won't be present.
+     *  - **Incognito is engaged.** Either the user asked for it, or the focused field is a password
+     *    / no-personalised-learning field (`KeyboardViewModel.resetForNewField`).
+     *
+     * The second gate closes an asymmetry that was live until now and that nobody had decided on:
+     * `isSensitiveField()` kept typed passwords out of the *dictionary*, but the clipboard listener
+     * ran ungated for the whole time the keyboard was on screen. Typing a password was protected;
+     * copying one was not, and it landed in plaintext SQLite retained ~50 entries deep.
+     */
+    // InlinedApi: EXTRA_IS_SENSITIVE is a `static final String`, so the compiler inlines its value
+    // and nothing looks the field up at runtime. On pre-33 devices the lookup simply misses and the
+    // clip is treated as non-sensitive — which is the only thing it could be, since no pre-33 app
+    // can set the extra in the first place.
+    @Suppress("InlinedApi")
+    private fun shouldCaptureClip(description: android.content.ClipDescription?): Boolean {
+        if (!clipboardPreferences.settings.value.historyEnabled) return false
+        if (incognitoPreferences.incognito.value) return false
+        val sensitive = description?.extras?.getBoolean(android.content.ClipDescription.EXTRA_IS_SENSITIVE) == true
+        return !sensitive
+    }
+
+    private fun copyClipboardImage(uri: android.net.Uri): String? =
+        contentResolver.openInputStream(uri)?.let { clipboardHistory.saveImage(it) }
 
     override fun onCreate() {
         super.onCreate()
@@ -225,9 +265,14 @@ class OmakeyInputMethodService :
         // keyboard process start rather than needing its own "already scheduled" bookkeeping. This
         // is what keeps the 12h check running across reboots without a dedicated boot receiver:
         // the IME process restarts the moment the keyboard is used again.
-        if (dev.omakey.core.update.UpdatePreferences(applicationContext).settings.value.autoCheckEnabled) {
+        // Closed immediately: this instance exists only to answer one question at startup, and
+        // nothing else in the service holds it. Left open it would sit registered as a change
+        // listener on a preference it will never read again.
+        val updatePreferences = dev.omakey.core.update.UpdatePreferences(applicationContext)
+        if (updatePreferences.settings.value.autoCheckEnabled) {
             dev.omakey.app.update.UpdateWorkScheduler.schedule(applicationContext)
         }
+        updatePreferences.close()
 
         // Off the main thread so onCreateInputView is never blocked — the keyboard is typeable
         // immediately and suggestions populate the moment this finishes, which is fast now: the
@@ -239,7 +284,7 @@ class OmakeyInputMethodService :
         // There is nothing left to resume: mapping a file either succeeds or throws.
         serviceScope.launch {
             runCatching {
-                val model = LanguageModel.load(applicationContext)
+                val model = LanguageModel.load(applicationContext, KeyboardLocale.Default.languageModelAsset)
                 personalModel.load(
                     database.wordDao().allUserAdded().map {
                         PersonalLanguageModel.Entry(
@@ -263,8 +308,6 @@ class OmakeyInputMethodService :
         extensionRegistry = LazyExtensionRegistry(contextProvider = ::buildExtensionContext)
         extensionRegistry.registerFactory(ClipboardHistoryExtension().id) { ClipboardHistoryExtension() }
         extensionRegistry.registerFactory(EmojiPanelExtension().id) { EmojiPanelExtension() }
-        // GifSearchExtension is a stub — a real implementation needs INTERNET, which the app
-        // deliberately doesn't request. Hidden from the panel tab strip until that's built for real.
 
         // NOT registered here — see onStartInputView()/onFinishInputView() below. Registering for
         // the whole service lifetime meant this listener (and the Android 12+ "app read your
@@ -272,6 +315,8 @@ class OmakeyInputMethodService :
         // even while omakey wasn't visible — surprising and needlessly clipboard-hungry for a
         // keyboard that isn't currently in front of the user.
         clipboardManager = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboardPreferences = ClipboardPreferences(applicationContext)
+        clipboardHistory = ClipboardHistoryStore(applicationContext, database.clipboardDao())
     }
 
     private fun buildExtensionContext(): ExtensionContext = object : ExtensionContext {
@@ -309,15 +354,10 @@ class OmakeyInputMethodService :
                         imagePath = it.imagePath,
                     )
                 }
-            override suspend fun pin(id: Long, pinned: Boolean) = Unit // v1: pin toggling deferred
-            override suspend fun delete(id: Long) {
-                // Delete the backing image file too, if any — otherwise removing a clipboard row
-                // would leave an orphaned file in app-private storage indefinitely.
-                database.clipboardDao().findById(id)?.imagePath?.let { path ->
-                    runCatching { java.io.File(path).delete() }
-                }
-                database.clipboardDao().delete(id)
+            override suspend fun pin(id: Long, pinned: Boolean) {
+                database.clipboardDao().setPinned(id, pinned)
             }
+            override suspend fun delete(id: Long) = clipboardHistory.delete(id)
             override suspend fun captureCurrentClipboard() = captureCurrentClipboardIfNew()
         }
         override val emojiRecents: dev.omakey.extapi.EmojiRecentsRepository = object : dev.omakey.extapi.EmojiRecentsRepository {
@@ -344,6 +384,7 @@ class OmakeyInputMethodService :
         val viewModel = KeyboardViewModel(
             textEditor = textEditor,
             predictionEngine = predictionEngine,
+            predictionReady = predictionEngine.ready,
             autocorrectIndex = autocorrectIndex,
             autocorrectPreferences = autocorrectPreferences,
             predictionPreferences = predictionPreferences,
@@ -374,6 +415,7 @@ class OmakeyInputMethodService :
                         accessibilityPreferences,
                         onOpenSettings = ::openSettings,
                         feedback = keyboardFeedback,
+                        onKeyboardBoundsChanged = ::onKeyboardBoundsChanged,
                     )
                 }
             }
@@ -439,12 +481,21 @@ class OmakeyInputMethodService :
     @Volatile private var keyboardBounds: android.graphics.Rect? = null
 
     private fun onKeyboardBoundsChanged(bounds: androidx.compose.ui.geometry.Rect) {
-        keyboardBounds = android.graphics.Rect(
-            bounds.left.toInt(),
-            bounds.top.toInt(),
-            bounds.right.toInt(),
-            bounds.bottom.toInt(),
-        )
+        val left = bounds.left.toInt()
+        val top = bounds.top.toInt()
+        val right = bounds.right.toInt()
+        val bottom = bounds.bottom.toInt()
+        // Called from onGloballyPositioned, so it fires on every layout pass — which during a drag
+        // is every frame. Comparing before allocating keeps a moved keyboard from producing a new
+        // Rect sixty times a second for the garbage collector, and makes the common case (a layout
+        // pass that didn't move anything) free.
+        val current = keyboardBounds
+        if (current != null && current.left == left && current.top == top &&
+            current.right == right && current.bottom == bottom
+        ) {
+            return
+        }
+        keyboardBounds = android.graphics.Rect(left, top, right, bottom)
     }
 
     /**
@@ -488,11 +539,33 @@ class OmakeyInputMethodService :
     override fun onDestroy() {
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
         clipboardManager.removePrimaryClipChangedListener(clipboardListener)
+        // Symmetry with the registrations in onCreate. Not strictly required — SharedPreferences
+        // holds listeners weakly, which is why nothing broke while nothing anywhere unregistered —
+        // but "we rely on an implementation detail nobody chose to rely on" is a worse position
+        // than releasing what we took, and the service has a definite end of life to do it at.
+        incognitoPreferences.close()
+        clipboardPreferences.close()
+        autocorrectPreferences.close()
+        predictionPreferences.close()
+        themeRepository.close()
+        accessibilityPreferences.close()
+        layoutPreferences.close()
+        fontPreferences.close()
+        gesturePreferences.close()
+        topStripTabPreferences.close()
+        hapticSoundPreferences.close()
+        emojiRecentsPreferences.close()
+        emojiSkinTonePreferences.close()
         serviceScope.cancel()
         super.onDestroy()
     }
 
     private companion object {
         const val TAG = "OmakeyIME"
+
+        /** Ceiling on a single copied clipboard image. Generous enough for any screenshot or photo
+         * a user would plausibly paste, small enough that 50 of them is a bounded amount of
+         * app-private storage rather than an open-ended one. */
+        const val MAX_CLIPBOARD_IMAGE_BYTES = 8L * 1024 * 1024
     }
 }

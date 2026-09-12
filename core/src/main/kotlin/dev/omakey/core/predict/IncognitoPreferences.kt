@@ -2,6 +2,7 @@ package dev.omakey.core.predict
 
 import android.content.Context
 import android.content.SharedPreferences
+import dev.omakey.core.prefs.PreferenceStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -37,10 +38,8 @@ data class LearningSettings(
  * keeps them in sync live.
  */
 class IncognitoPreferences(context: Context) {
-    private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-
-    private val _settings = MutableStateFlow(load())
-    val settings: StateFlow<LearningSettings> = _settings
+    private val store = PreferenceStore(context, PREFS_NAME, ::load)
+    val settings: StateFlow<LearningSettings> = store.settings
 
     private val _incognito = MutableStateFlow(false)
 
@@ -48,18 +47,10 @@ class IncognitoPreferences(context: Context) {
      * the focused field is a password. */
     val incognito: StateFlow<Boolean> = _incognito
 
-    private val prefsChangeListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
-        _settings.value = load()
-    }
+    fun setImplicitLearningEnabled(enabled: Boolean) =
+        store.edit { putBoolean(KEY_IMPLICIT_LEARNING, enabled) }
 
-    init {
-        prefs.registerOnSharedPreferenceChangeListener(prefsChangeListener)
-    }
-
-    fun setImplicitLearningEnabled(enabled: Boolean) {
-        prefs.edit().putBoolean(KEY_IMPLICIT_LEARNING, enabled).apply()
-        _settings.value = _settings.value.copy(implicitLearningEnabled = enabled)
-    }
+    fun close() = store.close()
 
     /** Manual toggle, from the keyboard's own toolbar. */
     fun setIncognito(enabled: Boolean) {
@@ -73,9 +64,9 @@ class IncognitoPreferences(context: Context) {
     }
 
     /** Whether a word typed right now should be remembered at all. */
-    fun shouldLearn(): Boolean = _settings.value.implicitLearningEnabled && !_incognito.value
+    fun shouldLearn(): Boolean = store.value.implicitLearningEnabled && !_incognito.value
 
-    private fun load() = LearningSettings(
+    private fun load(prefs: SharedPreferences) = LearningSettings(
         implicitLearningEnabled = prefs.getBoolean(KEY_IMPLICIT_LEARNING, true),
     )
 

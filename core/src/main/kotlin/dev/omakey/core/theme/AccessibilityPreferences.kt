@@ -2,7 +2,7 @@ package dev.omakey.core.theme
 
 import android.content.Context
 import android.content.SharedPreferences
-import kotlinx.coroutines.flow.MutableStateFlow
+import dev.omakey.core.prefs.PreferenceStore
 import kotlinx.coroutines.flow.StateFlow
 
 /**
@@ -14,23 +14,14 @@ import kotlinx.coroutines.flow.StateFlow
  * instance (e.g. the IME's, while Settings' instance is the one being written to) in sync.
  */
 class AccessibilityPreferences(context: Context) {
-    private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val store = PreferenceStore(context, PREFS_NAME, ::load)
+    val forceAccessibleMode: StateFlow<Boolean> = store.settings
 
-    private val _forceAccessibleMode = MutableStateFlow(prefs.getBoolean(KEY_FORCE_ACCESSIBLE, false))
-    val forceAccessibleMode: StateFlow<Boolean> = _forceAccessibleMode
+    fun setForceAccessibleMode(enabled: Boolean) = store.edit { putBoolean(KEY_FORCE_ACCESSIBLE, enabled) }
 
-    private val prefsChangeListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
-        _forceAccessibleMode.value = prefs.getBoolean(KEY_FORCE_ACCESSIBLE, false)
-    }
+    fun close() = store.close()
 
-    init {
-        prefs.registerOnSharedPreferenceChangeListener(prefsChangeListener)
-    }
-
-    fun setForceAccessibleMode(enabled: Boolean) {
-        prefs.edit().putBoolean(KEY_FORCE_ACCESSIBLE, enabled).apply()
-        _forceAccessibleMode.value = enabled
-    }
+    private fun load(prefs: SharedPreferences) = prefs.getBoolean(KEY_FORCE_ACCESSIBLE, false)
 
     private companion object {
         const val PREFS_NAME = "omakey_accessibility_prefs"

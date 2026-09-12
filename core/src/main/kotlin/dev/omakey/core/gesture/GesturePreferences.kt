@@ -2,7 +2,7 @@ package dev.omakey.core.gesture
 
 import android.content.Context
 import android.content.SharedPreferences
-import kotlinx.coroutines.flow.MutableStateFlow
+import dev.omakey.core.prefs.PreferenceStore
 import kotlinx.coroutines.flow.StateFlow
 
 data class GestureSettings(
@@ -27,18 +27,8 @@ data class GestureSettings(
  * pattern as the other *Preferences classes (see ThemeRepository for why the change listener is
  * necessary, not optional). */
 class GesturePreferences(context: Context) {
-    private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-
-    private val _settings = MutableStateFlow(load())
-    val settings: StateFlow<GestureSettings> = _settings
-
-    private val prefsChangeListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
-        _settings.value = load()
-    }
-
-    init {
-        prefs.registerOnSharedPreferenceChangeListener(prefsChangeListener)
-    }
+    private val store = PreferenceStore(context, PREFS_NAME, ::load)
+    val settings: StateFlow<GestureSettings> = store.settings
 
     fun setSwipeSensitivity(value: Float) {
         update {
@@ -51,16 +41,17 @@ class GesturePreferences(context: Context) {
     fun setSwipeRightForSpace(enabled: Boolean) = update { it.copy(swipeRightForSpace = enabled) }
 
     private fun update(transform: (GestureSettings) -> GestureSettings) {
-        val next = transform(_settings.value)
-        prefs.edit()
-            .putFloat(KEY_SENSITIVITY, next.swipeSensitivity)
-            .putBoolean(KEY_SHOW_POPUP, next.showKeyPopup)
-            .putBoolean(KEY_SWIPE_RIGHT_FOR_SPACE, next.swipeRightForSpace)
-            .apply()
-        _settings.value = next
+        val next = transform(store.settings.value)
+        store.edit {
+            putFloat(KEY_SENSITIVITY, next.swipeSensitivity)
+            putBoolean(KEY_SHOW_POPUP, next.showKeyPopup)
+            putBoolean(KEY_SWIPE_RIGHT_FOR_SPACE, next.swipeRightForSpace)
+        }
     }
 
-    private fun load() = GestureSettings(
+    fun close() = store.close()
+
+    private fun load(prefs: SharedPreferences) = GestureSettings(
         swipeSensitivity = prefs.getFloat(KEY_SENSITIVITY, GestureSettings.DEFAULT_SENSITIVITY),
         showKeyPopup = prefs.getBoolean(KEY_SHOW_POPUP, true),
         swipeRightForSpace = prefs.getBoolean(KEY_SWIPE_RIGHT_FOR_SPACE, false),

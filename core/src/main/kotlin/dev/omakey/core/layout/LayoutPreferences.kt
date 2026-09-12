@@ -2,7 +2,7 @@ package dev.omakey.core.layout
 
 import android.content.Context
 import android.content.SharedPreferences
-import kotlinx.coroutines.flow.MutableStateFlow
+import dev.omakey.core.prefs.PreferenceStore
 import kotlinx.coroutines.flow.StateFlow
 
 data class LayoutSettings(
@@ -71,25 +71,11 @@ data class LayoutSettings(
  * via SharedPreferences — same lightweight pattern as [dev.omakey.core.theme.ThemeRepository],
  * reactive via StateFlow so an already-open keyboard picks up changes made from Settings. */
 class LayoutPreferences(context: Context) {
-    private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-
-    private val _settings = MutableStateFlow(load())
-    val settings: StateFlow<LayoutSettings> = _settings
-
-    // The Settings Activity and the IME service each construct their own LayoutPreferences
-    // instance — both back onto the same SharedPreferences file, but a write from one instance
-    // would otherwise never reach the other's in-memory StateFlow, since they're separate objects.
-    // Without this, a change made in Settings only became visible after the IME was torn down and
-    // recreated (e.g. switching keyboards away and back), not live in an already-open keyboard.
-    // The listener reference must be held here — SharedPreferences only keeps a weak reference to
-    // registered listeners, so an inline lambda would get GC'd almost immediately.
-    private val prefsChangeListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
-        _settings.value = load()
-    }
-
-    init {
-        prefs.registerOnSharedPreferenceChangeListener(prefsChangeListener)
-    }
+    // Cross-instance sync (Settings and the IME each build their own instance) and the weak-
+    // reference trap that makes holding the listener mandatory are both handled by PreferenceStore
+    // now — see its doc, which is where that reasoning was worth keeping in one place.
+    private val store = PreferenceStore(context, PREFS_NAME, ::load)
+    val settings: StateFlow<LayoutSettings> = store.settings
 
     fun setKeyboardHeightDp(heightDp: Int) {
         update { it.copy(keyboardHeightDp = heightDp.coerceIn(LayoutSettings.MIN_HEIGHT_DP, LayoutSettings.MAX_HEIGHT_DP)) }
@@ -116,26 +102,27 @@ class LayoutPreferences(context: Context) {
     fun setBottomOffsetDp(offsetDp: Int) = update { it.copy(bottomOffsetDp = offsetDp.coerceAtLeast(0)) }
 
     private fun update(transform: (LayoutSettings) -> LayoutSettings) {
-        val next = transform(_settings.value)
-        prefs.edit()
-            .putInt(KEY_HEIGHT, next.keyboardHeightDp)
-            .putBoolean(KEY_KEY_BACKGROUNDS, next.showKeyBackgrounds)
-            .putBoolean(KEY_MIDDLE_STRIPE, next.showMiddleRowStripe)
-            .putInt(KEY_BOTTOM_OFFSET, next.bottomOffsetDp)
-            .putBoolean(KEY_ALWAYS_UPPERCASE, next.alwaysShowUppercaseLetters)
-            .putBoolean(KEY_SHOW_TAP_PREVIEW, next.showTapPreview)
-            .putBoolean(KEY_EDGE_PADDING, next.edgePadding)
-            .putString(KEY_PLACEMENT, next.placement.name)
-            .putInt(KEY_FLOATING_WIDTH, next.floatingWidthDp)
-            .putInt(KEY_FLOATING_HEIGHT, next.floatingHeightDp)
-            .putInt(KEY_FLOATING_X, next.floatingXDp)
-            .putInt(KEY_FLOATING_Y, next.floatingYDp)
-            .putInt(KEY_ONE_HANDED_WIDTH, next.oneHandedWidthDp)
-            .apply()
-        _settings.value = next
+        val next = transform(store.settings.value)
+        store.edit {
+            putInt(KEY_HEIGHT, next.keyboardHeightDp)
+            putBoolean(KEY_KEY_BACKGROUNDS, next.showKeyBackgrounds)
+            putBoolean(KEY_MIDDLE_STRIPE, next.showMiddleRowStripe)
+            putInt(KEY_BOTTOM_OFFSET, next.bottomOffsetDp)
+            putBoolean(KEY_ALWAYS_UPPERCASE, next.alwaysShowUppercaseLetters)
+            putBoolean(KEY_SHOW_TAP_PREVIEW, next.showTapPreview)
+            putBoolean(KEY_EDGE_PADDING, next.edgePadding)
+            putString(KEY_PLACEMENT, next.placement.name)
+            putInt(KEY_FLOATING_WIDTH, next.floatingWidthDp)
+            putInt(KEY_FLOATING_HEIGHT, next.floatingHeightDp)
+            putInt(KEY_FLOATING_X, next.floatingXDp)
+            putInt(KEY_FLOATING_Y, next.floatingYDp)
+            putInt(KEY_ONE_HANDED_WIDTH, next.oneHandedWidthDp)
+        }
     }
 
-    private fun load(): LayoutSettings = LayoutSettings(
+    fun close() = store.close()
+
+    private fun load(prefs: SharedPreferences): LayoutSettings = LayoutSettings(
         keyboardHeightDp = prefs.getInt(KEY_HEIGHT, LayoutSettings.DEFAULT_HEIGHT_DP),
         showKeyBackgrounds = prefs.getBoolean(KEY_KEY_BACKGROUNDS, false),
         showMiddleRowStripe = prefs.getBoolean(KEY_MIDDLE_STRIPE, true),

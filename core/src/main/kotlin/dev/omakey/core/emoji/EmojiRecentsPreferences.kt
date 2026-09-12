@@ -2,25 +2,27 @@ package dev.omakey.core.emoji
 
 import android.content.Context
 import android.content.SharedPreferences
-import kotlinx.coroutines.flow.MutableStateFlow
+import dev.omakey.core.prefs.PreferenceStore
 import kotlinx.coroutines.flow.StateFlow
 
 /** Persists the most-recently-typed emoji, most-recent-first, deduped. Same SharedPreferences
  * pattern as the other *Preferences classes (see GesturePreferences) — a single delimited string
  * is enough here since the value is just an ordered list of short glyphs. */
 class EmojiRecentsPreferences(context: Context) {
-    private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-
-    private val _recents = MutableStateFlow(load())
-    val recents: StateFlow<List<String>> = _recents
+    // This class alone registered no change listener, so recents were the one preference in the
+    // app that did not sync between the Settings instance and the IME's. Going through
+    // PreferenceStore fixes that by construction rather than by remembering to.
+    private val store = PreferenceStore(context, PREFS_NAME, ::load)
+    val recents: StateFlow<List<String>> = store.settings
 
     fun recordUse(emoji: String) {
-        val next = (listOf(emoji) + _recents.value.filterNot { it == emoji }).take(MAX_RECENTS)
-        prefs.edit().putString(KEY_RECENTS, next.joinToString(DELIMITER)).apply()
-        _recents.value = next
+        val next = (listOf(emoji) + store.value.filterNot { it == emoji }).take(MAX_RECENTS)
+        store.edit { putString(KEY_RECENTS, next.joinToString(DELIMITER)) }
     }
 
-    private fun load(): List<String> =
+    fun close() = store.close()
+
+    private fun load(prefs: SharedPreferences): List<String> =
         prefs.getString(KEY_RECENTS, null)?.split(DELIMITER)?.filter { it.isNotEmpty() } ?: emptyList()
 
     private companion object {

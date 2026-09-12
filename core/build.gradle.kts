@@ -12,7 +12,7 @@ android {
 
     defaultConfig {
         minSdk = 26
-        consumerProguardFiles("consumer-rules.pro")
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     compileOptions {
@@ -27,7 +27,6 @@ android {
     }
     testOptions {
         unitTests {
-            isIncludeAndroidResources = true
             isReturnDefaultValues = true
             all {
                 // Gradle's own -D flags land on the daemon, not on the forked test JVM, so the
@@ -53,8 +52,18 @@ dependencies {
     api(libs.kotlinx.coroutines.android)
 
     testImplementation(libs.junit)
-    testImplementation(libs.kotlinx.coroutines.test)
-    testImplementation("androidx.room:room-testing:2.6.1")
-    testImplementation("org.robolectric:robolectric:4.13")
-    testImplementation("androidx.test:core:1.6.1")
+
+    androidTestImplementation(libs.junit)
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.androidx.test.runner)
+}
+
+// Room writes the schema of every version here, and it is committed, so a schema change shows up
+// as a reviewable diff instead of happening silently. exportSchema was off until v4, so there are
+// no JSON schemas for v1-v3 and none can be recovered — which is why OmakeyDatabaseMigrationTest
+// builds the old database by hand. From v4 onward the real schemas exist, so a future 4->5 can use
+// Room's MigrationTestHelper instead; add `androidx-room-testing` at that point rather than
+// carrying an unused dependency until then.
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
 }

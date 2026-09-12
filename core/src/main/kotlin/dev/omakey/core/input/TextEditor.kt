@@ -7,6 +7,16 @@ import android.view.inputmethod.InputConnection
  * The sole InputConnection access point. Both gesture actions and key taps must route through
  * this, never touch InputConnection directly, so the gesture engine stays framework-agnostic
  * and testable, and multi-step edits are consistently batched.
+ *
+ * **omakey deliberately does not use composing text.** Every character is committed outright with
+ * `commitText`; `setComposingText`/`finishComposingText` are never called. This was previously an
+ * accident of history rather than a decision — thin unused `commitComposing`/`finishComposing`
+ * wrappers sat here with nothing explaining them — so, recording it: committing directly means the
+ * in-progress word gets no platform underline and host apps can't tell provisional text from
+ * settled text, but it also keeps us out of a large class of host-app compatibility bugs
+ * (composing regions surviving cursor moves, fighting host spell-checkers and autofill), and
+ * omakey's own correction model already replaces committed words in place. Revisit only with a
+ * concrete reason; switching is not a local change.
  */
 class TextEditor(private val connectionProvider: () -> InputConnection?) {
 
@@ -14,14 +24,6 @@ class TextEditor(private val connectionProvider: () -> InputConnection?) {
 
     fun commitCharacter(char: Char) {
         ic?.commitText(char.toString(), 1)
-    }
-
-    fun commitComposing(text: String) {
-        ic?.setComposingText(text, 1)
-    }
-
-    fun finishComposing() {
-        ic?.finishComposingText()
     }
 
     fun insertSpace() {
@@ -223,8 +225,6 @@ class TextEditor(private val connectionProvider: () -> InputConnection?) {
     }
 
     data class WordBeforeCursor(val word: String, val separator: String)
-
-    fun toggleCaps(currentlyCaps: Boolean): Boolean = !currentlyCaps
 
     fun sendKeyEvent(keyCode: Int) {
         val connection = ic ?: return

@@ -2,7 +2,7 @@ package dev.omakey.core.theme
 
 import android.content.Context
 import android.content.SharedPreferences
-import kotlinx.coroutines.flow.MutableStateFlow
+import dev.omakey.core.prefs.PreferenceStore
 import kotlinx.coroutines.flow.StateFlow
 
 /**
@@ -14,59 +14,51 @@ import kotlinx.coroutines.flow.StateFlow
  * below is what actually closes that gap, since both instances share the same underlying prefs.
  */
 class ThemeRepository(context: Context) {
-    private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-
-    private val _currentTheme = MutableStateFlow(loadPersistedTheme())
-    val currentTheme: StateFlow<OmakeyTheme> = _currentTheme
+    // Three independent values in one preferences file, so three stores over that same file rather
+    // than one store holding a combined object: these are exposed as three separate StateFlows the
+    // rest of the app collects individually, and deriving three from one would need a
+    // CoroutineScope this class has no reason to own. getSharedPreferences returns the same
+    // instance for a given name, so this is three listeners on one file — which is exactly what
+    // the single hand-written listener did, since it reloaded all three values on any change.
+    private val themeStore = PreferenceStore(context, PREFS_NAME, ::loadPersistedTheme)
+    val currentTheme: StateFlow<OmakeyTheme> = themeStore.settings
 
     /** "Pick accent color from system" — independent of [currentTheme] itself (you can want a
      * fixed Light theme but still have the spacebar pulled from the device's Material You
      * palette). See `resolveEffectiveTheme` in the app module for where this is actually applied;
      * this class only stores the flag. */
-    private val _useSystemAccent = MutableStateFlow(prefs.getBoolean(KEY_USE_SYSTEM_ACCENT, false))
-    val useSystemAccent: StateFlow<Boolean> = _useSystemAccent
+    private val accentStore = PreferenceStore(context, PREFS_NAME) { it.getBoolean(KEY_USE_SYSTEM_ACCENT, false) }
+    val useSystemAccent: StateFlow<Boolean> = accentStore.settings
 
     /** Normal vs. Grid — see [LayoutMode]'s own doc. Independent of [currentTheme] the same way
      * [useSystemAccent] is: any color theme can be paired with either layout mode, so this is its
      * own flag rather than a field on [OmakeyTheme] (which would otherwise need duplicating every
      * preset/custom theme to offer both). */
-    private val _layoutMode = MutableStateFlow(loadPersistedLayoutMode())
-    val layoutMode: StateFlow<LayoutMode> = _layoutMode
+    private val layoutModeStore = PreferenceStore(context, PREFS_NAME, ::loadPersistedLayoutMode)
+    val layoutMode: StateFlow<LayoutMode> = layoutModeStore.settings
 
-    // Held as a field, not an inline lambda — SharedPreferences only keeps a weak reference to
-    // registered listeners, so an unreferenced lambda would get garbage collected almost
-    // immediately and silently stop firing.
-    private val prefsChangeListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
-        _currentTheme.value = loadPersistedTheme()
-        _useSystemAccent.value = prefs.getBoolean(KEY_USE_SYSTEM_ACCENT, false)
-        _layoutMode.value = loadPersistedLayoutMode()
+    fun setTheme(theme: OmakeyTheme) =
+        themeStore.edit { putString(KEY_THEME_JSON, ThemeSerializer.toJson(theme)) }
+
+    fun setUseSystemAccent(enabled: Boolean) =
+        accentStore.edit { putBoolean(KEY_USE_SYSTEM_ACCENT, enabled) }
+
+    fun setLayoutMode(mode: LayoutMode) =
+        layoutModeStore.edit { putString(KEY_LAYOUT_MODE, mode.name) }
+
+    fun close() {
+        themeStore.close()
+        accentStore.close()
+        layoutModeStore.close()
     }
 
-    init {
-        prefs.registerOnSharedPreferenceChangeListener(prefsChangeListener)
-    }
 
-    fun setTheme(theme: OmakeyTheme) {
-        prefs.edit().putString(KEY_THEME_JSON, ThemeSerializer.toJson(theme)).apply()
-        _currentTheme.value = theme
-    }
-
-    fun setUseSystemAccent(enabled: Boolean) {
-        prefs.edit().putBoolean(KEY_USE_SYSTEM_ACCENT, enabled).apply()
-        _useSystemAccent.value = enabled
-    }
-
-    fun setLayoutMode(mode: LayoutMode) {
-        prefs.edit().putString(KEY_LAYOUT_MODE, mode.name).apply()
-        _layoutMode.value = mode
-    }
-
-    private fun loadPersistedTheme(): OmakeyTheme {
+    private fun loadPersistedTheme(prefs: SharedPreferences): OmakeyTheme {
         val json = prefs.getString(KEY_THEME_JSON, null) ?: return Presets.Dark
         return runCatching { ThemeSerializer.fromJson(json) }.getOrDefault(Presets.Dark)
     }
 
-    private fun loadPersistedLayoutMode(): LayoutMode {
+    private fun loadPersistedLayoutMode(prefs: SharedPreferences): LayoutMode {
         val stored = prefs.getString(KEY_LAYOUT_MODE, null) ?: return LayoutMode.NORMAL
         return runCatching { LayoutMode.valueOf(stored) }.getOrDefault(LayoutMode.NORMAL)
     }

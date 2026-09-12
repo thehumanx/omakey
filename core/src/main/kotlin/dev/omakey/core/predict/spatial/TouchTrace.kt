@@ -33,13 +33,6 @@ class TouchTrace {
         count++
     }
 
-    /** Drops the most recent tap, keeping the trace aligned with the word buffer after a
-     * backspace. Once [count] has run past [MAX_TAPS] the coordinates are gone, so the trace
-     * degrades to "no data" rather than silently misaligning. */
-    fun removeLast() {
-        if (count > 0) count--
-    }
-
     fun clear() {
         count = 0
     }

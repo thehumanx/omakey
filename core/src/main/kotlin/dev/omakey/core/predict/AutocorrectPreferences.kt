@@ -2,7 +2,7 @@ package dev.omakey.core.predict
 
 import android.content.Context
 import android.content.SharedPreferences
-import kotlinx.coroutines.flow.MutableStateFlow
+import dev.omakey.core.prefs.PreferenceStore
 import kotlinx.coroutines.flow.StateFlow
 
 data class AutocorrectSettings(
@@ -21,35 +21,24 @@ data class AutocorrectSettings(
  * listener is load bearing, not decorative: the Settings Activity and the IME service each
  * construct their own instance of this class, and only the listener keeps them in sync live. */
 class AutocorrectPreferences(context: Context) {
-    private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-
-    private val _settings = MutableStateFlow(load())
-    val settings: StateFlow<AutocorrectSettings> = _settings
-
-    private val prefsChangeListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
-        _settings.value = load()
-    }
-
-    init {
-        prefs.registerOnSharedPreferenceChangeListener(prefsChangeListener)
-    }
+    private val store = PreferenceStore(context, PREFS_NAME, ::load)
+    val settings: StateFlow<AutocorrectSettings> = store.settings
 
     fun setAutocorrectEnabled(enabled: Boolean) {
-        prefs.edit().putBoolean(KEY_AUTOCORRECT_ENABLED, enabled).apply()
-        _settings.value = _settings.value.copy(autocorrectEnabled = enabled)
+        store.edit { putBoolean(KEY_AUTOCORRECT_ENABLED, enabled) }
     }
 
     fun setAutoCapitalizeEnabled(enabled: Boolean) {
-        prefs.edit().putBoolean(KEY_AUTO_CAPITALIZE_ENABLED, enabled).apply()
-        _settings.value = _settings.value.copy(autoCapitalizeEnabled = enabled)
+        store.edit { putBoolean(KEY_AUTO_CAPITALIZE_ENABLED, enabled) }
     }
 
     fun setDoubleTapSpaceForPeriod(enabled: Boolean) {
-        prefs.edit().putBoolean(KEY_DOUBLE_TAP_SPACE_FOR_PERIOD, enabled).apply()
-        _settings.value = _settings.value.copy(doubleTapSpaceForPeriod = enabled)
+        store.edit { putBoolean(KEY_DOUBLE_TAP_SPACE_FOR_PERIOD, enabled) }
     }
 
-    private fun load() = AutocorrectSettings(
+    fun close() = store.close()
+
+    private fun load(prefs: SharedPreferences) = AutocorrectSettings(
         autocorrectEnabled = prefs.getBoolean(KEY_AUTOCORRECT_ENABLED, true),
         autoCapitalizeEnabled = prefs.getBoolean(KEY_AUTO_CAPITALIZE_ENABLED, false),
         doubleTapSpaceForPeriod = prefs.getBoolean(KEY_DOUBLE_TAP_SPACE_FOR_PERIOD, false),

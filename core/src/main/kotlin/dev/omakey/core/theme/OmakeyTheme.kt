@@ -45,7 +45,6 @@ data class OmakeyTheme(
     val keySpecialBackground: ColorSpec,
     val suggestionBarBackground: ColorSpec,
     val keyShape: KeyShape = KeyShape.ROUNDED,
-    val keySpacingDp: Float = 4f,
     val fontFamily: FontSpec = FontSpec(),
     // Default values below so a theme JSON already persisted on a user's device (missing these
     // newer fields) still deserializes fine via kotlinx.serialization's optional-field handling.

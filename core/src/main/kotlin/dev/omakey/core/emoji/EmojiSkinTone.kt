@@ -2,7 +2,7 @@ package dev.omakey.core.emoji
 
 import android.content.Context
 import android.content.SharedPreferences
-import kotlinx.coroutines.flow.MutableStateFlow
+import dev.omakey.core.prefs.PreferenceStore
 import kotlinx.coroutines.flow.StateFlow
 
 /**
@@ -126,23 +126,14 @@ enum class EmojiSkinTone(val id: String, val label: String, val modifier: String
  * and the registered listener is what keeps an already-open keyboard in sync with a change made
  * from Settings. */
 class EmojiSkinTonePreferences(context: Context) {
-    private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val store = PreferenceStore(context, PREFS_NAME, ::load)
+    val skinTone: StateFlow<EmojiSkinTone> = store.settings
 
-    private val _skinTone = MutableStateFlow(EmojiSkinTone.fromId(prefs.getString(KEY_SKIN_TONE, null)))
-    val skinTone: StateFlow<EmojiSkinTone> = _skinTone
+    fun setSkinTone(tone: EmojiSkinTone) = store.edit { putString(KEY_SKIN_TONE, tone.id) }
 
-    private val prefsChangeListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
-        _skinTone.value = EmojiSkinTone.fromId(prefs.getString(KEY_SKIN_TONE, null))
-    }
+    fun close() = store.close()
 
-    init {
-        prefs.registerOnSharedPreferenceChangeListener(prefsChangeListener)
-    }
-
-    fun setSkinTone(tone: EmojiSkinTone) {
-        prefs.edit().putString(KEY_SKIN_TONE, tone.id).apply()
-        _skinTone.value = tone
-    }
+    private fun load(prefs: SharedPreferences) = EmojiSkinTone.fromId(prefs.getString(KEY_SKIN_TONE, null))
 
     private companion object {
         const val PREFS_NAME = "omakey_emoji_prefs"
