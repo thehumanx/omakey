@@ -31,10 +31,12 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.omakey.app.keyboard.KeyboardFeedback
 import dev.omakey.app.keyboard.KeyboardViewModel
+import dev.omakey.core.theme.LocalOmakeyTheme
 import dev.omakey.core.theme.toComposeColor
 import dev.omakey.core.theme.toDp
 import dev.omakey.core.icons.PhosphorArrowLeft
@@ -77,7 +79,7 @@ internal class PlacementState(
     private val settings: LayoutSettings,
     private val screenWidthDp: Int,
     private val screenHeightDp: Int,
-    private val onCommit: (width: Int, height: Int, x: Int, y: Int) -> Unit,
+    private val onCommit: (width: Int, height: Int, x: Int, y: Int, bottomOffset: Int) -> Unit,
 ) {
     private val placement = settings.placement
 
@@ -115,6 +117,17 @@ internal class PlacementState(
     )
         private set
 
+    /**
+     * How far a docked keyboard is raised off the bottom edge.
+     *
+     * Lives here, alongside floating position and size, because the quick-access overlay now
+     * repositions as well as resizes — matching what Settings' "Keyboard size & position" screen
+     * has always done. Before this it was reachable only from Settings, which meant the overlay
+     * called "Resize" could change a docked keyboard's height but not where it sat.
+     */
+    var bottomOffsetDpFloat by androidx.compose.runtime.mutableFloatStateOf(settings.bottomOffsetDp.toFloat())
+        private set
+
     /** Bottom edge, measured *up* from the window's bottom. See clampFloatingY's doc for why up. */
     var floatingBottomDpFloat by androidx.compose.runtime.mutableFloatStateOf(settings.floatingYDp.toFloat())
         private set
@@ -122,6 +135,7 @@ internal class PlacementState(
     val keyboardHeightDp: Int get() = keyboardHeightDpFloat.roundToInt()
     val floatingXDp: Int get() = floatingXDpFloat.roundToInt()
     val floatingBottomDp: Int get() = floatingBottomDpFloat.roundToInt()
+    val bottomOffsetDp: Int get() = bottomOffsetDpFloat.roundToInt()
 
     /** What [move]'s vertical clamp measures against, so it has to match what is actually on
      * screen: a floating keyboard also carries [FloatingMoveHandle] above the strip, and omitting
@@ -149,18 +163,38 @@ internal class PlacementState(
         }
     }
 
+    /**
+     * Accumulates a drag delta. Stays in float throughout — see
+     * [KeyboardPlacementGeometry.clampFloatingX]`(Float, Float, Int)`: rounding the running total
+     * each frame discards the fraction, so a slow drag moved the keyboard nowhere at all and a
+     * faster one advanced in visible one-dp steps. Rounding happens once, in [commit].
+     */
     fun move(deltaXDp: Float, deltaYDp: Float) {
         if (placement != KeyboardPlacement.FLOATING) return
         floatingXDpFloat = KeyboardPlacementGeometry
-            .clampFloatingX((floatingXDpFloat + deltaXDp).roundToInt(), widthDp.roundToInt(), screenWidthDp).toFloat()
+            .clampFloatingX(floatingXDpFloat + deltaXDp, widthDp, screenWidthDp)
         // Dragging the finger *down* (positive y) lowers the keyboard, which decreases a value
         // measured upward from the bottom — hence the subtraction.
         floatingBottomDpFloat = KeyboardPlacementGeometry
-            .clampFloatingY((floatingBottomDpFloat - deltaYDp).roundToInt(), totalHeightDp.roundToInt(), screenHeightDp)
-            .toFloat()
+            .clampFloatingY(floatingBottomDpFloat - deltaYDp, totalHeightDp, screenHeightDp)
     }
 
-    fun commit() = onCommit(widthDp.roundToInt(), keyboardHeightDp, floatingXDp, floatingBottomDp)
+    /**
+     * Raises or lowers a **docked or one-handed** keyboard. The floating equivalent is [move];
+     * these are separate because they mean different things — floating has a free x/y position,
+     * while a docked keyboard only ever sits at some distance above the bottom edge.
+     *
+     * Dragging up (negative delta, since y decreases upward) raises the keyboard, so the sign is
+     * inverted here exactly as it is in [move].
+     */
+    fun raise(deltaYDp: Float) {
+        if (placement == KeyboardPlacement.FLOATING) return
+        bottomOffsetDpFloat = KeyboardPlacementGeometry
+            .clampBottomOffset(bottomOffsetDpFloat - deltaYDp, totalHeightDp, screenHeightDp)
+    }
+
+    fun commit() =
+        onCommit(widthDp.roundToInt(), keyboardHeightDp, floatingXDp, floatingBottomDp, bottomOffsetDp)
 }
 
 /** Keyed on the settings that seed it, so an external change (Settings, or switching placement)
@@ -224,7 +258,7 @@ internal fun QuickAccessPanel(
         QuickTile("Floating", PhosphorFloating, placement == KeyboardPlacement.FLOATING) {
             feedback.onKeyPress(); viewModel.setPlacement(KeyboardPlacement.FLOATING)
         },
-        QuickTile("Resize", PhosphorResize, false) {
+        QuickTile("Size & position", PhosphorResize, false) {
             feedback.onKeyPress(); viewModel.setResizing(true)
         },
         QuickTile("Theme", PhosphorPalette, false) {
@@ -349,7 +383,7 @@ internal fun OneHandedGutter(
         val buttons = listOf(
             Triple("Switch side", PhosphorSwitchSide) { viewModel.switchOneHandedSide() },
             Triple("Full width", PhosphorExpand) { viewModel.setPlacement(KeyboardPlacement.DOCKED) },
-            Triple("Resize", PhosphorResize) { viewModel.setResizing(true) },
+            Triple("Size & position", PhosphorResize) { viewModel.setResizing(true) },
         )
         buttons.forEach { (description, icon, action) ->
             val interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
@@ -452,6 +486,54 @@ internal fun FloatingMoveHandle(theme: OmakeyTheme, place: PlacementState) {
     }
 }
 
+/**
+ * Drag up to raise a docked or one-handed keyboard off the bottom edge, for thumb reach.
+ *
+ * The floating equivalent is the whole keyboard body (there is nothing else it could usefully do
+ * while floating). Here the body is full of keys the user may want to see, so this is a discrete
+ * grip in the middle — the same affordance, in the same place, as Settings' "Keyboard size &
+ * position" screen, so the two do not teach different gestures for the same adjustment.
+ *
+ * Vertical-only: a docked keyboard has no horizontal position to change.
+ */
+@Composable
+private fun androidx.compose.foundation.layout.BoxScope.RaiseHandle(
+    place: PlacementState,
+    density: androidx.compose.ui.unit.Density,
+) {
+    val theme = LocalOmakeyTheme.current
+    Box(
+        Modifier
+            // Below the centre, not on it: "Done" owns the centre of this overlay and is drawn
+            // after everything in the `when`, so a grip sharing that spot would be covered by it
+            // and simply not receive the drag.
+            .align(Alignment.Center)
+            .offset(y = 38.dp)
+            .size(width = 64.dp, height = 32.dp)
+            .background(
+                theme.keyBackgroundPressed.toComposeColor(),
+                androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+            )
+            .pointerInput(Unit) {
+                detectDragGestures(onDragEnd = { place.commit() }) { change, dragAmount ->
+                    change.consume()
+                    with(density) { place.raise(dragAmount.y.toDp().value) }
+                }
+            }
+            .semantics { contentDescription = "Raise or lower keyboard" },
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            Modifier
+                .size(width = 28.dp, height = 5.dp)
+                .background(
+                    theme.keyTextColor.toComposeColor().copy(alpha = 0.6f),
+                    androidx.compose.foundation.shape.RoundedCornerShape(2.5.dp),
+                ),
+        )
+    }
+}
+
 @Composable
 internal fun androidx.compose.foundation.layout.BoxScope.ResizeOverlay(
     viewModel: KeyboardViewModel,
@@ -480,7 +562,15 @@ internal fun androidx.compose.foundation.layout.BoxScope.ResizeOverlay(
             )
             .then(
                 if (placement == KeyboardPlacement.FLOATING) {
-                    Modifier.offset(x = place.floatingXDp.dp, y = (-place.floatingBottomDp).dp)
+                    // Same lambda overload as the keyboard container it has to stay aligned
+                    // with — if these two used different rounding the brackets would drift off the
+                    // keyboard's real edges mid-drag.
+                    Modifier.offset {
+                        IntOffset(
+                            x = place.floatingXDpFloat.dp.roundToPx(),
+                            y = -place.floatingBottomDpFloat.dp.roundToPx(),
+                        )
+                    }
                 } else {
                     Modifier
                 },
@@ -562,11 +652,13 @@ internal fun androidx.compose.foundation.layout.BoxScope.ResizeOverlay(
                     verticalSign = 1,
                     description = "Resize keyboard",
                 )
+                RaiseHandle(place, density)
             }
             else -> {
                 // Docked: only the top edge means anything, so both handles resize height alone.
                 Corner(Alignment.TopStart, horizontalSign = 0, verticalSign = -1, description = "Resize keyboard height")
                 Corner(Alignment.TopEnd, horizontalSign = 0, verticalSign = -1, description = "Resize keyboard height")
+                RaiseHandle(place, density)
             }
         }
 

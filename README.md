@@ -133,8 +133,10 @@ moment, while looking at whatever you're typing into:
   isn't shoved upward the way a docked keyboard shoves it.
 - **One-handed** — shrink it to the left or right so your thumb reaches everything, with buttons
   alongside to switch sides, go back to full width, or resize.
-- **Resize** — drag the corners, in whichever mode you're in. Floating, one-handed and normal each
-  remember their own size, so resizing one doesn't disturb the others.
+- **Size & position** — drag the corners to resize, in whichever mode you're in, and drag the grip
+  in the middle to raise a normal or one-handed keyboard off the bottom edge for easier thumb
+  reach. Floating, one-handed and normal each remember their own size, so changing one doesn't
+  disturb the others.
 - **Theme** — cycle Light, Dark, Follow-system and Accent without leaving the keyboard.
 - **Settings** — one tap, instead of knowing to long-press the extensions key.
 
@@ -253,10 +255,12 @@ never any auto-download or auto-install.
 
 ## Status
 
-omakey is on release 4.1.1, a maintenance release that fixed floating mode (it looked right but
-the app underneath was still being pushed up, and taps outside the keyboard went nowhere), stopped
-clipboard history from saving passwords, and finished clipboard pinning. Release 4.0.0 before it
-made the keyboard movable and fixed autocorrect's blind spot around the first letter of a word.
+omakey is on release 4.2.0, which smoothed out dragging the floating keyboard and made Quick
+access able to reposition the keyboard as well as resize it. 4.1.x before it fixed floating mode —
+it looked right, but the app underneath was still being pushed up and taps outside the keyboard
+went nowhere — stopped clipboard history from saving passwords, and finished clipboard pinning.
+4.0.0 made the keyboard movable in the first place, and fixed autocorrect's blind spot around the
+first letter of a word.
 
 Typing, gestures, autocorrect, prediction, both layout styles, the clipboard manager, and the emoji
 panel are all working today and getting updated regularly — see [CHANGELOG.md](CHANGELOG.md) for the

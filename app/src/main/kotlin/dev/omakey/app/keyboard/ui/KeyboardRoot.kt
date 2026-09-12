@@ -40,6 +40,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.omakey.app.keyboard.KeyboardFeedback
@@ -213,12 +214,22 @@ fun KeyboardRoot(
             .fillMaxWidth()
             .then(
                 if (placement == KeyboardPlacement.FLOATING) {
-                    // Exactly tall enough to hold the keyboard at its current height off the
-                    // bottom — no taller. A window bigger than it needs to be is more screen the
-                    // system has to treat as ours, and more that can go wrong in a host app.
-                    // keyboardTotalHeightDp, not strip+grid: see its doc for the bug that came of
-                    // adding the handle up per-site instead.
-                    Modifier.height((place.floatingBottomDp + keyboardTotalHeightDp).dp)
+                    // Fixed at the screen height rather than "exactly tall enough for the keyboard
+                    // at its current position", which is what this used to be.
+                    //
+                    // That version made the window height a function of floatingBottomDp — so
+                    // every frame of a vertical drag resized the IME window itself, which means a
+                    // full measure/layout pass plus onComputeInsets plus whatever the host app does
+                    // in response, sixty times a second. It was the main reason dragging felt
+                    // laggy.
+                    //
+                    // A fixed-height window is safe here in a way it would not have been before
+                    // onComputeInsets started working: contentTopInsets already tells the host the
+                    // IME occupies no space, and touchableRegion is set to the keyboard's own
+                    // rectangle, so the extra window area is neither reserved nor touch-absorbing.
+                    // The keyboard Column inside is bottom-aligned and offset upward, so its
+                    // position is unaffected.
+                    Modifier.height(screenHeightDp.dp)
                 } else {
                     Modifier.wrapContentHeight()
                 },
@@ -250,7 +261,16 @@ fun KeyboardRoot(
                 when {
                     placement == KeyboardPlacement.FLOATING ->
                         Modifier
-                            .offset(x = place.floatingXDp.dp, y = (-place.floatingBottomDp).dp)
+                            // Lambda overload: the position changes on every frame of a drag,
+                            // and this form re-runs layout only, instead of recomposing the entire
+                            // keyboard tree underneath. Reads the float fields directly so the
+                            // keyboard moves with the finger rather than in whole-dp steps.
+                            .offset {
+                                IntOffset(
+                                    x = place.floatingXDpFloat.dp.roundToPx(),
+                                    y = -place.floatingBottomDpFloat.dp.roundToPx(),
+                                )
+                            }
                             .width(place.widthDp.dp)
                     placement.isOneHanded -> Modifier.width(place.widthDp.dp)
                     else -> Modifier.fillMaxWidth()
@@ -482,11 +502,13 @@ fun KeyboardRoot(
         // Docked only: floating and one-handed keyboards are already positioned by the user, and
         // a second, invisible offset fighting with that position is how "I moved it and it didn't
         // go where I put it" bugs happen.
-        if (layoutSettings.bottomOffsetDp > 0 && placement == KeyboardPlacement.DOCKED) {
+        // place.bottomOffsetDp, not layoutSettings — the former tracks a drag in progress, so the
+        // keyboard rises under the finger instead of jumping when the drag ends.
+        if (place.bottomOffsetDp > 0 && placement == KeyboardPlacement.DOCKED) {
             Box(
                 Modifier
                     .fillMaxWidth()
-                    .height(layoutSettings.bottomOffsetDp.dp)
+                    .height(place.bottomOffsetDp.dp)
                     .background(theme.keyboardBackground.toComposeColor()),
             )
         }

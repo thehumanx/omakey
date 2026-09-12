@@ -373,14 +373,21 @@ class KeyboardViewModel(
      * live value lives in the UI until then (see `PlacementState`). Routed through the view model
      * so the UI layer never has to build its own [LayoutPreferences], which would register a second
      * SharedPreferences listener per composition. */
-    fun commitPlacementBounds(widthDp: Int, heightDp: Int, xDp: Int, yDp: Int) {
-        when (val placement = layoutPreferences.settings.value.placement) {
+    fun commitPlacementBounds(widthDp: Int, heightDp: Int, xDp: Int, yDp: Int, bottomOffsetDp: Int) {
+        when (layoutPreferences.settings.value.placement) {
             KeyboardPlacement.FLOATING -> layoutPreferences.setFloatingBounds(widthDp, heightDp, xDp, yDp)
             KeyboardPlacement.ONE_HANDED_LEFT, KeyboardPlacement.ONE_HANDED_RIGHT -> {
                 layoutPreferences.setOneHandedWidthDp(widthDp)
                 layoutPreferences.setKeyboardHeightDp(heightDp)
+                layoutPreferences.setBottomOffsetDp(bottomOffsetDp)
             }
-            KeyboardPlacement.DOCKED -> layoutPreferences.setKeyboardHeightDp(heightDp)
+            // Docked and one-handed keyboards can be raised off the bottom edge as well as
+            // resized — the quick-access overlay does both now, matching Settings. Floating has no
+            // bottom offset: its position is already free.
+            KeyboardPlacement.DOCKED -> {
+                layoutPreferences.setKeyboardHeightDp(heightDp)
+                layoutPreferences.setBottomOffsetDp(bottomOffsetDp)
+            }
         }
     }
 

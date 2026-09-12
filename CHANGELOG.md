@@ -3,6 +3,21 @@
 All notable changes to omakey are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [4.2.0] — 2026-09-12
+
+### Fixed
+- **Dragging the floating keyboard was jerky and slow.** Three separate causes: the position was
+  rounded to whole pixels on every frame, so a slow drag moved the keyboard nowhere at all and a
+  faster one moved it in visible steps; the whole keyboard was being redrawn each frame instead of
+  just repositioned; and the keyboard's window was being resized sixty times a second while you
+  dragged vertically. All three are gone — it should track your finger now.
+
+### Changed
+- **"Resize" is now "Size & position", and it repositions.** Quick access → Size & position lets
+  you raise a normal or one-handed keyboard off the bottom edge by dragging the grip in the middle,
+  not just resize it. That was previously only possible in Settings, which meant the on-keyboard
+  version was missing half of what the Settings version did.
+
 ## [4.1.1] — 2026-09-12
 
 ### Fixed

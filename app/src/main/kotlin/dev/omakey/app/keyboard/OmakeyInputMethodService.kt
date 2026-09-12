@@ -481,12 +481,21 @@ class OmakeyInputMethodService :
     @Volatile private var keyboardBounds: android.graphics.Rect? = null
 
     private fun onKeyboardBoundsChanged(bounds: androidx.compose.ui.geometry.Rect) {
-        keyboardBounds = android.graphics.Rect(
-            bounds.left.toInt(),
-            bounds.top.toInt(),
-            bounds.right.toInt(),
-            bounds.bottom.toInt(),
-        )
+        val left = bounds.left.toInt()
+        val top = bounds.top.toInt()
+        val right = bounds.right.toInt()
+        val bottom = bounds.bottom.toInt()
+        // Called from onGloballyPositioned, so it fires on every layout pass — which during a drag
+        // is every frame. Comparing before allocating keeps a moved keyboard from producing a new
+        // Rect sixty times a second for the garbage collector, and makes the common case (a layout
+        // pass that didn't move anything) free.
+        val current = keyboardBounds
+        if (current != null && current.left == left && current.top == top &&
+            current.right == right && current.bottom == bottom
+        ) {
+            return
+        }
+        keyboardBounds = android.graphics.Rect(left, top, right, bottom)
     }
 
     /**

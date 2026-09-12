@@ -1,5 +1,7 @@
 package dev.omakey.core.layout
 
+import kotlin.math.roundToInt
+
 /**
  * Where the keyboard sits in the IME window.
  *
@@ -102,9 +104,22 @@ object KeyboardPlacementGeometry {
     }
 
     /** Horizontal position of the floating keyboard's left edge, measured from the window's left. */
-    fun clampFloatingX(xDp: Int, widthDp: Int, screenWidthDp: Int): Int {
+    fun clampFloatingX(xDp: Int, widthDp: Int, screenWidthDp: Int): Int =
+        clampFloatingX(xDp.toFloat(), widthDp.toFloat(), screenWidthDp).roundToInt()
+
+    /**
+     * Float-precision variant, used while a drag is in flight.
+     *
+     * This exists because rounding mid-drag is not merely imprecise, it **loses the movement
+     * entirely**: the live position is accumulated by repeatedly adding a small delta, so rounding
+     * the running total back to a whole dp each frame discards every fraction. A slow drag whose
+     * per-frame delta is under half a dp then moves the keyboard exactly nowhere, and a faster one
+     * advances in visible one-dp steps. Rounding belongs at the point the value is persisted, not
+     * on every frame of the accumulation.
+     */
+    fun clampFloatingX(xDp: Float, widthDp: Float, screenWidthDp: Int): Float {
         val leftmost = MIN_VISIBLE_DP - widthDp
-        val rightmost = screenWidthDp - MIN_VISIBLE_DP
+        val rightmost = (screenWidthDp - MIN_VISIBLE_DP).toFloat()
         return xDp.coerceIn(minOf(leftmost, rightmost), maxOf(leftmost, rightmost))
     }
 
@@ -115,13 +130,29 @@ object KeyboardPlacementGeometry {
      * actually anchored to, and it stays put when the window height changes.
      */
     fun clampFloatingY(yDp: Int, heightDp: Int, screenHeightDp: Int): Int =
-        yDp.coerceIn(0, maxOf(0, screenHeightDp - heightDp))
+        clampFloatingY(yDp.toFloat(), heightDp.toFloat(), screenHeightDp).roundToInt()
+
+    /** Float-precision variant — see [clampFloatingX]`(Float, Float, Int)` for why mid-drag
+     * rounding is a correctness problem rather than a cosmetic one. */
+    fun clampFloatingY(yDp: Float, heightDp: Float, screenHeightDp: Int): Float =
+        yDp.coerceIn(0f, maxOf(0f, screenHeightDp - heightDp))
 
     /** Where a floating keyboard should first appear: horizontally centred, lifted clear of the
      * navigation area. Used when the user switches to floating for the first time, so it never
      * starts somewhere it has to be dragged out of. */
     fun defaultFloatingX(widthDp: Int, screenWidthDp: Int): Int =
         clampFloatingX((screenWidthDp - widthDp) / 2, widthDp, screenWidthDp)
+
+    /**
+     * How far a **docked** keyboard may be raised off the bottom edge.
+     *
+     * Capped so the keyboard's top can never pass the vertical centre of the screen: above that it
+     * stops being a keyboard raised for thumb reach and starts being one stranded mid-screen with
+     * a large dead band under it. [keyboardHeightDp] is subtracted because the cap is about where
+     * the keyboard's *top* ends up, not its bottom.
+     */
+    fun clampBottomOffset(offsetDp: Float, keyboardHeightDp: Float, screenHeightDp: Int): Float =
+        offsetDp.coerceIn(0f, (screenHeightDp / 2f - keyboardHeightDp).coerceAtLeast(0f))
 
     const val DEFAULT_FLOATING_Y_DP = 48
 }
