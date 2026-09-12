@@ -35,7 +35,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.omakey.app.keyboard.KeyboardFeedback
 import dev.omakey.app.keyboard.KeyboardViewModel
-import dev.omakey.core.icons.*
+import dev.omakey.core.theme.toComposeColor
+import dev.omakey.core.theme.toDp
+import dev.omakey.core.icons.PhosphorArrowLeft
+import dev.omakey.core.icons.PhosphorExpand
+import dev.omakey.core.icons.PhosphorFloating
+import dev.omakey.core.icons.PhosphorGear
+import dev.omakey.core.icons.PhosphorOneHanded
+import dev.omakey.core.icons.PhosphorPalette
+import dev.omakey.core.icons.PhosphorResize
+import dev.omakey.core.icons.PhosphorSwitchSide
 import kotlin.math.roundToInt
 import dev.omakey.core.layout.KeyboardPlacement
 import dev.omakey.core.layout.KeyboardPlacementGeometry

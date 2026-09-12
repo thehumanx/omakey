@@ -28,6 +28,7 @@ import dev.omakey.core.predict.IncognitoPreferences
 import dev.omakey.core.predict.Calculator
 import dev.omakey.core.predict.PredictionEngine
 import dev.omakey.core.predict.PredictionPreferences
+import dev.omakey.core.predict.SuggestionComposer
 import dev.omakey.core.theme.FontChoices
 import dev.omakey.core.theme.FontPreferences
 import dev.omakey.core.theme.OmakeyTheme
@@ -105,6 +106,11 @@ class KeyboardViewModel(
      * three-field invariant these used to maintain by hand at eight separate call sites.
      */
     private val words = WordTracker()
+
+    /** Owns candidate selection; this class owns *when* to ask and what to do with the answer.
+     * Constructed here rather than injected because both its dependencies are already constructor
+     * parameters — it is a regrouping of what this class already had, not a new collaborator. */
+    private val suggestionComposer = SuggestionComposer(autocorrectIndex, predictionEngine, SUGGESTION_LIMIT)
 
     /** When the most recent space was actually committed — 0 means "none yet this session, or
      * already consumed by a double-tap conversion." Powers [onSpace]'s double-tap-space-for-
@@ -1389,21 +1395,6 @@ class KeyboardViewModel(
         _uiState.update { it.copy(emojiSuggestions = emptyList()) }
     }
 
-    /** [checkContextualCorrection] is true right after any word-boundary commit that leaves a
-     * definite, known separator behind the finished word — space, punctuation, or Enter inserting
-     * a literal newline (see [onSpace]/[commitTypedChar]/[onEnter], and [WordTracker.boundarySeparator]
-     * for why an editor action like "Go"/"Send" doesn't qualify).
-     *
-     * Three distinct outcomes, in priority order:
-     * 1. **Still typing a word** (the [WordTracker] buffer non-empty): alternatives for *that* word
-     *    (see [wordAlternatives]) merged with prefix completions, `activeCorrection` = LIVE_BUFFER.
-     * 2. **Just finished a word** (buffer empty, [checkContextualCorrection] true): alternatives
-     *    for [WordTracker.lastCommitted], scored against what the word *before* it makes likely — e.g.
-     *    "thus" only outranks "this" here if the preceding word actually favours it.
-     *    `activeCorrection` = RETROACTIVE if any alternatives exist.
-     * 3. **Neither** (nothing to vary): falls back to plain next-word prediction, gated by the
-     *    separate next-word-prediction toggle; no `activeCorrection` — accepting one of these
-     *    types a fresh word rather than replacing anything. */
     private fun refreshSuggestions(checkContextualCorrection: Boolean = false) {
         // Cancels any in-flight query from the previous keystroke first — without this, a slow
         // query for an earlier (now-stale) prefix can resolve after a faster later one and
@@ -1413,9 +1404,8 @@ class KeyboardViewModel(
         updateEmojiSuggestions(prefix.ifEmpty { words.lastCommitted.takeIf { checkContextualCorrection } })
 
         if (prefix.isNotEmpty()) {
-            // activeCorrection is set synchronously (cheap — just bookkeeping) so cycling/revert
-            // logic has it available immediately; the expensive Damerau-Levenshtein scan itself
-            // (wordAlternatives) runs off the main thread below so it never blocks the next tap.
+            // Set synchronously — it is only bookkeeping, and cycling/revert need it available
+            // before the expensive candidate scan finishes on another thread.
             activeCorrection = ActiveCorrection(
                 mode = CorrectionApplyMode.LIVE_BUFFER,
                 originalWord = prefix,
@@ -1424,47 +1414,33 @@ class KeyboardViewModel(
                 separator = "",
             )
             refreshJob = scope.launch {
-                val alternatives = withContext(Dispatchers.Default) { wordAlternatives(prefix) }
-                val predicted = predictionEngine.suggestNext(
-                    beforePreviousWord = words.previousToLastCommitted,
-                    previousWord = words.lastCommitted,
-                    currentPrefix = prefix,
-                    limit = SUGGESTION_LIMIT,
+                show(
+                    suggestionComposer.forWordInProgress(
+                        prefix = prefix,
+                        previousWord = words.lastCommitted,
+                        beforePreviousWord = words.previousToLastCommitted,
+                    ),
                 )
-                val suggestions = (alternatives + predicted.filterNot { p -> alternatives.any { it.equals(p, ignoreCase = true) } })
-                    .take(SUGGESTION_LIMIT)
-                _uiState.update {
-                    it.copy(
-                        suggestions = suggestions,
-                        firstSuggestionKind = if (alternatives.isNotEmpty()) SuggestionKind.CORRECTION else SuggestionKind.PLAIN,
-                    )
-                }
             }
             return
         }
 
         val target = words.lastCommittedCased.takeIf { checkContextualCorrection }
         if (target != null) {
-            // The word being corrected here is `words.lastCommitted` itself, so its left context is
-            // the word *before* it — not [correctionContext], which would place the word under
-            // correction inside its own context and bias scoring toward candidates that plausibly
-            // follow themselves. Only one word of context is available in this direction; nothing
-            // earlier than `words.previousToLastCommitted` is tracked.
-            val context = autocorrectIndex.contextOf(words.previousToLastCommitted, null)
             refreshJob = scope.launch {
-                val rawAlternatives = withContext(Dispatchers.Default) { wordAlternatives(target, context) }
-                if (rawAlternatives.isNotEmpty()) {
-                    activeCorrection = ActiveCorrection(
-                        mode = CorrectionApplyMode.RETROACTIVE,
-                        originalWord = target,
-                        occupiedBefore = target.length,
-                        occupiedAfter = 0,
-                        separator = words.boundarySeparator,
-                    )
-                    _uiState.update { it.copy(suggestions = rawAlternatives, firstSuggestionKind = SuggestionKind.CORRECTION) }
-                } else {
+                val result = suggestionComposer.forFinishedWord(target, words.previousToLastCommitted)
+                if (result.isEmpty) {
                     refreshPlainPrediction()
+                    return@launch
                 }
+                activeCorrection = ActiveCorrection(
+                    mode = CorrectionApplyMode.RETROACTIVE,
+                    originalWord = target,
+                    occupiedBefore = target.length,
+                    occupiedAfter = 0,
+                    separator = words.boundarySeparator,
+                )
+                show(result)
             }
             return
         }
@@ -1472,53 +1448,47 @@ class KeyboardViewModel(
         refreshPlainPrediction()
     }
 
-    /** Nothing to correct/vary — plain next-word prediction if enabled, no active correction
-     * (accepting one of these types a fresh word, doesn't replace anything). */
+    /** Nothing to correct or vary — plain next-word prediction if enabled, and no active
+     * correction, so accepting one of these types a fresh word rather than replacing anything. */
     private fun refreshPlainPrediction() {
         activeCorrection = null
         if (!predictionPreferences.settings.value.nextWordPredictionEnabled) {
-            _uiState.update { it.copy(suggestions = emptyList(), firstSuggestionKind = SuggestionKind.PLAIN) }
+            show(SuggestionComposer.Suggestions.None)
             return
         }
         refreshJob = scope.launch {
-            val predicted = predictionEngine.suggestNext(
-                beforePreviousWord = words.previousToLastCommitted,
-                previousWord = words.lastCommitted,
-                currentPrefix = "",
-                limit = SUGGESTION_LIMIT,
-            )
-            _uiState.update { it.copy(suggestions = predicted, firstSuggestionKind = SuggestionKind.PLAIN) }
+            show(suggestionComposer.nextWord(words.lastCommitted, words.previousToLastCommitted))
         }
     }
 
-    /** [AutocorrectIndex.alternatives] for [word], case-matched against it — except a curated
-     * contraction result (already correctly cased, e.g. "I'm") or a two-word split (left as
-     * lowercase, reads fine either way), neither of which should have [matchCase]'s single-word
-     * casing rules applied on top. */
-    private fun wordAlternatives(
-        word: String,
-        context: AutocorrectIndex.Context = correctionContext(),
-    ): List<String> {
-        val contraction = autocorrectIndex.contractionFor(word)
-        return autocorrectIndex.alternatives(word, SUGGESTION_LIMIT, context).map { alt ->
-            when {
-                alt == contraction -> alt
-                alt.contains(' ') -> alt
-                else -> matchCase(word, alt)
-            }
-        }
-    }
+    /** [SuggestionComposer.alternatives] for a word the cursor happens to be sitting on, rather
+     * than one being typed — used by the two cursor-driven paths ([onCursorMoved],
+     * [refreshSuggestionsAfterDeletion]), which know the word but have no in-progress buffer. */
+    private fun wordAlternatives(word: String): List<String> =
+        suggestionComposer.alternatives(word, correctionContext())
 
-    /** Left context for correction scoring: the two words before whatever is being corrected.
+    /**
+     * Left context for correction scoring: the two words before whatever is being corrected.
      *
      * `AutocorrectIndex` ranks candidates by `-channelCost + λ·logP(candidate | context)`, so
      * supplying this is what lets "thus" lose to "this" when the preceding words actually favour
      * it. This replaced a separate `reorderByContext` pass that re-sorted the finished candidate
      * list by bigram count after the fact — which could only ever reorder what frequency had
      * already selected, and could not help a context-appropriate word that never made the list.
-     * Scoring with context up front subsumes it, and reaches the trigram tier besides. */
+     */
     private fun correctionContext(): AutocorrectIndex.Context =
         autocorrectIndex.contextOf(words.lastCommitted, words.previousToLastCommitted)
+
+    /** The single place suggestions reach the UI, so the strip and [SuggestionKind] can never
+     * disagree about whether the first entry replaces a word or appends one. */
+    private fun show(result: SuggestionComposer.Suggestions) {
+        _uiState.update {
+            it.copy(
+                suggestions = result.words,
+                firstSuggestionKind = if (result.fromCorrection) SuggestionKind.CORRECTION else SuggestionKind.PLAIN,
+            )
+        }
+    }
 
     private companion object {
         const val PREFERRED_EXTENSION_ID = "builtin.emoji"

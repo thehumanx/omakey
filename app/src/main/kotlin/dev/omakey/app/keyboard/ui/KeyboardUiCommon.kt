@@ -16,7 +16,9 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import dev.omakey.core.icons.*
+import dev.omakey.core.theme.toComposeColor
+import dev.omakey.core.theme.toDp
+import dev.omakey.core.theme.gridCellBorder
 import dev.omakey.core.theme.ColorSpec
 import dev.omakey.core.theme.OmakeyTheme
 
@@ -27,7 +29,6 @@ import dev.omakey.core.theme.OmakeyTheme
  * the files carved out of it — that is what makes it common rather than local to one of them.
  */
 
-internal fun ColorSpec.toComposeColor() = Color(argb.toInt())
 
 internal const val SUGGESTION_STRIP_HEIGHT_DP = 44
 
@@ -75,11 +76,6 @@ internal val GRID_BORDER_WIDTH = 1.5.dp
  * kept in the render layer, not `core`, since `Dp` is a Compose UI type (see `GridBorderWidth`'s
  * own doc in `OmakeyTheme.kt`). MD matches [GRID_BORDER_WIDTH], the value every border already
  * used before this became user-configurable. */
-internal fun dev.omakey.core.theme.GridBorderWidth.toDp(): androidx.compose.ui.unit.Dp = when (this) {
-    dev.omakey.core.theme.GridBorderWidth.SM -> 1.dp
-    dev.omakey.core.theme.GridBorderWidth.MD -> GRID_BORDER_WIDTH
-    dev.omakey.core.theme.GridBorderWidth.LG -> 2.5.dp
-}
 
 /** [includeBottom] defaults to true (the normal case — a cell inside a multi-row grid needs to
  * own the seam to the row below it, since nothing else will). Pass false for a cell that's the
@@ -90,12 +86,6 @@ internal fun dev.omakey.core.theme.GridBorderWidth.toDp(): androidx.compose.ui.u
  * self-border, doubling it up specifically wherever a cell/chip/key actually existed in the strip
  * (reported as "the bottom border is thicker when there's a suggestion" — an empty strip has no
  * chips to contribute the extra stroke, so it looked correct only by having nothing there). */
-internal fun Modifier.gridCellBorder(color: Color, strokeWidth: androidx.compose.ui.unit.Dp = GRID_BORDER_WIDTH, includeBottom: Boolean = true): Modifier = this.drawBehind {
-    val strokePx = strokeWidth.toPx()
-    val half = strokePx / 2f
-    drawLine(color, Offset(size.width - half, 0f), Offset(size.width - half, size.height), strokePx)
-    if (includeBottom) drawLine(color, Offset(0f, size.height - half), Offset(size.width, size.height - half), strokePx)
-}
 
 /** `TopStrip` sits flush (zero gap) directly above `KeyGrid`, which already self-borders its own
  * top edge — a second full 4-sided border on `TopStrip` would double up at that one shared seam

@@ -49,6 +49,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.unit.dp
 import dev.omakey.app.keyboard.ui.FontCatalog
+import dev.omakey.core.theme.toComposeColor
+import dev.omakey.core.theme.toDp
 import dev.omakey.core.locale.KeyboardLocale
 import dev.omakey.core.clipboard.ClipboardHistoryStore
 import dev.omakey.core.clipboard.ClipboardPreferences
@@ -57,7 +59,6 @@ import dev.omakey.core.db.WordDao
 import dev.omakey.core.db.WordEntity
 import dev.omakey.core.layout.LayoutPreferences
 import dev.omakey.core.layout.LayoutSettings
-import dev.omakey.app.keyboard.ui.toDp
 import dev.omakey.core.predict.PersonalLanguageModel
 import dev.omakey.core.theme.OmakeyTheme
 import kotlin.math.roundToInt

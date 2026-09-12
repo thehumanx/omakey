@@ -61,7 +61,8 @@ import dev.omakey.core.icons.PhosphorCopy
 import dev.omakey.core.layout.LayoutPreferences
 import dev.omakey.core.layout.LayoutSettings
 import dev.omakey.app.keyboard.ui.gridBorderExceptBottom
-import dev.omakey.app.keyboard.ui.toDp
+import dev.omakey.core.theme.toDp
+import dev.omakey.core.theme.toComposeColor
 import dev.omakey.core.theme.ColorSpec
 import dev.omakey.core.theme.CustomThemePreferences
 import dev.omakey.core.theme.OmakeyTheme
@@ -283,7 +284,6 @@ private fun KeyboardSwatch(theme: OmakeyTheme) {
     }
 }
 
-internal fun dev.omakey.core.theme.ColorSpec.toComposeColor() = Color(argb.toInt())
 
 /** "Build your own theme" — full-screen editor for exactly the 4 colors requested (background,
  * key, home-row stripe, spacebar), matching [LearnedWordsOverlay]'s full-screen-overlay pattern.

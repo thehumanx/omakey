@@ -39,6 +39,9 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.omakey.core.theme.toComposeColor
+import dev.omakey.core.theme.toDp
+import dev.omakey.core.theme.gridCellBorder
 import dev.omakey.core.theme.LocalKeyboardLayoutMode
 import dev.omakey.core.theme.LocalOmakeyTheme
 import dev.omakey.core.theme.LayoutMode
@@ -50,22 +53,10 @@ import dev.omakey.extapi.ExtensionIcon
 import dev.omakey.extapi.OmakeyExtension
 import kotlinx.coroutines.launch
 
-private fun dev.omakey.core.theme.ColorSpec.toComposeColor() = Color(argb.toInt())
 
-private fun dev.omakey.core.theme.GridBorderWidth.toDp(): androidx.compose.ui.unit.Dp = when (this) {
-    dev.omakey.core.theme.GridBorderWidth.SM -> 1.dp
-    dev.omakey.core.theme.GridBorderWidth.MD -> 1.5.dp
-    dev.omakey.core.theme.GridBorderWidth.LG -> 2.5.dp
-}
 
 // Same single-draw border model as KeyboardRoot.kt/EmojiPanelExtension.kt — every cell draws only
 // its own right+bottom edge (so adjacent cells never double up).
-private fun Modifier.gridCellBorder(color: Color, strokeWidth: androidx.compose.ui.unit.Dp): Modifier = this.drawBehind {
-    val strokePx = strokeWidth.toPx()
-    val half = strokePx / 2f
-    drawLine(color, androidx.compose.ui.geometry.Offset(size.width - half, 0f), androidx.compose.ui.geometry.Offset(size.width - half, size.height), strokePx)
-    drawLine(color, androidx.compose.ui.geometry.Offset(0f, size.height - half), androidx.compose.ui.geometry.Offset(size.width, size.height - half), strokePx)
-}
 
 /**
  * Reads clipboard history while the IME is the active input source. No special runtime permission

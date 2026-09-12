@@ -46,8 +46,10 @@ import dev.omakey.app.keyboard.KeyboardFeedback
 import dev.omakey.app.keyboard.KeyboardViewModel
 import dev.omakey.app.keyboard.NoOpKeyboardFeedback
 import dev.omakey.app.keyboard.resolveEffectiveTheme
+import dev.omakey.core.theme.toComposeColor
+import dev.omakey.core.theme.toDp
+import dev.omakey.core.theme.gridCellBorder
 import dev.omakey.core.locale.KeyboardLocale
-import dev.omakey.core.icons.*
 import dev.omakey.core.gesture.KeyHitTester
 import dev.omakey.core.layout.KeyDefinition
 import dev.omakey.core.layout.KeyboardPlacement
