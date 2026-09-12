@@ -299,9 +299,14 @@ class OmakeyInputMethodService :
         // keyboard process start rather than needing its own "already scheduled" bookkeeping. This
         // is what keeps the 12h check running across reboots without a dedicated boot receiver:
         // the IME process restarts the moment the keyboard is used again.
-        if (dev.omakey.core.update.UpdatePreferences(applicationContext).settings.value.autoCheckEnabled) {
+        // Closed immediately: this instance exists only to answer one question at startup, and
+        // nothing else in the service holds it. Left open it would sit registered as a change
+        // listener on a preference it will never read again.
+        val updatePreferences = dev.omakey.core.update.UpdatePreferences(applicationContext)
+        if (updatePreferences.settings.value.autoCheckEnabled) {
             dev.omakey.app.update.UpdateWorkScheduler.schedule(applicationContext)
         }
+        updatePreferences.close()
 
         // Off the main thread so onCreateInputView is never blocked — the keyboard is typeable
         // immediately and suggestions populate the moment this finishes, which is fast now: the
@@ -563,6 +568,22 @@ class OmakeyInputMethodService :
     override fun onDestroy() {
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
         clipboardManager.removePrimaryClipChangedListener(clipboardListener)
+        // Symmetry with the registrations in onCreate. Not strictly required — SharedPreferences
+        // holds listeners weakly, which is why nothing broke while nothing anywhere unregistered —
+        // but "we rely on an implementation detail nobody chose to rely on" is a worse position
+        // than releasing what we took, and the service has a definite end of life to do it at.
+        incognitoPreferences.close()
+        autocorrectPreferences.close()
+        predictionPreferences.close()
+        themeRepository.close()
+        accessibilityPreferences.close()
+        layoutPreferences.close()
+        fontPreferences.close()
+        gesturePreferences.close()
+        topStripTabPreferences.close()
+        hapticSoundPreferences.close()
+        emojiRecentsPreferences.close()
+        emojiSkinTonePreferences.close()
         serviceScope.cancel()
         super.onDestroy()
     }

@@ -2,7 +2,7 @@ package dev.omakey.core.feedback
 
 import android.content.Context
 import android.content.SharedPreferences
-import kotlinx.coroutines.flow.MutableStateFlow
+import dev.omakey.core.prefs.PreferenceStore
 import kotlinx.coroutines.flow.StateFlow
 
 /** Known keypress-sound choices. The actual audio resources live in the app module (they
@@ -45,18 +45,8 @@ data class HapticSoundSettings(
  * bearing, not decorative: the Settings Activity and the IME service each construct their own
  * instance of this class, and only the listener keeps them in sync live. */
 class HapticSoundPreferences(context: Context) {
-    private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-
-    private val _settings = MutableStateFlow(load())
-    val settings: StateFlow<HapticSoundSettings> = _settings
-
-    private val prefsChangeListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
-        _settings.value = load()
-    }
-
-    init {
-        prefs.registerOnSharedPreferenceChangeListener(prefsChangeListener)
-    }
+    private val store = PreferenceStore(context, PREFS_NAME, ::load)
+    val settings: StateFlow<HapticSoundSettings> = store.settings
 
     fun setHapticEnabled(enabled: Boolean) = update { it.copy(hapticEnabled = enabled) }
 
@@ -87,18 +77,19 @@ class HapticSoundPreferences(context: Context) {
     }
 
     private fun update(transform: (HapticSoundSettings) -> HapticSoundSettings) {
-        val next = transform(_settings.value)
-        prefs.edit()
-            .putBoolean(KEY_HAPTIC_ENABLED, next.hapticEnabled)
-            .putFloat(KEY_HAPTIC_STRENGTH, next.hapticStrength)
-            .putBoolean(KEY_SOUND_ENABLED, next.soundEnabled)
-            .putString(KEY_SOUND_CHOICE, next.soundChoice)
-            .putFloat(KEY_SOUND_VOLUME, next.soundVolume)
-            .apply()
-        _settings.value = next
+        val next = transform(store.settings.value)
+        store.edit {
+            putBoolean(KEY_HAPTIC_ENABLED, next.hapticEnabled)
+            putFloat(KEY_HAPTIC_STRENGTH, next.hapticStrength)
+            putBoolean(KEY_SOUND_ENABLED, next.soundEnabled)
+            putString(KEY_SOUND_CHOICE, next.soundChoice)
+            putFloat(KEY_SOUND_VOLUME, next.soundVolume)
+        }
     }
 
-    private fun load() = HapticSoundSettings(
+    fun close() = store.close()
+
+    private fun load(prefs: SharedPreferences) = HapticSoundSettings(
         hapticEnabled = prefs.getBoolean(KEY_HAPTIC_ENABLED, true),
         hapticStrength = prefs.getFloat(KEY_HAPTIC_STRENGTH, HapticSoundSettings.DEFAULT_HAPTIC_STRENGTH),
         soundEnabled = prefs.getBoolean(KEY_SOUND_ENABLED, false),

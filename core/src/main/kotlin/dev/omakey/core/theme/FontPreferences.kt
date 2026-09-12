@@ -2,7 +2,7 @@ package dev.omakey.core.theme
 
 import android.content.Context
 import android.content.SharedPreferences
-import kotlinx.coroutines.flow.MutableStateFlow
+import dev.omakey.core.prefs.PreferenceStore
 import kotlinx.coroutines.flow.StateFlow
 
 /** Known font choices. The actual FontFamily objects live in the app module (they reference
@@ -20,23 +20,17 @@ object FontChoices {
  * IME service each construct their own instance, so the registered listener is what keeps an
  * already-open keyboard in sync with a change made from Settings. */
 class FontPreferences(context: Context) {
-    private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val store = PreferenceStore(context, PREFS_NAME, ::load)
+    val fontId: StateFlow<String> = store.settings
 
-    private val _fontId = MutableStateFlow(prefs.getString(KEY_FONT_ID, FontChoices.SYSTEM_DEFAULT) ?: FontChoices.SYSTEM_DEFAULT)
-    val fontId: StateFlow<String> = _fontId
+    fun setFont(fontId: String) = store.edit { putString(KEY_FONT_ID, fontId) }
 
-    private val prefsChangeListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
-        _fontId.value = prefs.getString(KEY_FONT_ID, FontChoices.SYSTEM_DEFAULT) ?: FontChoices.SYSTEM_DEFAULT
-    }
+    fun close() = store.close()
 
-    init {
-        prefs.registerOnSharedPreferenceChangeListener(prefsChangeListener)
-    }
-
-    fun setFont(fontId: String) {
-        prefs.edit().putString(KEY_FONT_ID, fontId).apply()
-        _fontId.value = fontId
-    }
+    /** The default-fallback expression used to be written out twice, once for the initial read and
+     * once in the change listener — two copies of one rule, which is how they drift apart. */
+    private fun load(prefs: SharedPreferences) =
+        prefs.getString(KEY_FONT_ID, FontChoices.SYSTEM_DEFAULT) ?: FontChoices.SYSTEM_DEFAULT
 
     private companion object {
         const val PREFS_NAME = "omakey_font_prefs"
