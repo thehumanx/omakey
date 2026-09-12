@@ -7,12 +7,17 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
 /**
- * Manual, opt-in "check for updates" only — no background polling, no auto-download/install. See
- * AGENTS.md §16/17's explicit scoping of this feature: omakey is offline-by-default (no
- * `INTERNET` permission previously declared anywhere), so this is the one deliberate exception,
- * gated behind a Settings button the user has to tap themselves rather than anything automatic.
- * Hits the public GitHub Releases API for this repo, nothing else — no telemetry, no analytics,
- * no third-party update service.
+ * Version checking against the public GitHub Releases API for this repo, and nothing else — no
+ * telemetry, no analytics, no third-party update service, and never an auto-download or install.
+ *
+ * Two callers, both opt-out-able: the "Check for updates" button in Settings, and
+ * `UpdateCheckWorker`'s periodic 12-hourly poll (gated on `UpdatePreferences.autoCheckEnabled`).
+ * The `INTERNET` permission this needs is the single deliberate exception to omakey being
+ * offline-by-default; see AGENTS.md §16/17.
+ *
+ * (This doc used to claim "manual only, no background polling" and that `INTERNET` was declared
+ * nowhere. Both stopped being true when the worker landed, and stale documentation on the one
+ * network-touching component in a keyboard app is the worst place to have it.)
  */
 data class UpdateCheckResult(
     val updateAvailable: Boolean,
@@ -66,7 +71,7 @@ class GithubReleaseUpdateChecker(
                         UpdateCheckResult(
                             updateAvailable = isNewerVersion(latestVersion, currentVersion),
                             latestVersion = latestVersion,
-                            releaseUrl = releaseUrl,
+                            releaseUrl = safeReleaseUrl(releaseUrl),
                         ),
                     )
                 } finally {
@@ -76,6 +81,26 @@ class GithubReleaseUpdateChecker(
                 UpdateCheckOutcome.Error
             }
         }
+
+    /**
+     * [url] is a string pulled out of a network response and handed, unexamined, to
+     * `Intent(ACTION_VIEW)` in a notification the user is invited to tap. That is an
+     * untrusted-input-to-Intent flow, and the fact that today's only endpoint is GitHub over HTTPS
+     * is a property of the deployment, not of the code — a redirected/spoofed/compromised response
+     * could name any scheme, and `ACTION_VIEW` on a non-`http(s)` scheme resolves to whatever app
+     * claims it. A keyboard is the wrong place to be relaxed about that.
+     *
+     * Anything that isn't HTTPS on github.com is replaced with this repo's own releases page rather
+     * than failing the check: the version information is still perfectly good, and the user should
+     * still be told an update exists.
+     */
+    private fun safeReleaseUrl(url: String): String {
+        val fallback = "https://github.com/$repoOwner/$repoName/releases/latest"
+        val parsed = runCatching { URL(url) }.getOrNull() ?: return fallback
+        val host = parsed.host.lowercase()
+        val trusted = host == "github.com" || host.endsWith(".github.com")
+        return if (parsed.protocol.equals("https", ignoreCase = true) && trusted) url else fallback
+    }
 
     private fun isNewerVersion(latest: String, current: String): Boolean {
         val latestParts = latest.split(".").map { it.toIntOrNull() ?: 0 }
