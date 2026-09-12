@@ -52,7 +52,7 @@ updates — nothing you type, copy, or type into any app ever leaves your phone.
 
 ## What omakey offers
 
-- A floating keyboard you can put anywhere on screen (doesn't work as expected now, update incoming)
+- A floating keyboard you can put anywhere on screen
 - One-handed mode and drag-to-resize.
 - Inline calculator — type `12+7=` and `12+7=19` shows up in the suggestion strip, ready to tap (took inspo from iOS keyboard).
 - Undo/redo — two buttons that step back and forward through your last several typed or deleted
