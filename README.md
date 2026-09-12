@@ -18,9 +18,7 @@ Fast. Gesture-driven. Fully offline. Nothing you type ever leaves your phone.
 ## Why this exists
 
 I used to love Fleksy. I still do — the gestures, the speed, the all-caps layout I've always
-liked, the themes. It's unique and it's cool. I went keyboard-hunting for years before that, and
-nothing else ever settled for me the way Fleksy did. I've been using it for more than a decade
-now.
+liked, the themes. It's unique and it's cool and it's fast. I went keyboard-hunting for years before that, and nothing else ever settled for me the way Fleksy did. I've been using it for more than a decade now.
 
 Recently I found out it's not on the Play Store anymore, so I went looking on Reddit for news or
 alternatives. Found none. The keyboard I loved wasn't getting the updates I actually wanted —
@@ -30,39 +28,49 @@ So I built the keyboard I actually wanted to use.
 
 omakey is the result of a habit around my own typing. Every feature in here exists because I
 wanted it on my own phone — like undo/redo (I used to root my phone and install Xposed modules
-just for this, back in the day). I use it as my daily driver, with a bunch of my Android friends
+just for this, back in the day). I use it as my default keyboard, with a bunch of my Android friends
 testing fast typing, autocorrect, and everything else. I'm improving it on a regular basis. Until
 Google allows sideloading, this is probably where it stays — and maybe after that, I put it on
 the Store.
 
-It's offline by default. The only thing that ever touches the network is checking for app
+It's offline by default. The only thing that ever touches the network for now is checking for app
 updates — nothing you type, copy, or type into any app ever leaves your phone.
 
-## What you won't find in most keyboards
+## App Updates / Plans and PSA
+- I've publicly shared this keyboard only on Reddit threads (besides my website) and few kind volunteers have tried and provided feedback on fixes/improvements and features. 
+- The keyboard currently only supports English, my plan is to introduce other language as well but it's not my current priority. 
+- I am prioritizing more on optimizing the UX and autocorrection/prediction engine as its being written from the scratch.
+- The keyboard is optimized for battery usage as well. Fleksy used to take around 5-10%, while this takes just around 1%.
+- Note: Not tested for old hardwares, if you do, please test and lmk feedback.
+- send feedback or feature requests to omakey@iambishistha.com if you have any. thanks for trying.
 
-- A floating keyboard you can put anywhere on screen — and still tap the app behind it, which
-  most floating keyboards won't let you do.
-- One-handed mode and drag-to-resize, reachable from the keyboard itself rather than buried in
-  settings. Each mode remembers its own size.
-- Inline calculator — type `12+7=` and `12+7=19` shows up in the suggestion strip, ready to tap.
+---
+- Upcoming fixes: improve/fix the floating mode, improve quickaccess toolkit (added in v4.0.0), improve theming
+- Planned features: multi-lang support, voice input
+- Not planned: glide-typing
+
+
+## What omakey offers
+
+- A floating keyboard you can put anywhere on screen (doesn't work as expected now, update incoming)
+- One-handed mode and drag-to-resize.
+- Inline calculator — type `12+7=` and `12+7=19` shows up in the suggestion strip, ready to tap (took inspo from iOS keyboard).
 - Undo/redo — two buttons that step back and forward through your last several typed or deleted
-  words, treating a paste as one thing rather than unwinding it a word at a time.
-- Clipboard history — text and images, several at once, not just whatever you last copied.
-- Grid layout mode — a bordered, edge-to-edge key style, separate from whichever color theme
-  you're using.
-- Gestures that do real work — swipe left deletes a whole word, swipe up saves it to your
-  dictionary, drag the spacebar to move the cursor.
+  words.
+- Clipboard history — text and images.
+- Grid layout mode — a bordered, edge-to-edge key style theme
+- Gestures like on Fleksy — swipe left deletes a whole word (Swipe left and hold keeps deleting the words), swipe up saves it to your dictionary, swipe up/down to switch between the suggestions/corrections, hold and drag the spacebar to move the cursor, swipe right for space (off by default).
 - An editable "Learned words" list — view, search, edit, or delete anything individually, not
-  just wipe the whole dictionary.
-- A theme editor with a live full-size preview and a proper HSV/hex color picker, aware of which
-  layout (Normal or Grid) a theme was built for.
+  just wipe the whole dictionary (Note: the app is set to suggest your autolearned word after 3 enters).
+- A theme editor with a live full-size preview and a proper HSV/hex color picker.
+- Adjustable height and position for your keyboard (the position caps to center of the screen).
+
 
 ## Who this is for
 
-- Anyone who used to love Fleksy.
-- Anyone tired of a keyboard that corrects wrong and doesn't tell you why.
-- Anyone who wants a keyboard that can't leak what they type, because it has no way to.
-- One-handed and thumb typists who want the keyboard to work with them, not against them.
+- Anyone who used to love Fleksy (but the app has evolved a lot from there).
+- Anyone who needs configurable and themable keyboard
+
 
 ## What this isn't
 
@@ -257,10 +265,4 @@ Not on the Play Store yet. In the meantime:
 [GPL-3.0](LICENSE). Fork it, modify it, ship your own version — just keep it open, the same way
 this one is.
 
----
 
-<div align="center">
-
-I built this because I missed typing fast.
-
-</div>
