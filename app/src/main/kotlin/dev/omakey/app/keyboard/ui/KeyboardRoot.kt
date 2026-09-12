@@ -185,9 +185,14 @@ fun KeyboardRoot(
     feedback: KeyboardFeedback = NoOpKeyboardFeedback,
     /** Reports the keyboard's own rectangle, in window coordinates, every time it is laid out.
      * `OmakeyInputMethodService` needs it to mark exactly that region touchable while floating —
-     * everything outside must fall through to the app. Defaulted to a no-op so previews and the
-     * Settings mock can host this composable without a service. */
-    onKeyboardBoundsChanged: (androidx.compose.ui.geometry.Rect) -> Unit = {},
+     * everything outside must fall through to the app.
+     *
+     * Deliberately **not** defaulted, unlike the parameters above. It was, and floating mode was
+     * silently broken for it: the sole call site never passed it, so the service's bounds field
+     * stayed null forever and `onComputeInsets` early-returned on every call. A no-op default on a
+     * required collaboration compiles fine and fails only at runtime, in one placement mode. A
+     * preview or mock that wants to host this composable can pass `{}` explicitly. */
+    onKeyboardBoundsChanged: (androidx.compose.ui.geometry.Rect) -> Unit,
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val theme = resolveEffectiveTheme(uiState.theme, uiState.useSystemAccent)

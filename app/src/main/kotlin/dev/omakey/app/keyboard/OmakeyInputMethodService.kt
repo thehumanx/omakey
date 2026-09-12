@@ -374,6 +374,7 @@ class OmakeyInputMethodService :
                         accessibilityPreferences,
                         onOpenSettings = ::openSettings,
                         feedback = keyboardFeedback,
+                        onKeyboardBoundsChanged = ::onKeyboardBoundsChanged,
                     )
                 }
             }
