@@ -1,6 +1,7 @@
 package dev.omakey.app.keyboard
 
 import android.view.inputmethod.EditorInfo
+import dev.omakey.core.locale.KeyboardLocale
 import dev.omakey.core.feedback.HapticSoundSettings
 import dev.omakey.core.gesture.GestureSettings
 import dev.omakey.core.layout.KeyboardLayout
@@ -31,7 +32,7 @@ enum class TopStripTab { SUGGESTIONS, TOOLS, NUMBERS }
 enum class SuggestionKind { PLAIN, CORRECTION }
 
 data class KeyboardUiState(
-    val layout: KeyboardLayout = Layouts.QwertyEnUS,
+    val layout: KeyboardLayout = KeyboardLocale.Default.letterLayout,
     val shiftOn: Boolean = false,
     /** True once shift has been long-pressed into caps-lock — every letter is capitalized until
      * shift is tapped again, unlike plain [shiftOn] which is a one-shot "capitalize just the next
@@ -82,4 +83,8 @@ data class KeyboardUiState(
     /** Drag-to-resize is armed: the keyboard draws corner handles and a Done bar, and ordinary
      * typing is suspended. What can be dragged depends on [LayoutSettings.placement]. */
     val resizing: Boolean = false,
+    /** True until the language model has finished memory-mapping. Only the suggestion strip cares:
+     * it is legitimately empty during a cold start, and without this that is indistinguishable from
+     * "there is nothing to suggest for this word". */
+    val suggestionsLoading: Boolean = false,
 )

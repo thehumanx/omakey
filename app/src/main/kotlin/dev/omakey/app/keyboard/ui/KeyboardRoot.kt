@@ -62,6 +62,7 @@ import dev.omakey.app.keyboard.KeyboardFeedback
 import dev.omakey.app.keyboard.KeyboardViewModel
 import dev.omakey.app.keyboard.NoOpKeyboardFeedback
 import dev.omakey.app.keyboard.resolveEffectiveTheme
+import dev.omakey.core.locale.KeyboardLocale
 import dev.omakey.core.icons.*
 import dev.omakey.core.gesture.GestureEvent
 import dev.omakey.core.gesture.GestureStateMachine
@@ -295,10 +296,10 @@ fun KeyboardRoot(
     // layout is active. The *height* it divides is the current placement's own — a floating
     // keyboard has its own height, which is what makes "resize in the current mode" work without
     // any mode-specific code down here.
-    val rowHeightDp = place.keyboardHeightDp / Layouts.QwertyEnUS.rows.size
+    val rowHeightDp = place.keyboardHeightDp / KeyboardLocale.Default.letterLayout.rows.size
     val gridHeightDp = rowHeightDp * effectiveRows.size
     // The "home row" (asdfghjkl) is always the second row of the base QWERTY layout.
-    val homeRowIndex = if (uiState.layout.id == Layouts.QwertyEnUS.id) 1 else -1
+    val homeRowIndex = if (uiState.layout.id == KeyboardLocale.Default.letterLayout.id) 1 else -1
 
     // Everything below sits inside a placement container. Docked, it is a plain wrapper and the
     // keyboard fills it exactly as before. Floating, it is a tall transparent area the keyboard is
@@ -1658,6 +1659,7 @@ private fun TopStrip(
                 0 -> SuggestionsTabContent(
                     suggestions = uiState.suggestions,
                     emojiSuggestions = uiState.emojiSuggestions,
+                    loading = uiState.suggestionsLoading,
                     firstSuggestionKind = uiState.firstSuggestionKind,
                     activeSuggestionIndex = uiState.activeSuggestionIndex,
                     theme = theme,
@@ -1736,6 +1738,8 @@ private fun QuickAccessButton(
 internal fun SuggestionsTabContent(
     suggestions: List<String>,
     emojiSuggestions: List<String>,
+    /** Model still loading — see [dev.omakey.app.keyboard.KeyboardUiState.suggestionsLoading]. */
+    loading: Boolean,
     firstSuggestionKind: dev.omakey.app.keyboard.SuggestionKind,
     activeSuggestionIndex: Int,
     theme: OmakeyTheme,
@@ -1751,6 +1755,26 @@ internal fun SuggestionsTabContent(
     // item must follow that index, not always sit at position 0 (real bug, fixed: swiping to,
     // say, "these" left "this" looking highlighted/quoted the whole time).
     val activeIndex = if (activeSuggestionIndex in suggestions.indices) activeSuggestionIndex else 0
+
+    // Only while there is genuinely nothing to show. A cold start that already has suggestions
+    // (because the word was typed after loading finished) must not flash a placeholder over them.
+    if (loading && suggestions.isEmpty() && emojiSuggestions.isEmpty()) {
+        Box(
+            Modifier.fillMaxWidth().fillMaxHeight().padding(horizontal = if (isGridMode) 0.dp else 8.dp),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            Text(
+                text = "Loading suggestions…",
+                // Faded to the same degree as an inactive candidate: this is a status note, not
+                // something to read or tap, and it occupies a row the eye is trained to scan.
+                color = theme.keyTextColor.toComposeColor().copy(alpha = SUGGESTION_FADED_ALPHA),
+                fontFamily = fontFamily,
+                maxLines = 1,
+            )
+        }
+        return
+    }
+
     LazyRow(
         Modifier.fillMaxWidth().fillMaxHeight().padding(horizontal = if (isGridMode) 0.dp else 8.dp),
         verticalAlignment = Alignment.CenterVertically,

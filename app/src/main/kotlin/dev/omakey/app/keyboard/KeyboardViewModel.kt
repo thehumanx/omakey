@@ -1,6 +1,7 @@
 package dev.omakey.app.keyboard
 
 import android.view.inputmethod.EditorInfo
+import dev.omakey.core.locale.KeyboardLocale
 import dev.omakey.core.emoji.EmojiSkinTone
 import dev.omakey.core.emoji.WordEmojiSuggestions
 import dev.omakey.core.gesture.GesturePreferences
@@ -57,6 +58,10 @@ import kotlinx.coroutines.flow.update
 class KeyboardViewModel(
     private val textEditor: TextEditor,
     private val predictionEngine: PredictionEngine,
+    /** Emits once the language model is mapped. Separate from [predictionEngine] itself because the
+     * engine handed in during a cold start is a [dev.omakey.core.predict.DeferredPredictionEngine]
+     * that answers every call with nothing until then. */
+    private val predictionReady: StateFlow<Boolean> = MutableStateFlow(true),
     private val autocorrectIndex: AutocorrectIndex,
     private val autocorrectPreferences: AutocorrectPreferences,
     private val predictionPreferences: PredictionPreferences,
@@ -230,6 +235,16 @@ class KeyboardViewModel(
         incognitoPreferences.incognito
             .onEach { enabled -> _uiState.update { it.copy(incognito = enabled) } }
             .launchIn(scope)
+        predictionReady
+            .onEach { ready ->
+                _uiState.update { it.copy(suggestionsLoading = !ready) }
+                // The strip was built from an engine that could not answer yet, so whatever is on
+                // screen right now is the degraded result. Re-deriving it is what turns the
+                // placeholder into real suggestions for the word already being typed, rather than
+                // leaving the user to type another character before anything appears.
+                if (ready) refreshSuggestions()
+            }
+            .launchIn(scope)
     }
 
     /** Manual incognito toggle, from the keyboard's own toolbar. Deliberately session state rather
@@ -275,7 +290,7 @@ class KeyboardViewModel(
         }
         _uiState.update {
             it.copy(
-                layout = Layouts.QwertyEnUS,
+                layout = KeyboardLocale.Default.letterLayout,
                 shiftOn = autocorrectPreferences.settings.value.autoCapitalizeEnabled && textEditor.textBeforeCursor(1).isEmpty(),
                 capsLockOn = false,
                 suggestions = emptyList(),
@@ -457,7 +472,7 @@ class KeyboardViewModel(
             }
             SpecialKeyCode.LETTERS -> {
                 symbolTypedInSymbolsMode = false
-                switchLayout(Layouts.QwertyEnUS)
+                switchLayout(KeyboardLocale.Default.letterLayout)
             }
             SpecialKeyCode.EXTENSIONS -> toggleExtensionPanel()
             else -> onCharacter(code)
@@ -902,7 +917,7 @@ class KeyboardViewModel(
         lastSpaceCommitAtMs = System.currentTimeMillis()
         if (symbolTypedInSymbolsMode) {
             symbolTypedInSymbolsMode = false
-            switchLayout(Layouts.QwertyEnUS)
+            switchLayout(KeyboardLocale.Default.letterLayout)
         }
         refreshSuggestions(checkContextualCorrection = true)
         maybeAutoCapitalize()

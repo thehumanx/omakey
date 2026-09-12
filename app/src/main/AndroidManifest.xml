@@ -21,8 +21,12 @@
          periodic check above actually show its "update available" notification. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- usesCleartextTraffic: targetSdk 35 already defaults this to false. Declared explicitly so
+         that lowering targetSdk later cannot silently re-enable plaintext HTTP for the single
+         network call this app makes (the GitHub release check). -->
     <application
         android:allowBackup="false"
+        android:usesCleartextTraffic="false"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:label="@string/app_name"

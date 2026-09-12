@@ -89,6 +89,7 @@ import dev.omakey.app.R
 import dev.omakey.app.keyboard.SoundCatalog
 import dev.omakey.app.keyboard.VibratorKeyboardFeedback
 import dev.omakey.app.keyboard.ui.FontCatalog
+import dev.omakey.core.locale.KeyboardLocale
 import dev.omakey.core.icons.PhosphorCopy
 import dev.omakey.core.clipboard.ClipboardHistoryStore
 import dev.omakey.core.clipboard.ClipboardPreferences
@@ -457,7 +458,15 @@ private fun SettingsScreen(
                 SettingsSection(title = "About") {
                     Text(text = stringResource(R.string.privacy_notice), style = MaterialTheme.typography.bodyMedium)
                     Text(
-                        text = "Version ${dev.omakey.app.BuildConfig.VERSION_NAME}",
+                        // Build number alongside the version name, because they can legitimately
+                        // disagree: versionName is deliberately held fixed across iterative dev
+                        // installs within a release cycle (see app/build.gradle.kts) while
+                        // versionCode increments every time. The update check can only compare
+                        // versionName against a release tag, so on a dev build "you're up to date"
+                        // means "no newer *tag* exists", not "you are running the tagged code".
+                        // Showing the build number is what lets someone tell which they have.
+                        text = "Version ${dev.omakey.app.BuildConfig.VERSION_NAME} " +
+                            "(build ${dev.omakey.app.BuildConfig.VERSION_CODE})",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -562,7 +571,7 @@ private fun KeyboardSizePositionOverlay(
     var heightDp by remember(settings.keyboardHeightDp) { mutableFloatStateOf(settings.keyboardHeightDp.toFloat()) }
     var offsetDp by remember(settings.bottomOffsetDp) { mutableFloatStateOf(settings.bottomOffsetDp.toFloat()) }
 
-    val rows = Layouts.QwertyEnUS.rows
+    val rows = KeyboardLocale.Default.letterLayout.rows
     val rowHeightDp = (heightDp.roundToInt() / rows.size)
     val keyboardTotalHeightDp = rowHeightDp * rows.size
     val maxOffsetDp = (configuration.screenHeightDp / 2f - keyboardTotalHeightDp).coerceAtLeast(0f)
@@ -2086,6 +2095,8 @@ private fun ThemePreviewMock(
                 emojiSuggestions = listOf("😊"),
                 firstSuggestionKind = dev.omakey.app.keyboard.SuggestionKind.PLAIN,
                 activeSuggestionIndex = -1,
+                // The Settings preview shows a fixed sample, never a live engine.
+                loading = false,
                 theme = theme,
                 fontFamily = fontFamily,
                 showKeyBackgrounds = showKeyBackgrounds,
@@ -2106,7 +2117,7 @@ private fun ThemePreviewMock(
                     }
                 },
         ) {
-        Layouts.QwertyEnUS.rows.forEachIndexed { rowIndex, row ->
+        KeyboardLocale.Default.letterLayout.rows.forEachIndexed { rowIndex, row ->
             dev.omakey.app.keyboard.ui.KeyRowView(
                 rowKeys = row.keys,
                 rowHeightDp = rowHeightDp,

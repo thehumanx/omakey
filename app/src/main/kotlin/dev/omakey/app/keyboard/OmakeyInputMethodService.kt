@@ -33,6 +33,7 @@ import dev.omakey.core.feedback.HapticSoundPreferences
 import dev.omakey.core.gesture.GesturePreferences
 import dev.omakey.core.input.TextEditor
 import dev.omakey.core.layout.KeyboardPlacement
+import dev.omakey.core.locale.KeyboardLocale
 import dev.omakey.core.layout.LayoutPreferences
 import dev.omakey.core.predict.AutocorrectIndex
 import dev.omakey.core.predict.AutocorrectPreferences
@@ -283,7 +284,7 @@ class OmakeyInputMethodService :
         // There is nothing left to resume: mapping a file either succeeds or throws.
         serviceScope.launch {
             runCatching {
-                val model = LanguageModel.load(applicationContext)
+                val model = LanguageModel.load(applicationContext, KeyboardLocale.Default.languageModelAsset)
                 personalModel.load(
                     database.wordDao().allUserAdded().map {
                         PersonalLanguageModel.Entry(
@@ -383,6 +384,7 @@ class OmakeyInputMethodService :
         val viewModel = KeyboardViewModel(
             textEditor = textEditor,
             predictionEngine = predictionEngine,
+            predictionReady = predictionEngine.ready,
             autocorrectIndex = autocorrectIndex,
             autocorrectPreferences = autocorrectPreferences,
             predictionPreferences = predictionPreferences,

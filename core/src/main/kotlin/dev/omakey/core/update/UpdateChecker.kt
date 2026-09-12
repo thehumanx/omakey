@@ -102,19 +102,61 @@ class GithubReleaseUpdateChecker(
         return if (parsed.protocol.equals("https", ignoreCase = true) && trusted) url else fallback
     }
 
-    private fun isNewerVersion(latest: String, current: String): Boolean {
-        val latestParts = latest.split(".").map { it.toIntOrNull() ?: 0 }
-        val currentParts = current.split(".").map { it.toIntOrNull() ?: 0 }
-        val length = maxOf(latestParts.size, currentParts.size)
-        for (i in 0 until length) {
-            val l = latestParts.getOrElse(i) { 0 }
-            val c = currentParts.getOrElse(i) { 0 }
-            if (l != c) return l > c
-        }
-        return false
-    }
-
     private companion object {
         const val TIMEOUT_MS = 10_000
     }
+}
+
+/**
+ * Whether [latest] is a release the user does not already have.
+ *
+ * Numeric parts first, left to right, missing parts treated as zero — so "4.1" beats "4.0.9"
+ * and "4.0" equals "4.0.0".
+ *
+ * **Pre-release suffixes are the part that used to be silently wrong.** `toIntOrNull() ?: 0`
+ * turned "rc1" into 0, so "4.0.0-rc1" and "4.0.0" compared *equal* and a user on the release
+ * build would never be offered an upgrade from a pre-release tag — and, worse, a user on
+ * "4.0.0-rc1" would never be told that final "4.0.0" exists, which is exactly the person who
+ * most needs to hear it. Suffixes now decide the comparison when the numbers tie, following the
+ * usual semver rule: **a pre-release is older than the release it precedes.**
+ *
+ * Harmless today because every tag so far is strictly numeric. That is a property of the
+ * release process, not of this function, and it stops being true the first time anyone tags an
+ * rc.
+ */
+internal fun isNewerVersion(latest: String, current: String): Boolean {
+    val (latestNumbers, latestSuffix) = splitVersion(latest)
+    val (currentNumbers, currentSuffix) = splitVersion(current)
+
+    val length = maxOf(latestNumbers.size, currentNumbers.size)
+    for (i in 0 until length) {
+        val l = latestNumbers.getOrElse(i) { 0 }
+        val c = currentNumbers.getOrElse(i) { 0 }
+        if (l != c) return l > c
+    }
+
+    // Numbers tie: no suffix outranks any suffix, and two suffixes compare lexically so
+    // "rc2" beats "rc1".
+    return when {
+        latestSuffix == currentSuffix -> false
+        latestSuffix.isEmpty() -> true
+        currentSuffix.isEmpty() -> false
+        else -> latestSuffix > currentSuffix
+    }
+}
+
+/** Splits "4.0.0-rc1" into [4, 0, 0] and "rc1". A suffix may be introduced by "-" or by being
+ * glued to the last number ("4.0.0rc1"), since release tags in the wild do both. */
+private fun splitVersion(version: String): Pair<List<Int>, String> {
+    val normalised = version.trim().removePrefix("v")
+    val separator = normalised.indexOfFirst { it == '-' || it == '+' }
+    val numericPart = if (separator >= 0) normalised.substring(0, separator) else normalised
+    var suffix = if (separator >= 0) normalised.substring(separator + 1) else ""
+
+    val numbers = numericPart.split(".").map { part ->
+        val digits = part.takeWhile { it.isDigit() }
+        if (digits.length != part.length && suffix.isEmpty()) suffix = part.drop(digits.length)
+        digits.toIntOrNull() ?: 0
+    }
+    return numbers to suffix.lowercase()
 }
