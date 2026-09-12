@@ -118,12 +118,20 @@ class OmakeyInputMethodService :
     private val onClipboardCopy: (String) -> Unit = { rawText ->
         val text = rawText.trim()
         if (text.isNotEmpty()) {
+            // Set even when the copy won't be recorded: suppression exists to stop the listener
+            // re-reading primaryClip for a change omakey itself caused (which fires the OS's "read
+            // your clipboard" toast). That read is pointless whether or not we go on to store the
+            // text, and skipping the flag while incognito would trade a privacy fix for a spurious
+            // toast every time the user copies out of a password field.
             suppressNextClipboardRead = true
             lastCapturedClipText = text
             lastCapturedClipUri = null
-            serviceScope.launch {
-                database.clipboardDao().insert(ClipboardEntity(content = text, timestamp = System.currentTimeMillis()))
-                database.clipboardDao().trimUnpinned()
+            if (!incognitoPreferences.incognito.value) {
+                serviceScope.launch {
+                    database.clipboardDao()
+                        .insert(ClipboardEntity(content = text, timestamp = System.currentTimeMillis()))
+                    trimClipboardHistory()
+                }
             }
         }
     }
@@ -161,6 +169,7 @@ class OmakeyInputMethodService :
      * finishing before reloading its own list, instead of racing a detached coroutine. */
     private suspend fun captureCurrentClipboardIfNew() {
         val clip = clipboardManager.primaryClip?.takeIf { it.itemCount > 0 } ?: return
+        if (!shouldCaptureClip(clip.description)) return
         val item = clip.getItemAt(0)
         val imageUri = item.uri?.takeIf { clip.description?.hasMimeType("image/*") == true }
         if (imageUri != null) {
@@ -179,7 +188,7 @@ class OmakeyInputMethodService :
                     imagePath = path,
                 ),
             )
-            database.clipboardDao().trimUnpinned()
+            trimClipboardHistory()
             return
         }
         val text = item.coerceToText(this)?.toString()?.trim()
@@ -187,16 +196,81 @@ class OmakeyInputMethodService :
         lastCapturedClipText = text
         lastCapturedClipUri = null
         database.clipboardDao().insert(ClipboardEntity(content = text, timestamp = System.currentTimeMillis()))
-        database.clipboardDao().trimUnpinned()
+        trimClipboardHistory()
     }
 
+    /**
+     * Whether a clip may be written to clipboard history at all. History is a convenience; a
+     * plaintext on-device copy of a secret is not a tradeoff a keyboard gets to make on the user's
+     * behalf, so both gates here fail closed.
+     *
+     * Two independent reasons to refuse:
+     *
+     *  - **The clip is marked sensitive.** Password managers and any app that has thought about it
+     *    set `ClipDescription.EXTRA_IS_SENSITIVE` (API 33+) precisely so that keyboards and
+     *    clipboard managers don't retain the value. It is a compile-time String constant, so
+     *    naming it here is safe on older releases — the extra simply won't be present.
+     *  - **Incognito is engaged.** Either the user asked for it, or the focused field is a password
+     *    / no-personalised-learning field (`KeyboardViewModel.resetForNewField`).
+     *
+     * The second gate closes an asymmetry that was live until now and that nobody had decided on:
+     * `isSensitiveField()` kept typed passwords out of the *dictionary*, but the clipboard listener
+     * ran ungated for the whole time the keyboard was on screen. Typing a password was protected;
+     * copying one was not, and it landed in plaintext SQLite retained ~50 entries deep.
+     */
+    // InlinedApi: EXTRA_IS_SENSITIVE is a `static final String`, so the compiler inlines its value
+    // and nothing looks the field up at runtime. On pre-33 devices the lookup simply misses and the
+    // clip is treated as non-sensitive — which is the only thing it could be, since no pre-33 app
+    // can set the extra in the first place.
+    @Suppress("InlinedApi")
+    private fun shouldCaptureClip(description: android.content.ClipDescription?): Boolean {
+        if (incognitoPreferences.incognito.value) return false
+        val sensitive = description?.extras?.getBoolean(android.content.ClipDescription.EXTRA_IS_SENSITIVE) == true
+        return !sensitive
+    }
+
+    private val clipboardImagesDir: java.io.File get() = java.io.File(filesDir, "clipboard_images")
+
     private fun copyClipboardImage(uri: android.net.Uri): String? = runCatching {
-        val dir = java.io.File(filesDir, "clipboard_images").apply { mkdirs() }
+        val dir = clipboardImagesDir.apply { mkdirs() }
         val file = java.io.File(dir, "clip_${System.currentTimeMillis()}.png")
         val input = contentResolver.openInputStream(uri) ?: return null
-        input.use { stream -> file.outputStream().use { stream.copyTo(it) } }
+        // Capped rather than copied wholesale: the source is an arbitrary content:// stream from
+        // another app, of unknown and unbounded length, being written to app-private storage the
+        // user never sees. A clip too large to keep is dropped entirely (partial file deleted, null
+        // returned) so no half-written PNG is ever referenced by a row.
+        val copied = input.use { stream -> file.outputStream().use { stream.copyTo(it) } }
+        if (copied > MAX_CLIPBOARD_IMAGE_BYTES) {
+            file.delete()
+            return null
+        }
         file.absolutePath
     }.getOrNull()
+
+    /**
+     * Trims the history table, then reconciles the image directory against what survived.
+     *
+     * The reconciliation is the part that has to exist: [ClipboardDao.trimUnpinned] is raw SQL and
+     * cannot touch the filesystem, and the only file deletion in the codebase was on the
+     * single-item `delete(id)` path. So every image that aged out of the 50-row window — full
+     * resolution screenshots, no age cap — orphaned its PNG in app-private storage permanently,
+     * invisible to the user and never reclaimed.
+     *
+     * Deleting strays (files no surviving row references) rather than deleting per trimmed row is
+     * deliberate: it is self-healing, so files already orphaned by earlier versions are cleaned up
+     * on the next capture instead of leaking forever. Best-effort throughout — a file that can't be
+     * deleted is not worth failing a clipboard capture over.
+     */
+    private suspend fun trimClipboardHistory() {
+        val dao = database.clipboardDao()
+        dao.trimUnpinned()
+        runCatching {
+            val referenced = dao.referencedImagePaths().toHashSet()
+            clipboardImagesDir.listFiles()?.forEach { file ->
+                if (file.absolutePath !in referenced) file.delete()
+            }
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -495,5 +569,10 @@ class OmakeyInputMethodService :
 
     private companion object {
         const val TAG = "OmakeyIME"
+
+        /** Ceiling on a single copied clipboard image. Generous enough for any screenshot or photo
+         * a user would plausibly paste, small enough that 50 of them is a bounded amount of
+         * app-private storage rather than an open-ended one. */
+        const val MAX_CLIPBOARD_IMAGE_BYTES = 8L * 1024 * 1024
     }
 }

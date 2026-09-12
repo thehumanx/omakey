@@ -84,6 +84,9 @@ interface ClipboardDao {
     @Query("DELETE FROM clipboard_history WHERE id = :id")
     suspend fun delete(id: Long)
 
-    @Query("DELETE FROM clipboard_history")
-    suspend fun deleteAll()
+    /** Every image file still referenced by a surviving row. Used to reconcile the image directory
+     * against the table after a trim: [trimUnpinned] is raw SQL and cannot delete files, so
+     * without this every image aged out of the history window would leak its PNG forever. */
+    @Query("SELECT imagePath FROM clipboard_history WHERE imagePath IS NOT NULL")
+    suspend fun referencedImagePaths(): List<String>
 }
