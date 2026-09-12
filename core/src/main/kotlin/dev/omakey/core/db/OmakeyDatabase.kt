@@ -10,7 +10,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 @Database(
     entities = [WordEntity::class, ClipboardEntity::class],
     version = 4,
-    exportSchema = false,
+    exportSchema = true,
 )
 abstract class OmakeyDatabase : RoomDatabase() {
     abstract fun wordDao(): WordDao
@@ -65,13 +65,18 @@ abstract class OmakeyDatabase : RoomDatabase() {
             }
         }
 
+        /** Exposed so `OmakeyDatabaseMigrationTest` exercises the migrations that actually ship
+         * rather than a copy of them, and so a new migration can't be added to the test's chain
+         * while being forgotten here (or the reverse). */
+        val MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+
         fun getInstance(context: Context): OmakeyDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
                     context.applicationContext,
                     OmakeyDatabase::class.java,
                     "omakey.db",
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build().also { instance = it }
+                ).addMigrations(*MIGRATIONS).build().also { instance = it }
             }
     }
 }

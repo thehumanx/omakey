@@ -12,6 +12,7 @@ android {
 
     defaultConfig {
         minSdk = 26
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     compileOptions {
@@ -51,4 +52,18 @@ dependencies {
     api(libs.kotlinx.coroutines.android)
 
     testImplementation(libs.junit)
+
+    androidTestImplementation(libs.junit)
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.androidx.test.runner)
+}
+
+// Room writes the schema of every version here, and it is committed, so a schema change shows up
+// as a reviewable diff instead of happening silently. exportSchema was off until v4, so there are
+// no JSON schemas for v1-v3 and none can be recovered — which is why OmakeyDatabaseMigrationTest
+// builds the old database by hand. From v4 onward the real schemas exist, so a future 4->5 can use
+// Room's MigrationTestHelper instead; add `androidx-room-testing` at that point rather than
+// carrying an unused dependency until then.
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
 }
