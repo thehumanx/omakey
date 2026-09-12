@@ -3,6 +3,14 @@
 All notable changes to omakey are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [4.1.1] — 2026-09-12
+
+### Fixed
+- **The floating keyboard's move handle was invisible.** 4.1.0 added a grab bar along the top of a
+  floating keyboard, but the keyboard's window wasn't made any taller to fit it, so the handle sat
+  just above the visible area — there, but off screen and impossible to touch. It's visible now.
+- The handle is also drawn in a colour that can't vanish on a custom theme.
+
 ## [4.1.0] — 2026-09-12
 
 A maintenance release. Floating mode was broken in a way that wasn't obvious, clipboard history was

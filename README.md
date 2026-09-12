@@ -253,7 +253,7 @@ never any auto-download or auto-install.
 
 ## Status
 
-omakey is on release 4.1.0, a maintenance release that fixed floating mode (it looked right but
+omakey is on release 4.1.1, a maintenance release that fixed floating mode (it looked right but
 the app underneath was still being pushed up, and taps outside the keyboard went nowhere), stopped
 clipboard history from saving passwords, and finished clipboard pinning. Release 4.0.0 before it
 made the keyboard movable and fixed autocorrect's blind spot around the first letter of a word.

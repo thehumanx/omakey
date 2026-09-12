@@ -182,6 +182,23 @@ fun KeyboardRoot(
     // any mode-specific code down here.
     val rowHeightDp = place.keyboardHeightDp / KeyboardLocale.Default.letterLayout.rows.size
     val gridHeightDp = rowHeightDp * effectiveRows.size
+
+    /** Zero unless floating, because only a floating keyboard carries a move handle. */
+    val handleHeightDp = if (placement == KeyboardPlacement.FLOATING) FLOATING_HANDLE_HEIGHT_DP else 0
+
+    /**
+     * How tall the keyboard actually is, handle included.
+     *
+     * Named once and used everywhere rather than re-added per site, because the handle previously
+     * had to be remembered in four separate places and was missed in one of them — the floating
+     * window's own height. The keyboard Column is bottom-aligned inside that window, so the 22dp it
+     * was short overflowed past the top edge and took the handle off screen with it: laid out,
+     * present in the hierarchy, invisible and untappable.
+     *
+     * Deliberately *not* used for the extension panel or the one-handed gutter — those size the
+     * content that sits below the handle, not the keyboard as a whole.
+     */
+    val keyboardTotalHeightDp = handleHeightDp + SUGGESTION_STRIP_HEIGHT_DP + gridHeightDp
     // The "home row" (asdfghjkl) is always the second row of the base QWERTY layout.
     val homeRowIndex = if (uiState.layout.id == KeyboardLocale.Default.letterLayout.id) 1 else -1
 
@@ -199,7 +216,9 @@ fun KeyboardRoot(
                     // Exactly tall enough to hold the keyboard at its current height off the
                     // bottom — no taller. A window bigger than it needs to be is more screen the
                     // system has to treat as ours, and more that can go wrong in a host app.
-                    Modifier.height((place.floatingBottomDp + SUGGESTION_STRIP_HEIGHT_DP + gridHeightDp).dp)
+                    // keyboardTotalHeightDp, not strip+grid: see its doc for the bug that came of
+                    // adding the handle up per-site instead.
+                    Modifier.height((place.floatingBottomDp + keyboardTotalHeightDp).dp)
                 } else {
                     Modifier.wrapContentHeight()
                 },
@@ -481,8 +500,7 @@ fun KeyboardRoot(
                 theme = theme,
                 placement = placement,
                 place = place,
-                totalHeightDp = SUGGESTION_STRIP_HEIGHT_DP + gridHeightDp +
-                    if (placement == KeyboardPlacement.FLOATING) FLOATING_HANDLE_HEIGHT_DP else 0,
+                totalHeightDp = keyboardTotalHeightDp,
                 edgePaddingDp = if (layoutSettings.edgePadding && placement == KeyboardPlacement.DOCKED) {
                     LayoutSettings.EDGE_PADDING_DP
                 } else {

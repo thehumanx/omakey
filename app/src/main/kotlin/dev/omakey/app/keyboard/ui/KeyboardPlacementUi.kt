@@ -435,14 +435,18 @@ internal fun FloatingMoveHandle(theme: OmakeyTheme, place: PlacementState) {
             .semantics { contentDescription = "Move keyboard" },
         contentAlignment = Alignment.Center,
     ) {
-        // The usual short pill. Drawn in the pressed-key colour so it reads as part of the
-        // keyboard's own furniture rather than a floating artefact.
+        // Drawn from keyTextColor, faded — not keyBackgroundPressed, which was the first choice and
+        // is the wrong one: pressed-key colour is designed to contrast with *keyBackground*, and a
+        // custom theme is free to set it equal to keyboardBackground, which is what this sits on.
+        // The pill would then be invisible with nothing obviously wrong. keyTextColor is the one
+        // colour a theme must keep legible against the keyboard background, so deriving from it
+        // means the handle cannot disappear on any theme, including ones not written yet.
         Box(
             Modifier
-                .size(width = 36.dp, height = 4.dp)
+                .size(width = 40.dp, height = 5.dp)
                 .background(
-                    theme.keyBackgroundPressed.toComposeColor(),
-                    androidx.compose.foundation.shape.RoundedCornerShape(2.dp),
+                    theme.keyTextColor.toComposeColor().copy(alpha = 0.4f),
+                    androidx.compose.foundation.shape.RoundedCornerShape(2.5.dp),
                 ),
         )
     }
