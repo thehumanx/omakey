@@ -45,7 +45,7 @@ updates — nothing you type, copy, or type into any app ever leaves your phone.
 - send feedback or feature requests to omakey@iambishistha.com if you have any. thanks for trying.
 
 ---
-- Upcoming fixes: improve/fix the floating mode, improve quickaccess toolkit (added in v4.0.0), improve theming
+- Upcoming fixes: improve quickaccess toolkit (added in v4.0.0), improve theming
 - Planned features: multi-lang support, voice input
 - Not planned: glide-typing
 
@@ -128,9 +128,9 @@ menus involved:
 A button at the left of the suggestion strip opens Quick access — the things you decide in the
 moment, while looking at whatever you're typing into:
 
-- **Floating** — detach the keyboard and drag it anywhere. The app behind it stays visible *and*
-  usable: tapping outside the keyboard reaches the app, and the app isn't shoved upward the way a
-  docked keyboard shoves it.
+- **Floating** — detach the keyboard and drag it anywhere by the grab bar along its top. The app
+  behind it stays visible *and* usable: tapping outside the keyboard reaches the app, and the app
+  isn't shoved upward the way a docked keyboard shoves it.
 - **One-handed** — shrink it to the left or right so your thumb reaches everything, with buttons
   alongside to switch sides, go back to full width, or resize.
 - **Resize** — drag the corners, in whichever mode you're in. Floating, one-handed and normal each
@@ -179,8 +179,14 @@ Swipe to the Tools tab for:
 - **Undo / Redo** for your last several typed or deleted words. A paste, a cut or a deleted
   selection counts as one step, however much text it moved.
 - **Select all / Copy / Cut / Paste**, without leaving the keyboard.
-- **Clipboard history** — every recent copy, text and images, one tap away. Long-press to delete
-  an item. Opening clipboard mode dims everything else so it's clearly its own space.
+- **Clipboard history** — every recent copy, text and images, one tap away. Long-press an entry to
+  pin or remove it; pinned entries stay at the top and are never cleared out to make room for newer
+  ones. Opening clipboard mode dims everything else so it's clearly its own space.
+- Settings → Typing has the full list: see everything that's saved, unpin or remove single
+  entries, clear all of it, or turn clipboard history off entirely. Turning it off stops new
+  entries without deleting what's already there.
+- Passwords are never saved. Clips an app marks as sensitive are skipped, and nothing is recorded
+  while incognito is on or a password field is focused.
 
 ### A full, modern emoji picker
 
@@ -234,6 +240,11 @@ omakey is offline by default. Nothing you type, copy, or teach it can leave your
 there's no analytics or ad SDK anywhere in the app. Your dictionary, your clipboard, your settings
 all stay local.
 
+Clipboard history is the one thing omakey stores that you didn't type at it, so it gets explicit
+limits: clips an app marks as sensitive (passwords, mostly) are never saved, nothing is saved while
+incognito is on or a password field is focused, and Settings → Typing lets you review it, clear it,
+or switch it off entirely.
+
 The one exception: checking for app updates. Settings' About section has a manual "Check for
 updates" button, and (on by default, toggleable off) a periodic check every 12 hours that
 notifies you if a newer version is out. Either way, the only thing that ever happens on the
@@ -242,11 +253,14 @@ never any auto-download or auto-install.
 
 ## Status
 
-omakey is on release 4.0.0, which made the keyboard movable — floating, one-handed, and resizable
-from the keyboard itself — and fixed autocorrect's long-standing blind spot around the first letter
-of a word. Typing, gestures, autocorrect, prediction, both layout styles, the clipboard manager, and
-the emoji panel are all working today and getting updated regularly — see
-[CHANGELOG.md](CHANGELOG.md) for the full history.
+omakey is on release 4.1.0, a maintenance release that fixed floating mode (it looked right but
+the app underneath was still being pushed up, and taps outside the keyboard went nowhere), stopped
+clipboard history from saving passwords, and finished clipboard pinning. Release 4.0.0 before it
+made the keyboard movable and fixed autocorrect's blind spot around the first letter of a word.
+
+Typing, gestures, autocorrect, prediction, both layout styles, the clipboard manager, and the emoji
+panel are all working today and getting updated regularly — see [CHANGELOG.md](CHANGELOG.md) for the
+full history.
 
 ## Getting started
 

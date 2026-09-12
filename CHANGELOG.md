@@ -3,6 +3,48 @@
 All notable changes to omakey are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [4.1.0] — 2026-09-12
+
+A maintenance release. Floating mode was broken in a way that wasn't obvious, clipboard history was
+keeping things it shouldn't, and clipboard pinning turned out to be nearly finished but unreachable.
+
+### Fixed
+- **Floating mode actually works.** The app underneath was still being pushed up as though the
+  keyboard were docked, and the whole screen swallowed taps even where the keyboard wasn't — so
+  everywhere outside the floating keyboard was a dead zone. Both were the same disconnected wire.
+- **The floating keyboard can be moved directly.** Dragging worked before, but only after opening
+  Quick access and entering Resize, so repositioning was hidden behind a mode. There's a grab bar
+  along the top of a floating keyboard now.
+- **Passwords no longer land in clipboard history.** Copying from a password manager while omakey
+  was open saved the value to the device. Clips that an app marks as sensitive are now never
+  saved, and nothing is saved while incognito is on or a password field is focused. Typed
+  passwords were already protected; copied ones weren't.
+- **Copied images no longer pile up.** Images that aged out of clipboard history left their files
+  behind for good, invisible and never cleaned up. They're removed properly now, including ones
+  left behind by earlier versions, and a single copied image is capped in size.
+- **"Check for updates" understands pre-release versions.** A release candidate was treated as
+  identical to the final release, so anyone running one was never told the real version had
+  shipped.
+- **The suggestion strip says when it's still loading**, instead of looking empty for the first
+  moment after the keyboard opens.
+
+### Added
+- **Pin clipboard items.** Long-press an entry in the clipboard panel for Pin / Remove. Pinned
+  items stay at the top and are never cleared out to make room for newer ones.
+- **Clipboard controls in Settings.** See everything omakey has saved, unpin or remove single
+  entries, clear the lot, or turn clipboard history off entirely. Turning it off stops new entries
+  without deleting what's already there.
+- **The build number is shown** next to the version in Settings → About.
+
+### Removed
+- The unfinished GIF search placeholder. Searching would have meant sending what you type to a
+  third-party service, which isn't a trade this keyboard should make quietly.
+
+### Internal
+- Large parts of the codebase were reorganised and given tests — roughly 90 new ones, including the
+  database upgrade path, which had never been tested despite holding the one thing you can't get
+  back: the words you've taught it. No behaviour change intended from any of that.
+
 ## [4.0.0] — 2026-09-11
 
 The keyboard can now be moved, floated and resized from the keyboard itself, autocorrect can fix
