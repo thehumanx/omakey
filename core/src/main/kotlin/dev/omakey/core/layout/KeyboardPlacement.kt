@@ -23,6 +23,43 @@ enum class KeyboardPlacement {
 }
 
 /**
+ * Where tapping a placement tile for [tapped] should land, given the keyboard is currently in
+ * [this].
+ *
+ * Tapping the tile for the mode you are already in returns to [KeyboardPlacement.DOCKED], so every
+ * tile is its own off switch and there is no separate "back to normal" control to find.
+ */
+fun KeyboardPlacement.toggledWith(tapped: KeyboardPlacement): KeyboardPlacement =
+    if (this == tapped) KeyboardPlacement.DOCKED else tapped
+
+/**
+ * The one-handed tile's three-state cycle: off → right → left → off.
+ *
+ * Right first because it is the majority hand. The second tap **flips sides rather than switching
+ * off**, which matches the gutter's own switch-side button — if the tile turned it off instead, the
+ * tile and the gutter would disagree about what "tap again" means.
+ */
+fun KeyboardPlacement.nextOneHanded(): KeyboardPlacement = when (this) {
+    KeyboardPlacement.ONE_HANDED_RIGHT -> KeyboardPlacement.ONE_HANDED_LEFT
+    KeyboardPlacement.ONE_HANDED_LEFT -> KeyboardPlacement.DOCKED
+    else -> KeyboardPlacement.ONE_HANDED_RIGHT
+}
+
+/**
+ * The gutter's switch-side button: left ↔ right, and never off.
+ *
+ * Anything that is not already one-handed-left becomes right, so this is safe to call from a button
+ * that only exists while one-handed — and cannot land on [KeyboardPlacement.DOCKED], which would
+ * dismiss the gutter the user is pressing.
+ */
+fun KeyboardPlacement.flippedOneHandedSide(): KeyboardPlacement =
+    if (this == KeyboardPlacement.ONE_HANDED_RIGHT) {
+        KeyboardPlacement.ONE_HANDED_LEFT
+    } else {
+        KeyboardPlacement.ONE_HANDED_RIGHT
+    }
+
+/**
  * Clamping rules for keyboard size and position, kept as pure arithmetic with no Android or Compose
  * dependency so they can be unit-tested — the rest of this feature is window insets and Compose
  * layout, neither of which a JVM test can reach.

@@ -1,6 +1,5 @@
 package dev.omakey.app.keyboard
 
-import android.text.InputType
 import android.view.inputmethod.EditorInfo
 import dev.omakey.core.emoji.EmojiSkinTone
 import dev.omakey.core.emoji.WordEmojiSuggestions
@@ -9,10 +8,16 @@ import dev.omakey.core.gesture.GestureSettings
 import dev.omakey.core.input.TextEdit
 import dev.omakey.core.input.TextEditor
 import dev.omakey.core.input.UndoHistory
+import dev.omakey.core.input.isSensitiveField
+import dev.omakey.core.predict.matchCase
+import dev.omakey.core.predict.splitCorrection
 import dev.omakey.core.input.WordTracker
 import dev.omakey.core.layout.KeyboardLayout
 import dev.omakey.core.layout.KeyboardPlacement
 import dev.omakey.core.layout.LayoutPreferences
+import dev.omakey.core.layout.flippedOneHandedSide
+import dev.omakey.core.layout.nextOneHanded
+import dev.omakey.core.layout.toggledWith
 import dev.omakey.core.layout.LayoutSettings
 import dev.omakey.core.layout.Layouts
 import dev.omakey.core.layout.SpecialKeyCode
@@ -42,70 +47,6 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
 
-/** What the strip above the key grid is currently showing. Fleksy-style: one shared strip slot,
- * not three permanently-visible rows — suggestions is the default/most-used tab, the other two
- * are a tap away. */
-enum class TopStripTab { SUGGESTIONS, TOOLS, NUMBERS }
-
-/** Whether `suggestions[0]` is an [AutocorrectIndex.alternatives] result (a fix/variant of a
- * specific word — quoted in the strip) or an ordinary next-word prediction (unquoted). Purely a
- * rendering hint; *how* accepting a suggestion is applied is governed by
- * [KeyboardViewModel.ActiveCorrection], not this. */
-enum class SuggestionKind { PLAIN, CORRECTION }
-
-data class KeyboardUiState(
-    val layout: KeyboardLayout = Layouts.QwertyEnUS,
-    val shiftOn: Boolean = false,
-    /** True once shift has been long-pressed into caps-lock — every letter is capitalized until
-     * shift is tapped again, unlike plain [shiftOn] which is a one-shot "capitalize just the next
-     * letter" that clears itself after a single character (see [commitTypedChar]). */
-    val capsLockOn: Boolean = false,
-    val suggestions: List<String> = emptyList(),
-    /** Emoji matching the word currently being typed/just finished (see
-     * [dev.omakey.core.emoji.WordEmojiSuggestions]), rendered as extra chips alongside
-     * [suggestions] — an entirely separate, independent row: tapping one inserts the emoji next
-     * to the word rather than replacing/cycling it, so it never interacts with [firstSuggestionKind]
-     * / [activeSuggestionIndex] / correction-cycling state at all. */
-    val emojiSuggestions: List<String> = emptyList(),
-    val theme: OmakeyTheme = Presets.Dark,
-    /** Mirrors [ThemeRepository.useSystemAccent] — kept alongside [theme] rather than inside it
-     * since it's an orthogonal flag (see `resolveEffectiveTheme`, which is what actually applies
-     * it), not a property of the theme data itself. */
-    val useSystemAccent: Boolean = false,
-    /** Mirrors [ThemeRepository.layoutMode] — Normal vs. Grid keyboard structure, orthogonal to
-     * [theme]'s color. See [dev.omakey.core.theme.LayoutMode]'s doc. */
-    val layoutMode: dev.omakey.core.theme.LayoutMode = dev.omakey.core.theme.LayoutMode.NORMAL,
-    val activeExtensionId: String? = null,
-    val layoutSettings: LayoutSettings = LayoutSettings(),
-    val fontId: String = FontChoices.SYSTEM_DEFAULT,
-    val gestureSettings: GestureSettings = GestureSettings(),
-    val topStripTab: TopStripTab = TopStripTab.SUGGESTIONS,
-    val firstSuggestionKind: SuggestionKind = SuggestionKind.PLAIN,
-    /** Mirrors the private `suggestionCycleIndex` in [KeyboardViewModel] — -1 means "nothing's
-     * been cycled yet, treat index 0 as the highlighted candidate," >=0 is the actual index into
-     * [suggestions] currently applied via swipe up/down cycling. The suggestion strip highlights
-     * this index (falling back to 0 when -1), not always index 0. */
-    val activeSuggestionIndex: Int = -1,
-    /** Resolved from the focused field's [EditorInfo.imeOptions] each time a new field is
-     * focused — drives both the Enter key's label (e.g. "Go", "Send") and what it actually does
-     * on tap. [EditorInfo.IME_ACTION_NONE] (the default) means "just insert a newline." */
-    val enterAction: Int = EditorInfo.IME_ACTION_NONE,
-    val canUndo: Boolean = false,
-    val canRedo: Boolean = false,
-    /** A short-lived confirmation ("hello learned"/"hello unlearned") shown as an overlay above
-     * whichever extension bar content is currently active, for ~0.5s — see
-     * [KeyboardViewModel.showBanner]. */
-    val bannerMessage: String? = null,
-    /** True while nothing typed is being remembered — either the user toggled it, or the focused
-     * field is a password. Purely a rendering hint; the authority is [IncognitoPreferences]. */
-    val incognito: Boolean = false,
-    /** The quick-access tile panel is open, replacing the key grid. Same slot [activeExtensionId]
-     * drives, and mutually exclusive with it — opening one closes the other. */
-    val quickAccessOpen: Boolean = false,
-    /** Drag-to-resize is armed: the keyboard draws corner handles and a Done bar, and ordinary
-     * typing is suspended. What can be dragged depends on [LayoutSettings.placement]. */
-    val resizing: Boolean = false,
-)
 
 /**
  * Owns the current typing session's state: active layout, shift state, suggestions, and which
@@ -291,38 +232,6 @@ class KeyboardViewModel(
             .launchIn(scope)
     }
 
-    /**
-     * Whether a field must never be learned from.
-     *
-     * Covers the three password variants (text, web, numeric — they are distinct constants, and
-     * checking only `TYPE_TEXT_VARIATION_PASSWORD` would miss the web login form that most people
-     * actually type passwords into), plus visible-password fields, and any field that has asked
-     * not to receive suggestions at all. `IME_FLAG_NO_PERSONALIZED_LEARNING` is the platform's
-     * explicit way for an app to say "don't remember this" and is honoured directly.
-     *
-     * Variations live in the low bits of `inputType` and must be masked out before comparison;
-     * testing `inputType and VARIATION == VARIATION` without the mask matches unrelated fields.
-     */
-    private fun isSensitiveField(info: EditorInfo?): Boolean {
-        val editorInfo = info ?: return false
-        if ((editorInfo.imeOptions and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING) != 0) return true
-        val inputType = editorInfo.inputType
-        val classType = inputType and InputType.TYPE_MASK_CLASS
-        val variation = inputType and InputType.TYPE_MASK_VARIATION
-        if (classType == InputType.TYPE_CLASS_NUMBER &&
-            variation == InputType.TYPE_NUMBER_VARIATION_PASSWORD
-        ) {
-            return true
-        }
-        if (classType == InputType.TYPE_CLASS_TEXT) {
-            return variation == InputType.TYPE_TEXT_VARIATION_PASSWORD ||
-                variation == InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD ||
-                variation == InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD ||
-                (inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS) != 0
-        }
-        return false
-    }
-
     /** Manual incognito toggle, from the keyboard's own toolbar. Deliberately session state rather
      * than a saved preference — see [IncognitoPreferences]: someone who turns it on to type one
      * password should not silently lose personalisation forever afterwards. */
@@ -423,9 +332,7 @@ class KeyboardViewModel(
      * so every tile is its own off switch and there is no separate "back to normal" control.
      */
     fun setPlacement(placement: KeyboardPlacement) {
-        val current = layoutPreferences.settings.value.placement
-        val next = if (current == placement) KeyboardPlacement.DOCKED else placement
-        layoutPreferences.setPlacement(next)
+        layoutPreferences.setPlacement(layoutPreferences.settings.value.placement.toggledWith(placement))
         _uiState.update { it.copy(quickAccessOpen = false) }
     }
 
@@ -433,22 +340,12 @@ class KeyboardViewModel(
      * second tap flips sides rather than switching it off — matching the gutter's own switch-side
      * button, so the tile and the gutter don't disagree. */
     fun toggleOneHanded() {
-        val current = layoutPreferences.settings.value.placement
-        val next = when (current) {
-            KeyboardPlacement.ONE_HANDED_RIGHT -> KeyboardPlacement.ONE_HANDED_LEFT
-            KeyboardPlacement.ONE_HANDED_LEFT -> KeyboardPlacement.DOCKED
-            else -> KeyboardPlacement.ONE_HANDED_RIGHT
-        }
-        layoutPreferences.setPlacement(next)
+        layoutPreferences.setPlacement(layoutPreferences.settings.value.placement.nextOneHanded())
         _uiState.update { it.copy(quickAccessOpen = false) }
     }
 
     fun switchOneHandedSide() {
-        val next = when (layoutPreferences.settings.value.placement) {
-            KeyboardPlacement.ONE_HANDED_RIGHT -> KeyboardPlacement.ONE_HANDED_LEFT
-            else -> KeyboardPlacement.ONE_HANDED_RIGHT
-        }
-        layoutPreferences.setPlacement(next)
+        layoutPreferences.setPlacement(layoutPreferences.settings.value.placement.flippedOneHandedSide())
     }
 
     /** Persists the result of a resize/move drag. Called once on drag end, never per frame — the
@@ -847,17 +744,6 @@ class KeyboardViewModel(
         return true
     }
 
-    /** A correction result holding a single embedded space is a "missing space" fix, e.g.
-     * "thisbis" -> "this is" (see [AutocorrectIndex.alternatives]) — the space is a real word
-     * boundary rather than part of the word. Null for a plain single-word replacement, which is
-     * every other case. A space at either end is not a split: it would make one half empty, and
-     * committing an empty word as a boundary corrupts the typing-order bookkeeping. */
-    private fun splitCorrection(replacement: String): Pair<String, String>? {
-        val spaceIndex = replacement.indexOf(' ')
-        if (spaceIndex <= 0 || spaceIndex == replacement.length - 1) return null
-        return replacement.substring(0, spaceIndex) to replacement.substring(spaceIndex + 1)
-    }
-
     /** Commits both halves of a [splitCorrection]: the first word is finished then and there
      * (bookkeeping only, no learning — see [flushWordBuffer]'s doc), the second becomes the new
      * live buffer. Shared by [commitCorrection] and [applyActiveCorrection], which each carried
@@ -1117,12 +1003,6 @@ class KeyboardViewModel(
         if (corrected == typed) return
         commitCorrection(corrected)
         lastAutocorrect = AutocorrectRecord(original = typed, corrected = corrected)
-    }
-
-    private fun matchCase(typed: String, correctedLower: String): String = when {
-        typed.all { it.isUpperCase() } -> correctedLower.uppercase()
-        typed.first().isUpperCase() -> correctedLower.replaceFirstChar { it.uppercase() }
-        else -> correctedLower
     }
 
     private fun onDeleteCharacter() {
