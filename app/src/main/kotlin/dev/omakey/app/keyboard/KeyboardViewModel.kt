@@ -2,8 +2,8 @@ package dev.omakey.app.keyboard
 
 import android.view.inputmethod.EditorInfo
 import dev.omakey.core.locale.KeyboardLocale
+import dev.omakey.core.locale.LanguageProfile
 import dev.omakey.core.emoji.EmojiSkinTone
-import dev.omakey.core.emoji.WordEmojiSuggestions
 import dev.omakey.core.gesture.GesturePreferences
 import dev.omakey.core.gesture.GestureSettings
 import dev.omakey.core.input.TextEdit
@@ -87,7 +87,13 @@ class KeyboardViewModel(
     // The user's chosen emoji skin tone, read per use rather than captured — it can change from
     // Settings while the keyboard is open.
     private val emojiSkinTone: () -> EmojiSkinTone = { EmojiSkinTone.DEFAULT },
+    // The active language. A provider rather than a value because switching languages (AGENTS.md
+    // §66 Phase 5) happens while this instance is alive; every language-dependent rule below reads
+    // through it instead of assuming English.
+    private val locale: () -> KeyboardLocale = { KeyboardLocale.Default },
 ) {
+    private val profile: LanguageProfile get() = locale().profile
+
     private val _uiState = MutableStateFlow(
         KeyboardUiState(
             theme = themeRepository.currentTheme.value,
@@ -296,8 +302,9 @@ class KeyboardViewModel(
         }
         _uiState.update {
             it.copy(
-                layout = KeyboardLocale.Default.letterLayout,
-                shiftOn = autocorrectPreferences.settings.value.autoCapitalizeEnabled && textEditor.textBeforeCursor(1).isEmpty(),
+                layout = locale().letterLayout,
+                shiftOn = autocorrectPreferences.settings.value.autoCapitalizeEnabled && profile.hasCase &&
+                    textEditor.textBeforeCursor(1).isEmpty(),
                 capsLockOn = false,
                 suggestions = emptyList(),
                 emojiSuggestions = emptyList(),
@@ -485,7 +492,7 @@ class KeyboardViewModel(
             }
             SpecialKeyCode.LETTERS -> {
                 symbolTypedInSymbolsMode = false
-                switchLayout(KeyboardLocale.Default.letterLayout)
+                switchLayout(locale().letterLayout)
             }
             SpecialKeyCode.EXTENSIONS -> toggleExtensionPanel()
             else -> onCharacter(code)
@@ -500,7 +507,7 @@ class KeyboardViewModel(
      * commits ". ", cursor ends up right after it, and a swipe down/up should turn that "."
      * into "," / "!" / etc. rather than cycling word suggestions (which is what swipe up/down
      * normally does — see [onSwipeUp]/[onSwipeDown]). */
-    private val punctuationCycle = listOf('.', ',', '!', '?', ';', ':', '\'', '"')
+    private val punctuationCycle: List<Char> get() = profile.punctuationCycle
 
     /** Only fires when the cursor isn't inside a word-in-progress (the [WordTracker] buffer is empty —
      * a live word is what "cursor is inside the word" means here, since a mid-word cursor from
@@ -846,12 +853,12 @@ class KeyboardViewModel(
         if (_uiState.value.shiftOn) char = char.uppercaseChar()
         // Punctuation typed directly after a word (no space) is a word boundary too — correct
         // before committing the punctuation itself, so it lands after the fixed word.
-        if (!char.isLetter()) {
+        if (!profile.isWordChar(char)) {
             maybeAutocorrectBufferedWord()
         }
         textEditor.commitCharacter(char)
         if (_uiState.value.layout.id in SYMBOLS_LAYOUT_IDS) symbolTypedInSymbolsMode = true
-        if (char.isLetter()) {
+        if (profile.isWordChar(char)) {
             words.appendToBuffer(char)
             refreshSuggestions()
         } else {
@@ -930,7 +937,7 @@ class KeyboardViewModel(
         lastSpaceCommitAtMs = System.currentTimeMillis()
         if (symbolTypedInSymbolsMode) {
             symbolTypedInSymbolsMode = false
-            switchLayout(KeyboardLocale.Default.letterLayout)
+            switchLayout(locale().letterLayout)
         }
         refreshSuggestions(checkContextualCorrection = true)
         maybeAutoCapitalize()
@@ -958,7 +965,8 @@ class KeyboardViewModel(
 
     private fun convertPrecedingSpaceToPeriod() {
         textEditor.deleteCharacterBackward()
-        textEditor.commitCharacter('.')
+        val terminator = profile.doubleSpaceInserts
+        textEditor.commitCharacter(terminator)
         textEditor.insertSpace()
         // Real bug, fixed: this used to record just " " here, but the actual text sitting
         // between the word and the cursor is ". " (period *and* space, 2 characters) — the very
@@ -967,7 +975,7 @@ class KeyboardViewModel(
         // of the old word behind every time (e.g. "hello. " cycling to "hhell. "). See
         // [ActiveCorrection.separator]'s doc — it's retyped verbatim after the replacement on
         // every cycle step, so it must match the real on-screen separator exactly.
-        words.boundarySeparator = ". "
+        words.boundarySeparator = "$terminator "
         lastSpaceCommitAtMs = 0L
         refreshSuggestions(checkContextualCorrection = true)
         maybeAutoCapitalize()
@@ -976,10 +984,10 @@ class KeyboardViewModel(
     /** Off by default (per user request) — only capitalizes the very start of a field or right
      * after sentence-ending punctuation, never mid-sentence. Caps lock always wins over this. */
     private fun maybeAutoCapitalize() {
-        if (!autocorrectPreferences.settings.value.autoCapitalizeEnabled) return
+        if (!autocorrectPreferences.settings.value.autoCapitalizeEnabled || !profile.hasCase) return
         if (_uiState.value.capsLockOn) return
         val before = textEditor.textBeforeCursor(3).trimEnd { it == ' ' }
-        val shouldCapitalize = before.isEmpty() || before.last() in ".!?"
+        val shouldCapitalize = before.isEmpty() || before.last() in profile.sentenceEnd
         if (shouldCapitalize) _uiState.update { it.copy(shiftOn = true) }
     }
 
@@ -1282,7 +1290,7 @@ class KeyboardViewModel(
         // word without being deleted or corrected, so it counts as deliberate.
         commitPendingLearn()
         pendingLearn = if (incognitoPreferences.shouldLearn() && lastAutocorrect == null &&
-            word.all { it.isLetter() }
+            profile.isWord(word)
         ) {
             // The word before this one, read before the commit shifted it — see
             // [WordTracker.commitWord] for why that comes back from the call rather than being
@@ -1379,14 +1387,14 @@ class KeyboardViewModel(
         _uiState.update { it.copy(activeExtensionId = id, quickAccessOpen = false) }
     }
 
-    /** Cheap, synchronous static-table lookup (see [WordEmojiSuggestions]) — unlike word
+    /** Cheap, synchronous static-table lookup (the language's [LanguageProfile.emojiFor]) — unlike word
      * suggestions/predictions, never worth a background [refreshJob] of its own. */
     private fun updateEmojiSuggestions(word: String?) {
         // Toned for display as well as insertion, so a chip shows what tapping it produces.
         // onEmojiSuggestionAccepted re-applies the tone to whatever it is handed, which is a no-op
         // for an already-toned chip (apply strips before re-adding) — so the two can't disagree.
         val tone = emojiSkinTone()
-        val emoji = word?.let(WordEmojiSuggestions::suggest).orEmpty().map(tone::apply)
+        val emoji = word?.let(profile.emojiFor).orEmpty().map(tone::apply)
         _uiState.update { it.copy(emojiSuggestions = emoji) }
     }
 

@@ -1,5 +1,6 @@
 package dev.omakey.core.predict
 
+import dev.omakey.core.locale.LanguageProfile
 import dev.omakey.core.predict.lm.LanguageModel
 import dev.omakey.core.predict.spatial.ChannelModel
 import dev.omakey.core.predict.spatial.KeyboardGeometry
@@ -43,6 +44,7 @@ class AutocorrectIndex(
 
     @Volatile private var model: LanguageModel? = null
     @Volatile private var personal: PersonalLanguageModel = PersonalLanguageModel()
+    @Volatile private var profile: LanguageProfile = LanguageProfile.English
     @Volatile private var correctionFloor: Float = Float.NEGATIVE_INFINITY
     @Volatile private var strictFloor: Float = Float.NEGATIVE_INFINITY
 
@@ -66,7 +68,12 @@ class AutocorrectIndex(
         )
     }
 
-    fun load(languageModel: LanguageModel, personalModel: PersonalLanguageModel) {
+    fun load(
+        languageModel: LanguageModel,
+        personalModel: PersonalLanguageModel,
+        languageProfile: LanguageProfile = LanguageProfile.English,
+    ) {
+        profile = languageProfile
         personal = personalModel
         model = languageModel
 
@@ -137,10 +144,10 @@ class AutocorrectIndex(
      */
     fun contractionFor(typed: String): String? {
         val lower = typed.lowercase()
-        CONTRACTIONS[lower]?.let { return it }
+        profile.contractions[lower]?.let { return it }
         var best: String? = null
         var bestDistance = 2
-        for ((key, expansion) in CONTRACTIONS) {
+        for ((key, expansion) in profile.contractions) {
             if (key.length < MIN_FUZZY_CONTRACTION_LENGTH) continue
             val distance = editDistance(lower, key, 1) ?: continue
             if (distance < bestDistance) {
@@ -173,7 +180,7 @@ class AutocorrectIndex(
         val languageModel = model ?: return emptyList()
         val lower = word.lowercase()
         if (limit <= 0 || lower.isEmpty()) return emptyList()
-        if (!lower.all { it.isLetter() }) return emptyList()
+        if (!profile.isWord(lower)) return emptyList()
 
         val results = LinkedHashSet<String>()
         // Checked before the length gate below — several contraction keys ("im", "id") are shorter
@@ -207,7 +214,7 @@ class AutocorrectIndex(
         model ?: return null
         val lower = typed.lowercase()
         if (lower.length < MIN_LENGTH || lower.length > MAX_LENGTH) return null
-        if (!lower.all { it.isLetter() }) return null
+        if (!profile.isWord(lower)) return null
         if (isKnown(lower)) return null // never "correct" an already-real word
 
         val scored = ArrayList<Scored>(SCORED_CAPACITY)
@@ -224,7 +231,7 @@ class AutocorrectIndex(
         val languageModel = model ?: return emptySet()
         val lower = word.lowercase()
         if (lower.length < MIN_LENGTH || lower.length > MAX_LENGTH) return emptySet()
-        if (!lower.all { it.isLetter() }) return emptySet()
+        if (!profile.isWord(lower)) return emptySet()
         val neighbours = mutableSetOf<String>()
         forEachCandidate(lower) { id, _ ->
             val distance = editDistance(lower, id, 1)
@@ -546,42 +553,5 @@ class AutocorrectIndex(
         /** Fuzzy contraction matching only applies to keys at least this long — a 2-3 letter key
          * fuzzy-matched against arbitrary text collides with unrelated short words too readily. */
         const val MIN_FUZZY_CONTRACTION_LENGTH = 5
-
-        // Comprehensive coverage of standard English contractions whose apostrophe-less spelling
-        // is itself a real word, or which are ambiguous enough that auto-applying would be wrong.
-        val CONTRACTIONS: Map<String, String> = mapOf(
-            // I
-            "im" to "I'm", "ive" to "I've", "id" to "I'd", "ill" to "I'll",
-            // you
-            "youre" to "you're", "youve" to "you've", "youd" to "you'd", "youll" to "you'll",
-            // he / she / it
-            "hes" to "he's", "hed" to "he'd", "hell" to "he'll",
-            "shes" to "she's", "shed" to "she'd", "shell" to "she'll",
-            "its" to "it's", "itd" to "it'd", "itll" to "it'll",
-            // we
-            "were" to "we're", "weve" to "we've", "wed" to "we'd", "well" to "we'll",
-            // they
-            "theyre" to "they're", "theyve" to "they've", "theyd" to "they'd", "theyll" to "they'll",
-            // that / who / what / there / here / where / when / why / how
-            "thats" to "that's", "thatd" to "that'd", "thatll" to "that'll",
-            "whos" to "who's", "whod" to "who'd", "wholl" to "who'll",
-            "whats" to "what's", "whatd" to "what'd", "whatll" to "what'll",
-            "theres" to "there's", "thered" to "there'd", "therell" to "there'll",
-            "heres" to "here's", "wheres" to "where's", "whens" to "when's",
-            "whys" to "why's", "hows" to "how's",
-            // negatives
-            "isnt" to "isn't", "arent" to "aren't", "wasnt" to "wasn't", "werent" to "weren't",
-            "havent" to "haven't", "hasnt" to "hasn't", "hadnt" to "hadn't",
-            "dont" to "don't", "doesnt" to "doesn't", "didnt" to "didn't",
-            "wont" to "won't", "cant" to "can't",
-            "couldnt" to "couldn't", "shouldnt" to "shouldn't", "wouldnt" to "wouldn't",
-            "mightnt" to "mightn't", "mustnt" to "mustn't", "neednt" to "needn't",
-            "shant" to "shan't", "oughtnt" to "oughtn't",
-            // modal + have — routinely typed without the apostrophe and mistyped on top of that
-            "couldve" to "could've", "shouldve" to "should've", "wouldve" to "would've",
-            "mightve" to "might've", "mustve" to "must've",
-            // let's, y'all, ain't, o'clock
-            "lets" to "let's", "yall" to "y'all", "aint" to "ain't", "oclock" to "o'clock",
-        )
     }
 }

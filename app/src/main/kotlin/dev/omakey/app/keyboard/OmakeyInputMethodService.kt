@@ -249,7 +249,10 @@ class OmakeyInputMethodService :
         autocorrectIndex = AutocorrectIndex()
         autocorrectPreferences = AutocorrectPreferences(applicationContext)
         predictionPreferences = PredictionPreferences(applicationContext)
-        textEditor = TextEditor { currentInputConnection }
+        textEditor = TextEditor(
+            connectionProvider = { currentInputConnection },
+            profile = { KeyboardLocale.Default.profile },
+        )
         themeRepository = ThemeRepository(applicationContext)
         accessibilityPreferences = AccessibilityPreferences(applicationContext)
         layoutPreferences = LayoutPreferences(applicationContext)
@@ -296,7 +299,7 @@ class OmakeyInputMethodService :
                     },
                     model,
                 )
-                autocorrectIndex.load(model, personalModel)
+                autocorrectIndex.load(model, personalModel, KeyboardLocale.Default.profile)
                 predictionEngine.delegate = NgramPredictionEngine(model, database.wordDao(), personalModel)
             }.onFailure { Log.e(TAG, "Language model unavailable; typing works, suggestions won't", it) }
             // The old importer tracked its progress here. Left-over state is meaningless now and

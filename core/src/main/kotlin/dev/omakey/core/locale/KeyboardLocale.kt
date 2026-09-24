@@ -27,7 +27,8 @@ import dev.omakey.core.layout.Layouts
  *     corpus for that language. This is the bulk of the work and the bulk of the APK.
  *  3. **Autocorrect's channel model**, which encodes which keys are adjacent to which — derived
  *     from the layout, so it follows from (1), but it is a real dependency rather than a free one.
- *  4. **`WordEmojiSuggestions`**, which is an English word table and would simply be wrong.
+ *  4. **Text rules and data tables** — [profile]. What counts as part of a word, sentence
+ *     punctuation, contractions and the emoji word table (`WordEmojiSuggestions`, English-only).
  *  5. **A way for the user to choose**, plus the runtime switch: the personal dictionary is keyed
  *     by word with no language column, so two locales sharing one `words` table would teach each
  *     other's vocabulary. That is a schema migration, and it is the part most likely to be
@@ -43,6 +44,9 @@ data class KeyboardLocale(
     val letterLayout: KeyboardLayout,
     /** Asset name under `core/src/main/assets`, memory-mapped by `LanguageModel.load`. */
     val languageModelAsset: String,
+    /** Text rules and per-language data tables — what counts as a word, sentence punctuation,
+     * contractions, emoji words. */
+    val profile: LanguageProfile,
 ) {
     companion object {
         val EnUs = KeyboardLocale(
@@ -50,6 +54,7 @@ data class KeyboardLocale(
             displayName = "English (US)",
             letterLayout = Layouts.QwertyEnUS,
             languageModelAsset = "lm_en_us.bin",
+            profile = LanguageProfile.English,
         )
 
         /** The only locale there is. Every site that used to name `Layouts.QwertyEnUS` directly for
