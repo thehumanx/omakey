@@ -33,8 +33,10 @@ android {
                 // evaluation harness's opt-in switches have to be forwarded explicitly:
                 //   -Domakey.tune=true       runs the parameter sweep (EngineTuningTest)
                 //   -Domakey.eval.full=true  scores the full corpora instead of a sample
+                //   -Domakey.golden.update=true  rewrites GoldenBehaviourTest's snapshot
                 it.systemProperty("omakey.tune", System.getProperty("omakey.tune") ?: "")
                 it.systemProperty("omakey.eval.full", System.getProperty("omakey.eval.full") ?: "")
+                it.systemProperty("omakey.golden.update", System.getProperty("omakey.golden.update") ?: "")
             }
         }
     }
