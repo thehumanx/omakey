@@ -21,6 +21,8 @@ package dev.omakey.core.predict.spatial
  * distance-2 match to an overwhelmingly likely one.
  */
 class ChannelModel(
+    /** Where the keys are — per layout since AGENTS.md §66 Phase 2; QWERTY by default. */
+    val geometry: KeyboardGeometry = KeyboardGeometry.QWERTY,
     private val sigma: Float = SIGMA,
     private val substitutionCap: Float = SUBSTITUTION_CAP,
     private val insertionCost: Float = INSERTION_COST,
@@ -41,7 +43,7 @@ class ChannelModel(
      * a word being corrected retroactively long after it was typed. */
     fun substitution(typed: Char, intended: Char): Float {
         if (typed == intended) return 0f
-        return minOf(KeyboardGeometry.squaredDistance(typed, intended) / twoSigmaSquared, substitutionCap)
+        return minOf(geometry.squaredDistance(typed, intended) / twoSigmaSquared, substitutionCap)
     }
 
     /**
@@ -59,7 +61,7 @@ class ChannelModel(
     fun substitutionAt(typed: Char, intended: Char, taps: TouchTrace.Taps?, index: Int): Float {
         if (typed == intended) return 0f
         if (taps == null || index < 0 || index >= taps.size) return substitution(typed, intended)
-        val squaredDistance = KeyboardGeometry.squaredDistanceFromPoint(taps.x(index), taps.y(index), intended)
+        val squaredDistance = geometry.squaredDistanceFromPoint(taps.x(index), taps.y(index), intended)
         return minOf(squaredDistance / twoSigmaSquared, substitutionCap)
     }
 

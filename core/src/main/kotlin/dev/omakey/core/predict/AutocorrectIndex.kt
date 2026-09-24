@@ -48,11 +48,38 @@ class AutocorrectIndex(
     @Volatile private var correctionFloor: Float = Float.NEGATIVE_INFINITY
     @Volatile private var strictFloor: Float = Float.NEGATIVE_INFINITY
 
+    /** For each letter, the bitmask of letters whose keys physically touch it. Derived from the
+     * channel's [KeyboardGeometry] rather than written out by hand, so it stays true to the row
+     * stagger the geometry already models — and to whichever layout that geometry came from. */
+    private val adjacentMask: IntArray = IntArray(ALPHABET_SIZE) { index ->
+        var mask = 0
+        for (other in 0 until ALPHABET_SIZE) {
+            if (other != index && channel.geometry.areAdjacent('a' + index, 'a' + other)) {
+                mask = mask or (1 shl other)
+            }
+        }
+        mask
+    }
+
     /** Reused across the thousands of distance computations one correction performs, instead of
      * allocating a matrix per candidate. Thread-local because corrections run on whatever
      * `Dispatchers.Default` thread the refresh coroutine landed on. */
     private val editScratch = ThreadLocal.withInitial { Array(MAX_LENGTH + 2) { IntArray(MAX_LENGTH + 2) } }
     private val costScratch = ThreadLocal.withInitial { Array(MAX_LENGTH + 2) { FloatArray(MAX_LENGTH + 2) } }
+
+    /** The word being corrected, as a `CharArray`, for the two DP loops. Indexing a `String` there
+     * costs a compact-strings encoding check per cell, and on HotSpot the JIT can only drop that
+     * check while no non-Latin-1 string has ever been read — one "⇧" or "😊" key label anywhere in
+     * the process and `correct()` got 25% slower (measured, AGENTS.md §66 Phase 2). Every
+     * Devanagari or accented word is such a string, so the check has to go rather than be avoided. */
+    private val charScratch = ThreadLocal.withInitial { CharArray(MAX_LENGTH + 2) }
+
+    /** [text]'s characters in the thread's scratch buffer; valid up to `text.length`. */
+    private fun charsOf(text: String): CharArray {
+        val chars = charScratch.get()
+        text.toCharArray(chars, 0, 0, minOf(text.length, chars.size))
+        return chars
+    }
 
     /** Left context for scoring, as word ids. Two words, because the language model's trigram tier
      * is where most of its discriminating power is. */
@@ -403,7 +430,7 @@ class AutocorrectIndex(
     private fun alternateFirstLetters(typed: String): Int {
         var mask = 0
         val first = letterIndex(typed[0])
-        if (first >= 0) mask = mask or ADJACENT_MASK[first]
+        if (first >= 0) mask = mask or adjacentMask[first]
         if (typed.length > 1) {
             val second = letterIndex(typed[1])
             if (second >= 0) mask = mask or (1 shl second)
@@ -434,12 +461,14 @@ class AutocorrectIndex(
         return editDistance(a, b, -1, b.length, maxDistance)
     }
 
-    private fun editDistance(a: String, b: String?, id: Int, bLength: Int, maxDistance: Int): Int? {
+    private fun editDistance(text: String, b: String?, id: Int, bLength: Int, maxDistance: Int): Int? {
         val languageModel = model
         val d = editScratch.get()
-        for (i in 0..a.length) d[i][0] = i
+        val a = charsOf(text)
+        val aLength = text.length
+        for (i in 0..aLength) d[i][0] = i
         for (j in 0..bLength) d[0][j] = j
-        for (i in 1..a.length) {
+        for (i in 1..aLength) {
             var rowBest = Int.MAX_VALUE
             val aChar = a[i - 1]
             for (j in 1..bLength) {
@@ -456,26 +485,31 @@ class AutocorrectIndex(
             // A whole row above the bound means no completion can come back under it.
             if (rowBest > maxDistance) return null
         }
-        val result = d[a.length][bLength]
+        val result = d[aLength][bLength]
         return if (result <= maxDistance) result else null
     }
 
     /** `-log P(typed | candidate)` under [ChannelModel] — the same Damerau recurrence, but with
      * real per-edit costs instead of 1 apiece, so which keys were involved actually matters. */
-    private fun channelCost(typed: String, id: Int, taps: TouchTrace.Taps?): Float {
+    private fun channelCost(typedText: String, id: Int, taps: TouchTrace.Taps?): Float {
         val languageModel = model ?: return Float.MAX_VALUE
         val length = languageModel.wordLength(id)
         val d = costScratch.get()
-        for (i in 0..typed.length) d[i][0] = i * channel.insertion()
-        for (j in 0..length) d[0][j] = j * channel.deletion()
-        for (i in 1..typed.length) {
+        val typed = charsOf(typedText)
+        val typedLength = typedText.length
+        val insertion = channel.insertion()
+        val deletion = channel.deletion()
+        for (i in 0..typedLength) d[i][0] = i * insertion
+        for (j in 0..length) d[0][j] = j * deletion
+        for (i in 1..typedLength) {
             val typedChar = typed[i - 1]
             for (j in 1..length) {
                 val intendedChar = languageModel.charAt(id, j - 1)
+                val substitution = channel.substitutionAt(typedChar, intendedChar, taps, i - 1)
                 var value = minOf(
-                    d[i - 1][j] + channel.insertion(),
-                    d[i][j - 1] + channel.deletion(),
-                    d[i - 1][j - 1] + channel.substitutionAt(typedChar, intendedChar, taps, i - 1),
+                    d[i - 1][j] + insertion,
+                    d[i][j - 1] + deletion,
+                    d[i - 1][j - 1] + substitution,
                 )
                 if (i > 1 && j > 1) {
                     val intendedPrevious = languageModel.charAt(id, j - 2)
@@ -486,7 +520,7 @@ class AutocorrectIndex(
                 d[i][j] = value
             }
         }
-        return d[typed.length][length]
+        return d[typedLength][length]
     }
 
     private companion object {
@@ -495,19 +529,6 @@ class AutocorrectIndex(
         /** Single-character prefixes, held rather than built per lookup — [forEachCandidate] runs
          * on the typing hot path and asks for several of these per keystroke. */
         val FIRST_LETTERS: Array<String> = Array(ALPHABET_SIZE) { ('a' + it).toString() }
-
-        /** For each letter, the bitmask of letters whose keys physically touch it. Derived from
-         * [KeyboardGeometry] rather than written out by hand, so it stays true to the row stagger
-         * the geometry already models instead of drifting from it. */
-        val ADJACENT_MASK: IntArray = IntArray(ALPHABET_SIZE) { index ->
-            var mask = 0
-            for (other in 0 until ALPHABET_SIZE) {
-                if (other != index && KeyboardGeometry.areAdjacent('a' + index, 'a' + other)) {
-                    mask = mask or (1 shl other)
-                }
-            }
-            mask
-        }
 
         fun letterIndex(character: Char): Int {
             val lower = character.lowercaseChar()

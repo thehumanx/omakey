@@ -92,7 +92,7 @@ class RecallDiagnosticTest {
         val typed = typo.firstOrNull() ?: return false
         val intended = correct.firstOrNull() ?: return false
         // Slip onto a neighbouring key.
-        if (KeyboardGeometry.areAdjacent(typed, intended)) return true
+        if (KeyboardGeometry.QWERTY.areAdjacent(typed, intended)) return true
         // Stray leading character, or the first two letters transposed — both leave the intended
         // word starting with the typo's second letter.
         if (typo.length > 1 && typo[1] == intended) return true
