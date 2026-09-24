@@ -12,7 +12,9 @@ import kotlinx.serialization.json.Json
  */
 class LayoutRepository(bundled: List<KeyboardLayout> = Layouts.all) {
 
-    private val byId = LinkedHashMap<String, KeyboardLayout>()
+    // Concurrent: Settings registers a downloaded pack's layouts from a background thread while the
+    // open keyboard reads them on the main thread (both share one repository — see LanguagePacks).
+    private val byId = java.util.concurrent.ConcurrentHashMap<String, KeyboardLayout>()
 
     init {
         bundled.forEach(::register)
@@ -25,12 +27,13 @@ class LayoutRepository(bundled: List<KeyboardLayout> = Layouts.all) {
 
     /** Adds [layouts] together, so a base layout and its shift layer can reference each other.
      * Nothing is added if any of them is invalid. */
+    @Synchronized
     fun registerAll(layouts: List<KeyboardLayout>) {
         val ids = layouts.map { it.id }.toSet()
         for (layout in layouts) {
             val problems = layout.validate().toMutableList()
             val shift = layout.shiftLayoutId
-            if (shift != null && shift !in ids && shift !in byId) problems += "shift layer '$shift' not found"
+            if (shift != null && shift !in ids && !byId.containsKey(shift)) problems += "shift layer '$shift' not found"
             require(problems.isEmpty()) { "Invalid layout '${layout.id}': ${problems.joinToString("; ")}" }
         }
         layouts.forEach { byId[it.id] = it }

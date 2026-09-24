@@ -99,7 +99,7 @@ class SettingsActivity : ComponentActivity() {
         val wordDao = database.wordDao()
         val clipboardPreferences = ClipboardPreferences(applicationContext)
         val localePreferences = dev.omakey.core.locale.LocalePreferences(applicationContext)
-        val localeRegistry = dev.omakey.core.locale.LocaleRegistry()
+        val languagePacks = dev.omakey.app.languages.LanguagePacks.get(applicationContext)
         val clipboardDao = database.clipboardDao()
         // Same store the IME uses, so "clear history" removes the image files too rather than
         // leaving them orphaned — the exact failure the trim path used to have.
@@ -130,7 +130,7 @@ class SettingsActivity : ComponentActivity() {
                         clipboardDao = clipboardDao,
                         clipboardHistory = clipboardHistory,
                         localePreferences = localePreferences,
-                        localeRegistry = localeRegistry,
+                        languagePacks = languagePacks,
                         feedback = feedback,
                         onOpenSystemSettings = {
                             startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS))
@@ -224,7 +224,7 @@ private fun SettingsScreen(
     clipboardDao: dev.omakey.core.db.ClipboardDao,
     clipboardHistory: ClipboardHistoryStore,
     localePreferences: dev.omakey.core.locale.LocalePreferences,
-    localeRegistry: dev.omakey.core.locale.LocaleRegistry,
+    languagePacks: dev.omakey.app.languages.LanguagePacks,
     feedback: VibratorKeyboardFeedback,
     onOpenSystemSettings: () -> Unit,
     onSwitchKeyboard: () -> Unit,
@@ -365,7 +365,7 @@ private fun SettingsScreen(
 
             item {
                 SettingsSection(title = "Languages") {
-                    LanguagesSection(localePreferences, localeRegistry)
+                    LanguagesSection(localePreferences, languagePacks)
                 }
             }
 

@@ -20,12 +20,14 @@ class LocaleRegistry(
 
     /** Adds [locale], replacing an earlier version with the same id — a pack update. Throws
      * [IllegalArgumentException] if its layouts are invalid, in which case nothing changes. */
+    @Synchronized
     fun register(locale: KeyboardLocale) {
         layouts.registerAll(listOf(locale.letterLayout) + locale.extraLayouts)
         _available.value = _available.value.filter { it.id != locale.id } + locale
     }
 
     /** Removes an installed language. Bundled ones stay: there is nothing to uninstall. */
+    @Synchronized
     fun unregister(id: String) {
         if (KeyboardLocale.bundled.any { it.id == id }) return
         _available.value = _available.value.filter { it.id != id }

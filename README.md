@@ -247,11 +247,17 @@ limits: clips an app marks as sensitive (passwords, mostly) are never saved, not
 incognito is on or a password field is focused, and Settings → Typing lets you review it, clear it,
 or switch it off entirely.
 
-The one exception: checking for app updates. Settings' About section has a manual "Check for
-updates" button, and (on by default, toggleable off) a periodic check every 12 hours that
-notifies you if a newer version is out. Either way, the only thing that ever happens on the
-network is a lookup against GitHub's public Releases API — no typed text, no other data, and
-never any auto-download or auto-install.
+Two things use the network, and nothing else does:
+
+- **Update checks.** Settings' About section has a manual "Check for updates" button, and (on by
+  default, toggleable off) a periodic check every 12 hours that notifies you if a newer version is
+  out. It's a lookup against GitHub's public Releases API — never an auto-download or auto-install.
+- **Language packs.** Languages other than English are separate downloads. Nothing is fetched until
+  you tap "Get more languages" in Settings → Languages and pick one. Packs contain only data
+  (a keyboard layout, word lists, a language model) — never code — and are checked against a
+  signed list before they're installed.
+
+Neither sends anything you type, or any other data about you.
 
 ## Status
 

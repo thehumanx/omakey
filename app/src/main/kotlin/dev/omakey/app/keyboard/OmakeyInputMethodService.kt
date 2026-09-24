@@ -278,7 +278,8 @@ class OmakeyInputMethodService :
         // Loads the active language's model, personal vocabulary and key geometry off the main
         // thread, so onCreateInputView is never blocked — the keyboard is typeable immediately and
         // suggestions populate the moment loading finishes. Reloads on every language switch.
-        localeRegistry = LocaleRegistry()
+        // Shared with Settings, so a pack installed there shows up here without a restart.
+        localeRegistry = dev.omakey.app.languages.LanguagePacks.get(applicationContext).registry
         localePreferences = LocalePreferences(applicationContext)
         localeManager = LocaleManager(
             context = applicationContext,
