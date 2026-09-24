@@ -289,7 +289,7 @@ class OmakeyInputMethodService :
             runCatching {
                 val model = LanguageModel.load(applicationContext, KeyboardLocale.Default.languageModelAsset)
                 personalModel.load(
-                    database.wordDao().allUserAdded().map {
+                    database.wordDao().allUserAdded(KeyboardLocale.Default.id).map {
                         PersonalLanguageModel.Entry(
                             word = it.word,
                             count = it.frequency / WordEntity.COUNT_SCALE,
@@ -300,7 +300,7 @@ class OmakeyInputMethodService :
                     model,
                 )
                 autocorrectIndex.load(model, personalModel, KeyboardLocale.Default.profile)
-                predictionEngine.delegate = NgramPredictionEngine(model, database.wordDao(), personalModel)
+                predictionEngine.delegate = NgramPredictionEngine(model, database.wordDao(), personalModel, KeyboardLocale.Default.id)
             }.onFailure { Log.e(TAG, "Language model unavailable; typing works, suggestions won't", it) }
             // The old importer tracked its progress here. Left-over state is meaningless now and
             // would otherwise sit in the app's data directory forever.

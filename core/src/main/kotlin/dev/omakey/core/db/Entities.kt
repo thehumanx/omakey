@@ -14,9 +14,9 @@ import androidx.room.PrimaryKey
  * design did exactly that, in a column where seeded values ran to 60,000, so a word the user saved
  * arrived with a count of 1 and could never outrank one they had never typed.
  */
-@Entity(tableName = "words")
+@Entity(tableName = "words", primaryKeys = ["locale", "word"])
 data class WordEntity(
-    @PrimaryKey val word: String,
+    val word: String,
     /** Decayed use count, scaled by [COUNT_SCALE] so a fractional count survives an `Int` column. */
     val frequency: Int,
     val isUserAdded: Boolean,
@@ -26,8 +26,15 @@ data class WordEntity(
      * see [dev.omakey.core.predict.PersonalLanguageModel], where knowing a word and trusting it are
      * deliberately different things. */
     val explicit: Boolean = true,
+    /** Language the word was learned in (a `KeyboardLocale.id`). Part of the key, so "casa"
+     * learned in Spanish and the same string typed in English are separate entries and neither
+     * language's suggestions are taught by the other (AGENTS.md §66 Phase 4). */
+    val locale: String = DEFAULT_LOCALE,
 ) {
     companion object {
+        /** Every row that predates per-language data was English; migration 4→5 tags it so. */
+        const val DEFAULT_LOCALE = "en_US"
+
         /** Fixed-point scale for [frequency]. Counts decay continuously, and rounding a count of 1
          * to an integer on every write would quantise the decay away entirely. */
         const val COUNT_SCALE = 100f

@@ -22,6 +22,8 @@ class NgramPredictionEngine(
     private val model: LanguageModel,
     private val wordDao: WordDao,
     private val personal: PersonalLanguageModel = PersonalLanguageModel(),
+    /** Language whose personal vocabulary this engine reads and writes. */
+    private val locale: String = WordEntity.DEFAULT_LOCALE,
 ) : PredictionEngine {
 
     override suspend fun suggestNext(
@@ -106,7 +108,7 @@ class NgramPredictionEngine(
         val normalized = word.trim().toLookupForm()
         if (normalized.isEmpty()) return
         personal.forget(normalized)
-        wordDao.delete(normalized)
+        wordDao.delete(locale, normalized)
     }
 
     private suspend fun persist(word: String, explicit: Boolean) {
@@ -120,6 +122,7 @@ class NgramPredictionEngine(
                 isUserAdded = true,
                 lastUsedTimestamp = entry.lastUsed,
                 explicit = entry.explicit,
+                locale = locale,
             ),
         )
     }

@@ -53,7 +53,7 @@ class OmakeyDatabaseMigrationTest {
      * `DELETE FROM words` followed by 3→4's `UPDATE words` is exactly such an interaction.
      */
     @Test
-    fun migrates_v1_to_v4_preserving_user_words() {
+    fun migrates_v1_to_latest_preserving_user_words() {
         createV1Database {
             // Two rows that migration 2→3 has to tell apart: one the user saved by hand, one from
             // the 60,000-row bundled seed that 2→3 exists to delete.
@@ -68,7 +68,7 @@ class OmakeyDatabaseMigrationTest {
         }
 
         withMigratedDatabase { db ->
-            val words = runBlocking { db.wordDao().allUserAdded() }
+            val words = runBlocking { db.wordDao().allUserAdded(WordEntity.DEFAULT_LOCALE) }
 
             assertEquals("the seeded row should have been deleted by 2->3", 1, words.size)
             val saved = words.single()
@@ -81,6 +81,7 @@ class OmakeyDatabaseMigrationTest {
                 saved.frequency,
             )
             assertEquals("user words must survive with their timestamp intact", 1000L, saved.lastUsedTimestamp)
+            assertEquals("4->5 must tag pre-existing words as English", WordEntity.DEFAULT_LOCALE, saved.locale)
 
             val clips = runBlocking { db.clipboardDao().recent() }
             assertEquals(1, clips.size)
@@ -115,8 +116,60 @@ class OmakeyDatabaseMigrationTest {
     @Test
     fun fresh_install_opens_at_current_version() {
         withMigratedDatabase { db ->
-            assertEquals(4, db.openHelper.readableDatabase.version)
-            assertNotNull(runBlocking { db.wordDao().allUserAdded() })
+            assertEquals(5, db.openHelper.readableDatabase.version)
+            assertNotNull(runBlocking { db.wordDao().allUserAdded(WordEntity.DEFAULT_LOCALE) })
+        }
+    }
+
+    /**
+     * 4→5 rebuilds `words` to change its primary key. Starting from a real v4 database (not v1) so
+     * the rows carry v4's own columns — `explicit` false as well as true, fixed-point frequencies —
+     * and every one of them has to come through the copy unchanged.
+     */
+    @Test
+    fun migration_4_to_5_keeps_every_word_and_makes_them_per_language() {
+        createV4Database {
+            it.execSQL(
+                "INSERT INTO words (word, frequency, isUserAdded, lastUsedTimestamp, explicit) VALUES " +
+                    "('bishistha', 700, 1, 1000, 1), ('kathmandu', 250, 1, 3000, 0)",
+            )
+        }
+        withMigratedDatabase { db ->
+            val words = runBlocking { db.wordDao().allUserAdded(WordEntity.DEFAULT_LOCALE) }.sortedBy { it.word }
+            assertEquals(listOf("bishistha", "kathmandu"), words.map { it.word })
+            assertEquals(listOf(700, 250), words.map { it.frequency })
+            assertEquals(listOf(true, false), words.map { it.explicit })
+            assertEquals(listOf(1000L, 3000L), words.map { it.lastUsedTimestamp })
+
+            // The point of the migration: the same spelling can now exist once per language.
+            runBlocking {
+                db.wordDao().upsert(words.first().copy(locale = "es_ES"))
+                assertEquals(2, db.wordDao().allUserAdded(WordEntity.DEFAULT_LOCALE).size)
+                assertEquals(1, db.wordDao().allUserAdded("es_ES").size)
+                db.wordDao().delete("es_ES", "bishistha")
+                assertEquals("deleting in one language must not touch another", 2, db.wordDao().allUserAdded(WordEntity.DEFAULT_LOCALE).size)
+            }
+        }
+    }
+
+    /** A v4 database exactly as Room created it — statements from `core/schemas/…/4.json`. */
+    private fun createV4Database(populate: (SQLiteDatabase) -> Unit) {
+        val path = context.getDatabasePath(DB_NAME)
+        path.parentFile?.mkdirs()
+        val db = SQLiteDatabase.openOrCreateDatabase(path, null)
+        db.use {
+            it.execSQL(
+                "CREATE TABLE IF NOT EXISTS `words` (`word` TEXT NOT NULL, `frequency` INTEGER NOT NULL, " +
+                    "`isUserAdded` INTEGER NOT NULL, `lastUsedTimestamp` INTEGER NOT NULL, " +
+                    "`explicit` INTEGER NOT NULL, PRIMARY KEY(`word`))",
+            )
+            it.execSQL(
+                "CREATE TABLE IF NOT EXISTS `clipboard_history` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                    "`content` TEXT NOT NULL, `timestamp` INTEGER NOT NULL, `pinned` INTEGER NOT NULL, " +
+                    "`contentType` TEXT NOT NULL, `imagePath` TEXT)",
+            )
+            populate(it)
+            it.version = 4
         }
     }
 

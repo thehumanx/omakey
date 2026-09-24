@@ -10,13 +10,13 @@ import dev.omakey.core.db.WordEntity
  * harness prints a measurement of the fake.
  */
 class InMemoryWordDao(seed: List<WordEntity> = emptyList()) : WordDao {
-    private val byWord = LinkedHashMap<String, WordEntity>().apply { seed.forEach { put(it.word, it) } }
+    private val byWord = LinkedHashMap<Pair<String, String>, WordEntity>().apply { seed.forEach { put(it.locale to it.word, it) } }
 
-    override suspend fun findExact(word: String): WordEntity? = byWord[word]
+    override suspend fun findExact(locale: String, word: String): WordEntity? = byWord[locale to word]
 
-    override suspend fun upsert(word: WordEntity) { byWord[word.word] = word }
+    override suspend fun upsert(word: WordEntity) { byWord[word.locale to word.word] = word }
 
-    override suspend fun allUserAdded(): List<WordEntity> = byWord.values.filter { it.isUserAdded }
+    override suspend fun allUserAdded(locale: String): List<WordEntity> = byWord.values.filter { it.isUserAdded && it.locale == locale }
 
     override suspend fun findUserAdded(query: String, minFrequency: Int, limit: Int): List<WordEntity> =
         byWord.values
@@ -27,11 +27,11 @@ class InMemoryWordDao(seed: List<WordEntity> = emptyList()) : WordDao {
             .sortedByDescending { it.lastUsedTimestamp }
             .take(limit)
 
-    override suspend fun delete(word: String) { byWord.remove(word) }
+    override suspend fun delete(locale: String, word: String) { byWord.remove(locale to word) }
 
     override suspend fun deleteAllUserAdded() { byWord.values.removeIf { it.isUserAdded } }
 
-    override suspend fun rename(oldWord: String, newWord: String) {
-        byWord.remove(oldWord)?.let { byWord[newWord] = it.copy(word = newWord) }
+    override suspend fun rename(locale: String, oldWord: String, newWord: String) {
+        byWord.remove(locale to oldWord)?.let { byWord[locale to newWord] = it.copy(word = newWord) }
     }
 }

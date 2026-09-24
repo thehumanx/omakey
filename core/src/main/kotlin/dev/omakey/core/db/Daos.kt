@@ -16,15 +16,15 @@ import androidx.room.Query
  */
 @Dao
 interface WordDao {
-    @Query("SELECT * FROM words WHERE word = :word LIMIT 1")
-    suspend fun findExact(word: String): WordEntity?
+    @Query("SELECT * FROM words WHERE locale = :locale AND word = :word LIMIT 1")
+    suspend fun findExact(locale: String, word: String): WordEntity?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(word: WordEntity)
 
-    /** Loaded once at startup into [dev.omakey.core.predict.PersonalLanguageModel]. */
-    @Query("SELECT * FROM words WHERE isUserAdded = 1")
-    suspend fun allUserAdded(): List<WordEntity>
+    /** Loaded into [dev.omakey.core.predict.PersonalLanguageModel] for the active language. */
+    @Query("SELECT * FROM words WHERE isUserAdded = 1 AND locale = :locale")
+    suspend fun allUserAdded(locale: String): List<WordEntity>
 
     /**
      * Backs the Settings "Learned words" screen — newest-used first, optionally filtered.
@@ -39,6 +39,9 @@ interface WordDao {
      *
      * [minFrequency] is the threshold scaled by [WordEntity.COUNT_SCALE], passed in by the caller
      * rather than hardcoded so it cannot drift from the model's own constant.
+     *
+     * Every language at once: the screen manages all of the user's words, and each row carries its
+     * own [WordEntity.locale] for the edit and delete actions below.
      */
     @Query(
         "SELECT * FROM words WHERE isUserAdded = 1 AND (explicit = 1 OR frequency >= :minFrequency) " +
@@ -49,17 +52,17 @@ interface WordDao {
     /** Settings "Learned words" screen's delete action. Only affects Room — a running IME's
      * in-memory `PersonalLanguageModel` isn't live-notified, so a forgotten word stops being protected
      * from autocorrect the next time the keyboard process starts, not necessarily instantly. */
-    @Query("DELETE FROM words WHERE word = :word")
-    suspend fun delete(word: String)
+    @Query("DELETE FROM words WHERE locale = :locale AND word = :word")
+    suspend fun delete(locale: String, word: String)
 
-    /** "Delete all" on the same screen. */
+    /** "Delete all" on the same screen — every language. */
     @Query("DELETE FROM words WHERE isUserAdded = 1")
     suspend fun deleteAllUserAdded()
 
     /** Same screen's "Edit" action — a plain rename, preferred over delete+upsert since it
      * preserves the row's existing frequency/lastUsedTimestamp instead of resetting them. */
-    @Query("UPDATE words SET word = :newWord WHERE word = :oldWord")
-    suspend fun rename(oldWord: String, newWord: String)
+    @Query("UPDATE words SET word = :newWord WHERE locale = :locale AND word = :oldWord")
+    suspend fun rename(locale: String, oldWord: String, newWord: String)
 }
 
 @Dao
