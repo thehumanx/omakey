@@ -73,7 +73,7 @@ class LanguageModelFormat2Test {
     private val spanish = LanguageProfile(
         script = Script.LATIN,
         hasCase = true,
-        sentenceEnd = setOf('.', '!', '?'),
+        capitalizeAfter = setOf('.', '!', '?'),
         doubleSpaceInserts = '.',
         punctuationCycle = listOf('.', ','),
         equivalentLetters = listOf("aáà", "eéè", "iíì", "oóò", "uúü", "nñ"),

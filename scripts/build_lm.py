@@ -172,7 +172,7 @@ def read_norvig_bigrams(path: Path, verbose: bool) -> Counter:
     return counts
 
 
-def read_hunspell(dic_path: Path, aff_path: Path, verbose: bool) -> set[str]:
+def read_hunspell(dic_path: Path, aff_path: Path, verbose: bool, accept=None) -> set[str]:
     """The Hunspell dictionary with its affix rules applied, giving inflected forms too.
 
     The `.dic` file lists only stems, each tagged with the affix flags it accepts — "cat/SM" rather
@@ -182,7 +182,12 @@ def read_hunspell(dic_path: Path, aff_path: Path, verbose: bool) -> set[str]:
     Only a single affix application is performed (no prefix+suffix cross-products, no continuation
     flags). That under-generates slightly, which is the safe direction: a missing inflection falls
     back to gate 2 or is simply absent, whereas over-generating would start inventing words.
+
+    [accept] decides what counts as a word; English's WORD_RE by default. Other languages
+    (`build_lang_lm.py`) pass their own alphabet.
     """
+    if accept is None:
+        accept = WORD_RE.match
     rules: dict[str, list[tuple[str, str, str, str]]] = {}
     lines = aff_path.read_text(encoding="utf-8", errors="replace").splitlines()
     index = 0
@@ -215,7 +220,7 @@ def read_hunspell(dic_path: Path, aff_path: Path, verbose: bool) -> set[str]:
         stem = stem.strip().lower().replace("’", "'")
         if not stem:
             continue
-        if WORD_RE.match(stem):
+        if accept(stem):
             words.add(stem)
         for flag in flags:
             for kind, strip, add, condition in rules.get(flag, ()):
@@ -232,7 +237,7 @@ def read_hunspell(dic_path: Path, aff_path: Path, verbose: bool) -> set[str]:
                         candidate = (add if add != "0" else "") + base
                 except re.error:
                     continue
-                if WORD_RE.match(candidate) and len(candidate) <= MAX_WORD_LEN:
+                if accept(candidate) and len(candidate) <= MAX_WORD_LEN:
                     words.add(candidate)
     log(verbose, f"        {len(words):,} dictionary words (stems + affixes)")
     return words

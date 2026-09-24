@@ -152,7 +152,10 @@ class ChannelModel(
 
         /** Cost of swapping a letter for an equivalent one (e ↔ é). Well under an adjacent-key slip
          * (≈1.0 at the default σ), so a dropped accent is the cheapest explanation for a near miss.
-         * **Not yet tuned** — a starting value until Phase 6's accent-restoration corpus exists. */
+         *
+         * Swept on Spanish held-out accent restoration (2026-09-24): flat from 0.05 to 0.3 (91 %
+         * fixed / 7.6 % wrong either way), worse above (0.6 → 90.3 / 8.1, 1.0 → 89.5 / 8.9). The
+         * aggregate doesn't choose within the flat region, so the original value stands. */
         const val EQUIVALENT_COST = 0.3f
 
         /** Covers Latin, its extensions and Devanagari (U+0900–097F). */

@@ -54,7 +54,7 @@ class LanguageProfileTest {
             script = Script.DEVANAGARI,
             hasCase = false,
             extraWordChars = setOf('‍', zwnj),
-            sentenceEnd = setOf('।', '?', '!'),
+            capitalizeAfter = setOf('।', '?', '!'),
             doubleSpaceInserts = '।',
             punctuationCycle = listOf('।', ',', '?', '!'),
         )
@@ -68,7 +68,7 @@ class LanguageProfileTest {
         // engine side, this covers the constants that aren't on the engine path.
         assertEquals(listOf('.', ',', '!', '?', ';', ':', '\'', '"'), english.punctuationCycle)
         assertEquals('.', english.doubleSpaceInserts)
-        assertEquals(setOf('.', '!', '?'), english.sentenceEnd)
+        assertEquals(setOf('.', '!', '?'), english.capitalizeAfter)
         assertTrue(english.hasCase)
         assertEquals("I'm", english.contractions["im"])
         assertTrue(english.emojiFor("happy").isNotEmpty())

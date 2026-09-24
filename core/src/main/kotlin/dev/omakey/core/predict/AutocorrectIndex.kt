@@ -68,6 +68,11 @@ class AutocorrectIndex(
         val prefixes: Array<String>,
         /** For each letter, the indices of letters whose keys physically touch it, ascending. */
         val neighbours: Array<IntArray>,
+        /** For each letter, the indices of its equivalent letters (u → ú, ü), from the language's
+         * [LanguageProfile.equivalentLetters]. Needed as first-letter routes of their own: an
+         * accented letter is a long-press option, not a key, so it neighbours nothing — and without
+         * this "ultimos" could never reach "últimos". Empty for English. */
+        val equivalents: Array<IntArray> = Array(letters.size) { IntArray(0) },
     ) {
         fun indexOf(character: Char): Int = letters.binarySearch(character.lowercaseChar()).let { if (it >= 0) it else -1 }
 
@@ -146,6 +151,10 @@ class AutocorrectIndex(
             prefixes = Array(letters.size) { letters[it].toString() },
             neighbours = Array(letters.size) { index ->
                 letters.indices.filter { it != index && channel.geometry.areAdjacent(letters[index], letters[it]) }.toIntArray()
+            },
+            equivalents = Array(letters.size) { index ->
+                val group = languageProfile.equivalentLetters.firstOrNull { letters[index] in it }.orEmpty()
+                letters.indices.filter { it != index && letters[it] in group }.toIntArray()
             },
         )
 
@@ -478,7 +487,10 @@ class AutocorrectIndex(
     private fun alternateFirstLetters(typed: String, alphabet: FirstLetters): BooleanArray {
         val alternates = BooleanArray(alphabet.letters.size)
         val first = alphabet.indexOf(typed[0])
-        if (first >= 0) for (neighbour in alphabet.neighbours[first]) alternates[neighbour] = true
+        if (first >= 0) {
+            for (neighbour in alphabet.neighbours[first]) alternates[neighbour] = true
+            for (equivalent in alphabet.equivalents[first]) alternates[equivalent] = true
+        }
         if (typed.length > 1) {
             val second = alphabet.indexOf(typed[1])
             if (second >= 0) alternates[second] = true

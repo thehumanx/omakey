@@ -917,7 +917,8 @@ class KeyboardViewModel(
             refreshSuggestions(checkContextualCorrection = char != null && char in punctuationCycle)
             if (char == '=') tryShowCalculatorResult()
         }
-        if (_uiState.value.shiftOn && !_uiState.value.capsLockOn) {
+        val opensSentence = text.length == 1 && text[0] in profile.openingPunctuation
+        if (_uiState.value.shiftOn && !_uiState.value.capsLockOn && !opensSentence) {
             releaseShift() // one-shot shift, matches typical mobile keyboard behavior
         }
     }
@@ -1026,7 +1027,7 @@ class KeyboardViewModel(
         if (!autocorrectPreferences.settings.value.autoCapitalizeEnabled || !profile.hasCase) return
         if (_uiState.value.capsLockOn) return
         val before = textEditor.textBeforeCursor(3).trimEnd { it == ' ' }
-        val shouldCapitalize = before.isEmpty() || before.last() in profile.sentenceEnd
+        val shouldCapitalize = before.isEmpty() || before.last() in profile.capitalizeAfter
         if (shouldCapitalize) _uiState.update { it.copy(shiftOn = true) }
     }
 

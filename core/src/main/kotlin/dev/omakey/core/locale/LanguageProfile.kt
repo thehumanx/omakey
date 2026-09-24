@@ -29,8 +29,13 @@ class LanguageProfile(
      * the apostrophe for French elision, ZWJ/ZWNJ for Devanagari conjunct control. Empty for
      * English, whose contractions are handled by [contractions] rather than by the word buffer. */
     val extraWordChars: Set<Char> = emptySet(),
-    /** Characters that end a sentence, for auto-capitalise. */
-    val sentenceEnd: Set<Char>,
+    /** Characters after which auto-capitalise capitalises the next word — sentence-ending
+     * punctuation. */
+    val capitalizeAfter: Set<Char>,
+    /** Punctuation that opens a sentence *before* its first letter — Spanish "¿" and "¡". Typing
+     * one keeps a pending one-shot capital for the letter after it, instead of spending it on the
+     * punctuation mark, so "¿Cómo" comes out capitalised where the sentence starts. */
+    val openingPunctuation: Set<Char> = emptySet(),
     /** What double-tap-space inserts before the space: '.' for English, '।' (danda) for Nepali. */
     val doubleSpaceInserts: Char,
     /** Punctuation that swipe up/down rotates through when it sits just left of the cursor, in
@@ -65,7 +70,7 @@ class LanguageProfile(
         val English = LanguageProfile(
             script = Script.LATIN,
             hasCase = true,
-            sentenceEnd = setOf('.', '!', '?'),
+            capitalizeAfter = setOf('.', '!', '?'),
             doubleSpaceInserts = '.',
             punctuationCycle = listOf('.', ',', '!', '?', ';', ':', '\'', '"'),
             contractions = EnglishContractions.map,
