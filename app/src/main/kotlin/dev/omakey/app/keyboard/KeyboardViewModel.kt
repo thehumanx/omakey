@@ -13,9 +13,11 @@ import dev.omakey.core.input.isSensitiveField
 import dev.omakey.core.predict.matchCase
 import dev.omakey.core.predict.splitCorrection
 import dev.omakey.core.input.WordTracker
+import dev.omakey.core.layout.KeyDefinition
 import dev.omakey.core.layout.KeyboardLayout
 import dev.omakey.core.layout.KeyboardPlacement
 import dev.omakey.core.layout.LayoutPreferences
+import dev.omakey.core.layout.LayoutRepository
 import dev.omakey.core.layout.flippedOneHandedSide
 import dev.omakey.core.layout.nextOneHanded
 import dev.omakey.core.layout.toggledWith
@@ -91,6 +93,8 @@ class KeyboardViewModel(
     // §66 Phase 5) happens while this instance is alive; every language-dependent rule below reads
     // through it instead of assuming English.
     private val locale: () -> KeyboardLocale = { KeyboardLocale.Default },
+    // Resolves shift layers for languages without letter case.
+    private val layouts: LayoutRepository = LayoutRepository(),
 ) {
     private val profile: LanguageProfile get() = locale().profile
 
@@ -125,7 +129,7 @@ class KeyboardViewModel(
     private var lastSpaceCommitAtMs: Long = 0L
 
     /** True once a symbol/digit has actually been typed while on `Symbols1`/`Symbols2` (set in
-     * [commitTypedChar]) — the *next* [onSpace] then switches back to the letters layout after
+     * [commitTypedText]) — the *next* [onSpace] then switches back to the letters layout after
      * inserting the space, matching how the space bar behaves on mainstream keyboards after
      * punctuation. Reset on entering symbols mode fresh or leaving it (see [onKeyTap]'s
      * `SYMBOLS`/`LETTERS` branches) so a plain page-switch with nothing typed doesn't trigger it. */
@@ -303,6 +307,7 @@ class KeyboardViewModel(
         _uiState.update {
             it.copy(
                 layout = locale().letterLayout,
+                baseRowCount = locale().letterLayout.rows.size,
                 shiftOn = autocorrectPreferences.settings.value.autoCapitalizeEnabled && profile.hasCase &&
                     textEditor.textBeforeCursor(1).isEmpty(),
                 capsLockOn = false,
@@ -840,30 +845,43 @@ class KeyboardViewModel(
         _uiState.update { it.copy(suggestions = alternatives, firstSuggestionKind = SuggestionKind.CORRECTION) }
     }
 
-    private fun onCharacter(code: Int) = commitTypedChar(Character.toChars(code)[0])
+    /** A tap on a character key. Looked up in the current layout rather than decoded from [code]
+     * alone, because a key may type more than one character ([KeyDefinition.text]). */
+    private fun onCharacter(code: Int) {
+        val text = _uiState.value.layout.keyForCode(code)?.committedText ?: String(Character.toChars(code))
+        commitTypedText(text)
+    }
 
     /** Also used for accent-popup selections (long-press on a key with popupChars), which arrive
-     * as a Char rather than a key code since accent variants aren't part of the base layout. */
-    fun onAccentSelected(char: Char) = commitTypedChar(char)
+     * as text rather than a key code since accent variants aren't part of the base layout. */
+    fun onAccentSelected(text: String) = commitTypedText(text)
 
-    private fun commitTypedChar(rawChar: Char) {
+    private fun commitTypedText(rawText: String) {
+        if (rawText.isEmpty()) return
         suggestionCycleIndex = -1
         undoHistory.breakCoalescing()
-        var char = rawChar
-        if (_uiState.value.shiftOn) char = char.uppercaseChar()
+        // Per character, not String.uppercase(): that can change the length ("ß" → "SS"), and a
+        // key tap must type what the key shows.
+        val text = if (_uiState.value.shiftOn && profile.hasCase) {
+            buildString(rawText.length) { rawText.forEach { append(it.uppercaseChar()) } }
+        } else {
+            rawText
+        }
+        val isWordText = profile.isWord(text)
         // Punctuation typed directly after a word (no space) is a word boundary too — correct
         // before committing the punctuation itself, so it lands after the fixed word.
-        if (!profile.isWordChar(char)) {
+        if (!isWordText) {
             maybeAutocorrectBufferedWord()
         }
-        textEditor.commitCharacter(char)
+        textEditor.insertText(text)
         if (_uiState.value.layout.id in SYMBOLS_LAYOUT_IDS) symbolTypedInSymbolsMode = true
-        if (profile.isWordChar(char)) {
-            words.appendToBuffer(char)
+        if (isWordText) {
+            words.appendToBuffer(text)
             refreshSuggestions()
         } else {
-            flushWordBuffer(separator = char.toString())
-            words.boundarySeparator = char.toString()
+            flushWordBuffer(separator = text)
+            words.boundarySeparator = text
+            val char = text.singleOrNull()
             // Real bug, fixed: this used to pass checkContextualCorrection = true for *every*
             // non-letter character, including digits and arbitrary symbols-page characters (@, #,
             // $, ...) that never actually end a word the way sentence punctuation does. Since
@@ -875,11 +893,11 @@ class KeyboardViewModel(
             // committed, reappearing every time the user typed a digit/symbol with no live word
             // buffered. Only [punctuationCycle]'s actual sentence-ending/quoting characters (also
             // reused by swipe up/down's own punctuation-cycling) should re-trigger that check.
-            refreshSuggestions(checkContextualCorrection = char in punctuationCycle)
+            refreshSuggestions(checkContextualCorrection = char != null && char in punctuationCycle)
             if (char == '=') tryShowCalculatorResult()
         }
         if (_uiState.value.shiftOn && !_uiState.value.capsLockOn) {
-            _uiState.update { it.copy(shiftOn = false) } // one-shot shift, matches typical mobile keyboard behavior
+            releaseShift() // one-shot shift, matches typical mobile keyboard behavior
         }
     }
 
@@ -891,7 +909,7 @@ class KeyboardViewModel(
      * effect is just the missing "19" getting appended.
      *
      * Called right after '=' itself has already been committed as ordinary punctuation (see
-     * [commitTypedChar]), so [textBeforeCursor] already includes it — but also re-derived from
+     * [commitTypedText]), so [textBeforeCursor] already includes it — but also re-derived from
      * [refreshSuggestionsAfterDeletion] on every backspace, not just fresh '=' keystrokes. Real
      * bug, fixed: this used to be a one-shot side effect of typing '=', with nothing re-running
      * it afterward — backspacing away just the applied result (leaving the cursor sitting right
@@ -1355,15 +1373,34 @@ class KeyboardViewModel(
      * underneath it, which would leave caps lock's own flag stuck on. See [enableCapsLock] for how
      * caps lock gets turned on in the first place (long-press, not a tap). */
     private fun toggleShift() {
-        _uiState.update {
-            if (it.capsLockOn) it.copy(shiftOn = false, capsLockOn = false) else it.copy(shiftOn = !it.shiftOn)
-        }
+        val state = _uiState.value
+        if (state.capsLockOn || state.shiftOn) releaseShift() else engageShift(capsLock = false)
     }
 
     /** Long-press on shift (see the gesture handling in `KeyGrid`) — capitalizes every letter
      * until shift is tapped again, unlike a plain tap's one-shot capitalize-next-letter. */
-    fun enableCapsLock() {
-        _uiState.update { it.copy(shiftOn = true, capsLockOn = true) }
+    fun enableCapsLock() = engageShift(capsLock = true)
+
+    /**
+     * Shift on. For a language with letter case that is only a flag — letters are uppercased as
+     * they are typed. For one without, it swaps in the layout's shift layer
+     * ([KeyboardLayout.shiftLayoutId]), which is what Shift means on a Devanagari keyboard.
+     */
+    private fun engageShift(capsLock: Boolean) {
+        val current = _uiState.value.layout
+        val shiftLayer = if (profile.hasCase) null else layouts.shiftLayerOf(current)
+        _uiState.update {
+            it.copy(shiftOn = true, capsLockOn = capsLock, layout = shiftLayer ?: it.layout)
+        }
+    }
+
+    /** Shift and caps lock off, and back from a shift layer to the layer it came from. */
+    private fun releaseShift() {
+        val base = locale().letterLayout
+        _uiState.update {
+            val onShiftLayer = !profile.hasCase && it.layout.id == base.shiftLayoutId
+            it.copy(shiftOn = false, capsLockOn = false, layout = if (onShiftLayer) base else it.layout)
+        }
     }
 
     private fun switchLayout(layout: KeyboardLayout) {

@@ -342,7 +342,6 @@ internal fun KeyGrid(
                                         // key, exactly like a plain long-press-then-release with no
                                         // popup would type the base character.
                                         dragState.options.getOrNull(dragState.highlightedIndex)
-                                            ?.firstOrNull()
                                             ?.let { viewModel.onAccentSelected(it) }
                                         accentDragState = null
                                         machine.onTouch(TouchSample(change.position.x, change.position.y, now, TouchAction.UP))

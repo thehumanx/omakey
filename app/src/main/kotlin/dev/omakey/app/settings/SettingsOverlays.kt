@@ -181,7 +181,7 @@ internal fun KeyboardSizePositionOverlay(
                                 theme = theme,
                                 accessibleMode = false,
                                 showKeyBackgrounds = settings.showKeyBackgrounds,
-                                isHomeRow = settings.showMiddleRowStripe && index == 1,
+                                isHomeRow = settings.showMiddleRowStripe && index == KeyboardLocale.Default.letterLayout.homeRow,
                                 onKeyTap = {},
                                 ancestorCoordinates = noOpAncestor,
                                 onBoundsMeasured = {},

@@ -33,10 +33,14 @@ enum class SuggestionKind { PLAIN, CORRECTION }
 
 data class KeyboardUiState(
     val layout: KeyboardLayout = KeyboardLocale.Default.letterLayout,
+    /** Row count of the active language's letter layout — the unit row height is divided by, so
+     * keys keep one size across letters, symbols and shift layers. Per language because not every
+     * alphabet fits in four rows. */
+    val baseRowCount: Int = KeyboardLocale.Default.letterLayout.rows.size,
     val shiftOn: Boolean = false,
     /** True once shift has been long-pressed into caps-lock — every letter is capitalized until
      * shift is tapped again, unlike plain [shiftOn] which is a one-shot "capitalize just the next
-     * letter" that clears itself after a single character (see [commitTypedChar]). */
+     * letter" that clears itself after a single character (see [commitTypedText]). */
     val capsLockOn: Boolean = false,
     val suggestions: List<String> = emptyList(),
     /** Emoji matching the word currently being typed/just finished (see

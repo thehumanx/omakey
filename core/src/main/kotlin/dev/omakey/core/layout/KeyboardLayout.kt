@@ -34,7 +34,15 @@ data class KeyDefinition(
     val popupChars: List<String> = emptyList(),
     val widthWeight: Float = 1f,
     val keyType: KeyType = KeyType.CHARACTER,
-)
+    /** What the key types, when that is more than the single character [code] names — a Devanagari
+     * conjunct such as "क्ष" is three code points. Null means "the character [code]". A key with
+     * text needs a [code] unique within its layout, since taps are identified by code; see
+     * [KeyboardLayout.validate]. */
+    val text: String? = null,
+) {
+    /** The string a tap on this key commits. */
+    val committedText: String get() = text ?: String(Character.toChars(code))
+}
 
 @Immutable
 @Serializable
@@ -42,7 +50,54 @@ data class KeyRow(val keys: List<KeyDefinition>)
 
 @Immutable
 @Serializable
-data class KeyboardLayout(val id: String, val rows: List<KeyRow>)
+data class KeyboardLayout(
+    val id: String,
+    val rows: List<KeyRow>,
+    /** Row that gets the home-row tint and the swipe-delete shimmer; -1 for none (symbols pages). */
+    val homeRow: Int = -1,
+    /** For languages without letter case: the layout Shift shows instead of uppercasing, e.g. a
+     * Devanagari layout's aspirate/retroflex layer. Null means Shift changes case, as in English. */
+    val shiftLayoutId: String? = null,
+) {
+    fun keyForCode(code: Int): KeyDefinition? {
+        for (row in rows) for (key in row.keys) if (key.code == code) return key
+        return null
+    }
+
+    /**
+     * Structural problems that would make this layout misbehave, empty if there are none. Checked
+     * for every bundled layout by a test and, from AGENTS.md §66 Phase 7, for every layout a
+     * language pack brings — a pack is data from the network, and a malformed layout must be
+     * rejected at install rather than discovered as a keyboard that types the wrong thing.
+     */
+    fun validate(): List<String> {
+        val problems = mutableListOf<String>()
+        if (id.isBlank()) problems += "blank id"
+        if (rows.isEmpty()) problems += "no rows"
+        if (homeRow !in -1 until rows.size) problems += "homeRow $homeRow is not a row"
+        val codes = HashSet<Int>()
+        for ((rowIndex, row) in rows.withIndex()) {
+            if (row.keys.isEmpty()) problems += "row $rowIndex is empty"
+            for (key in row.keys) {
+                val where = "row $rowIndex key '${key.label}'"
+                if (!(key.widthWeight > 0f) || key.widthWeight.isInfinite()) problems += "$where: bad widthWeight ${key.widthWeight}"
+                if (key.keyType == KeyType.SPACER) continue
+                if (!codes.add(key.code)) problems += "$where: duplicate code ${key.code}"
+                if (key.keyType == KeyType.CHARACTER) {
+                    if (key.text != null) {
+                        if (key.text.isEmpty()) problems += "$where: empty text"
+                    } else if (key.code < 0 || !Character.isValidCodePoint(key.code)) {
+                        problems += "$where: code ${key.code} is not a character and there is no text"
+                    }
+                }
+            }
+        }
+        val all = rows.flatMap { it.keys }
+        if (all.count { it.code == SpecialKeyCode.SPACE } != 1) problems += "needs exactly one space key"
+        if (all.count { it.code == SpecialKeyCode.BACKSPACE } != 1) problems += "needs exactly one backspace key"
+        return problems
+    }
+}
 
 /** Computes per-key pixel widths for a row given the available width, preserving widthWeight proportions. */
 fun KeyRow.computeKeyWidthsPx(availableWidthPx: Float): List<Float> {

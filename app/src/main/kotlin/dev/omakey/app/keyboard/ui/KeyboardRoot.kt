@@ -50,7 +50,6 @@ import dev.omakey.app.keyboard.resolveEffectiveTheme
 import dev.omakey.core.theme.toComposeColor
 import dev.omakey.core.theme.toDp
 import dev.omakey.core.theme.gridCellBorder
-import dev.omakey.core.locale.KeyboardLocale
 import dev.omakey.core.gesture.KeyHitTester
 import dev.omakey.core.layout.KeyDefinition
 import dev.omakey.core.layout.KeyboardPlacement
@@ -176,12 +175,12 @@ fun KeyboardRoot(
     val placement = layoutSettings.placement
     val place = rememberPlacementState(viewModel, layoutSettings, screenWidthDp, screenHeightDp)
 
-    // Row height is derived from each layout's own BASE row count (always 4, for both letters and
-    // symbols — QwertyEnUS.rows.size), so keys are always the same size regardless of which
-    // layout is active. The *height* it divides is the current placement's own — a floating
+    // Row height is derived from the active language's letter-layout row count (4 for QWERTY),
+    // not from whichever layout is showing, so keys are always the same size across letters,
+    // symbols and shift layers. The *height* it divides is the current placement's own — a floating
     // keyboard has its own height, which is what makes "resize in the current mode" work without
     // any mode-specific code down here.
-    val rowHeightDp = place.keyboardHeightDp / KeyboardLocale.Default.letterLayout.rows.size
+    val rowHeightDp = place.keyboardHeightDp / uiState.baseRowCount
     val gridHeightDp = rowHeightDp * effectiveRows.size
 
     /** Zero unless floating, because only a floating keyboard carries a move handle. */
@@ -200,8 +199,8 @@ fun KeyboardRoot(
      * content that sits below the handle, not the keyboard as a whole.
      */
     val keyboardTotalHeightDp = handleHeightDp + SUGGESTION_STRIP_HEIGHT_DP + gridHeightDp
-    // The "home row" (asdfghjkl) is always the second row of the base QWERTY layout.
-    val homeRowIndex = if (uiState.layout.id == KeyboardLocale.Default.letterLayout.id) 1 else -1
+    // Declared by the layout itself (asdfghjkl on QWERTY); -1, i.e. none, on the symbols pages.
+    val homeRowIndex = uiState.layout.homeRow
 
     // Everything below sits inside a placement container. Docked, it is a plain wrapper and the
     // keyboard fills it exactly as before. Floating, it is a tall transparent area the keyboard is

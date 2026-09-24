@@ -603,7 +603,7 @@ internal fun ThemePreviewMock(
                 // Matches KeyGrid's own homeRowIndex for QwertyEnUS (see KeyboardRoot.kt) — the
                 // ASDFGHJKL row (index 1), not the ZXCVBNM/shift row (real bug, fixed: this
                 // preview had it one row too low).
-                isHomeRow = rowIndex == 1,
+                isHomeRow = rowIndex == KeyboardLocale.Default.letterLayout.homeRow,
                 homeRowTinted = homeRowTinted,
                 onKeyTap = {},
                 ancestorCoordinates = noOpAncestor,
