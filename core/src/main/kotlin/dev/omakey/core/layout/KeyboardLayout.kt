@@ -20,6 +20,10 @@ object SpecialKeyCode {
      * row — they used to simply omit that slot entirely, one widthWeight short of QwertyEnUS's
      * total). */
     const val SETTINGS = -8
+    /** Switches to the next enabled language; long-press opens the language picker. Never part of
+     * a stored layout — added to the letter layout at display time, only while two or more
+     * languages are enabled (see `KeyboardViewModel.withLanguageKey`). */
+    const val LANGUAGE = -9
 }
 
 // @Immutable is a promise to the Compose compiler that instances never change after construction

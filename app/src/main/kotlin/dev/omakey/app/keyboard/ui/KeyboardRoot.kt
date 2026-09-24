@@ -340,6 +340,7 @@ fun KeyboardRoot(
             // Checked before the extension cases: the two share this slot and the view model
             // already clears one when the other opens, so this ordering only decides a race that
             // cannot happen — but it decides it the way the user's last tap intended.
+            uiState.languagePickerOpen -> "language-picker"
             uiState.quickAccessOpen -> "quick-access"
             uiState.activeExtensionId == EMOJI_EXTENSION_ID -> "emoji"
             uiState.activeExtensionId == CLIPBOARD_EXTENSION_ID -> "clipboard"
@@ -436,6 +437,17 @@ fun KeyboardRoot(
                         fontFamily = fontFamily,
                         feedback = feedback,
                         placement = placement,
+                        heightDp = gridHeightDp,
+                        languageCount = uiState.languages.size,
+                        onOpenSettings = onOpenSettings,
+                    )
+                    "language-picker" -> LanguagePickerPanel(
+                        viewModel = viewModel,
+                        languages = uiState.languages,
+                        activeLanguageId = uiState.activeLanguageId,
+                        theme = theme,
+                        fontFamily = fontFamily,
+                        feedback = feedback,
                         heightDp = gridHeightDp,
                         onOpenSettings = onOpenSettings,
                     )

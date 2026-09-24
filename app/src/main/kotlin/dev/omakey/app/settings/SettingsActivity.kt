@@ -98,6 +98,8 @@ class SettingsActivity : ComponentActivity() {
         val database = OmakeyDatabase.getInstance(applicationContext)
         val wordDao = database.wordDao()
         val clipboardPreferences = ClipboardPreferences(applicationContext)
+        val localePreferences = dev.omakey.core.locale.LocalePreferences(applicationContext)
+        val localeRegistry = dev.omakey.core.locale.LocaleRegistry()
         val clipboardDao = database.clipboardDao()
         // Same store the IME uses, so "clear history" removes the image files too rather than
         // leaving them orphaned — the exact failure the trim path used to have.
@@ -127,6 +129,8 @@ class SettingsActivity : ComponentActivity() {
                         clipboardPreferences = clipboardPreferences,
                         clipboardDao = clipboardDao,
                         clipboardHistory = clipboardHistory,
+                        localePreferences = localePreferences,
+                        localeRegistry = localeRegistry,
                         feedback = feedback,
                         onOpenSystemSettings = {
                             startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS))
@@ -219,6 +223,8 @@ private fun SettingsScreen(
     clipboardPreferences: ClipboardPreferences,
     clipboardDao: dev.omakey.core.db.ClipboardDao,
     clipboardHistory: ClipboardHistoryStore,
+    localePreferences: dev.omakey.core.locale.LocalePreferences,
+    localeRegistry: dev.omakey.core.locale.LocaleRegistry,
     feedback: VibratorKeyboardFeedback,
     onOpenSystemSettings: () -> Unit,
     onSwitchKeyboard: () -> Unit,
@@ -354,6 +360,12 @@ private fun SettingsScreen(
                     FontPicker(fontPreferences, currentFontId)
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     EmojiSkinTonePicker(emojiSkinTonePreferences)
+                }
+            }
+
+            item {
+                SettingsSection(title = "Languages") {
+                    LanguagesSection(localePreferences, localeRegistry)
                 }
             }
 

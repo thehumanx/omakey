@@ -125,6 +125,12 @@ class AutocorrectIndex(
         languageProfile: LanguageProfile = LanguageProfile.English,
         geometry: KeyboardGeometry = baseChannel.geometry,
     ) {
+        // Withdrawn first and published last: every public entry point returns early while
+        // [model] is null, so a correction running on another thread during a language switch
+        // sees either the old language or the new one, never the new model with the old tables.
+        // Also fixes the first load, which used to publish the model before the floors below were
+        // computed and so briefly let any candidate through.
+        model = null
         profile = languageProfile
         personal = personalModel
         channel = if (languageProfile.equivalentLetters.isEmpty() && geometry === baseChannel.geometry) {
@@ -142,7 +148,6 @@ class AutocorrectIndex(
                 letters.indices.filter { it != index && channel.geometry.areAdjacent(letters[index], letters[it]) }.toIntArray()
             },
         )
-        model = languageModel
 
         // Only correct *into* reasonably common words — otherwise a typed non-word that happens to
         // sit close to an obscure entry gets "corrected" into something the user has never heard
@@ -160,6 +165,7 @@ class AutocorrectIndex(
             sorted.getOrElse(sorted.size - 1 - rank) { sorted.firstOrNull() ?: Float.NEGATIVE_INFINITY }
         correctionFloor = floorAtRank(correctionRank)
         strictFloor = floorAtRank(strictRank)
+        model = languageModel
     }
 
     /** Marks a word as known (e.g. explicitly saved via swipe-up) so it's never "corrected" away
@@ -300,8 +306,8 @@ class AutocorrectIndex(
         if (lower.length < MIN_LENGTH || lower.length > MAX_LENGTH) return emptySet()
         if (!profile.isWord(lower)) return emptySet()
         val neighbours = mutableSetOf<String>()
-        forEachCandidate(lower) { id, _ ->
-            val distance = editDistance(lower, id, 1)
+        forEachCandidate(languageModel, lower) { id, _ ->
+            val distance = editDistance(languageModel, lower, id, 1)
             if (distance != null && distance > 0) neighbours += languageModel.wordAt(id)
         }
         return neighbours
@@ -332,12 +338,12 @@ class AutocorrectIndex(
         // stricter bar the distance-2 fallback uses. Same tiering idea, same reason: a less
         // certain route into the vocabulary needs a more certain destination.
         val offFirstLetterFloor = maxOf(floor, strictFloor)
-        forEachCandidate(typed) { id, offFirstLetter ->
+        forEachCandidate(languageModel, typed) { id, offFirstLetter ->
             val prior = languageModel.unigramLogProbability(id)
             if (prior < (if (offFirstLetter) offFirstLetterFloor else floor)) return@forEachCandidate
-            val distance = editDistance(typed, id, editBound) ?: return@forEachCandidate
+            val distance = editDistance(languageModel, typed, id, editBound) ?: return@forEachCandidate
             if (distance == 0) return@forEachCandidate
-            val cost = channelCost(typed, id, taps)
+            val cost = channelCost(languageModel, typed, id, taps)
             val languageScore = personal.adjustById(
                 id,
                 languageModel.logProbability(id, context.previousId, context.beforePreviousId),
@@ -436,8 +442,11 @@ class AutocorrectIndex(
      * That is ~8 ranges instead of 1 or 26, and the extra ones are pre-filtered by a float compare
      * before any distance matrix is built.
      */
-    private inline fun forEachCandidate(typed: String, action: (id: Int, offFirstLetter: Boolean) -> Unit) {
-        val languageModel = model ?: return
+    private inline fun forEachCandidate(
+        languageModel: LanguageModel,
+        typed: String,
+        action: (id: Int, offFirstLetter: Boolean) -> Unit,
+    ) {
         if (typed.isEmpty()) return
 
         for (id in languageModel.prefixRange(typed.substring(0, 1))) action(id, false)
@@ -486,22 +495,22 @@ class AutocorrectIndex(
     /** Plain Damerau-Levenshtein against the vocabulary word [id], used only to bound the candidate
      * set. Reads characters straight out of the mapped blob so scanning thousands of candidates
      * allocates nothing. Null once the true distance is known to exceed [maxDistance]. */
-    private fun editDistance(a: String, id: Int, maxDistance: Int): Int? {
-        val languageModel = model ?: return null
+    private fun editDistance(languageModel: LanguageModel, a: String, id: Int, maxDistance: Int): Int? {
         val length = languageModel.wordLength(id)
         if (abs(a.length - length) > maxDistance) return null
         if (a.length > MAX_LENGTH || length > MAX_LENGTH) return null
-        return editDistance(a, null, id, length, maxDistance)
+        return editDistance(languageModel, a, null, id, length, maxDistance)
     }
 
     private fun editDistance(a: String, b: String, maxDistance: Int): Int? {
         if (abs(a.length - b.length) > maxDistance) return null
         if (a.length > MAX_LENGTH || b.length > MAX_LENGTH) return null
-        return editDistance(a, b, -1, b.length, maxDistance)
+        return editDistance(null, a, b, -1, b.length, maxDistance)
     }
 
-    private fun editDistance(text: String, b: String?, id: Int, bLength: Int, maxDistance: Int): Int? {
-        val languageModel = model
+    // [languageModel] is passed down from the caller that produced [id] rather than re-read from
+    // the field: a language switch between the two reads would look [id] up in a different model.
+    private fun editDistance(languageModel: LanguageModel?, text: String, b: String?, id: Int, bLength: Int, maxDistance: Int): Int? {
         val d = editScratch.get()
         val a = charsOf(text)
         val aLength = text.length
@@ -532,8 +541,7 @@ class AutocorrectIndex(
 
     /** `-log P(typed | candidate)` under [ChannelModel] — the same Damerau recurrence, but with
      * real per-edit costs instead of 1 apiece, so which keys were involved actually matters. */
-    private fun channelCost(typedText: String, id: Int, taps: TouchTrace.Taps?): Float {
-        val languageModel = model ?: return Float.MAX_VALUE
+    private fun channelCost(languageModel: LanguageModel, typedText: String, id: Int, taps: TouchTrace.Taps?): Float {
         val length = languageModel.wordLength(id)
         val d = costScratch.get()
         val typed = charsOf(typedText)

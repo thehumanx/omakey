@@ -52,6 +52,7 @@ import dev.omakey.core.icons.PhosphorBackspace
 import dev.omakey.core.icons.PhosphorCheck
 import dev.omakey.core.icons.PhosphorEnter
 import dev.omakey.core.icons.PhosphorGear
+import dev.omakey.core.icons.PhosphorGlobe
 import dev.omakey.core.icons.PhosphorSearch
 import dev.omakey.core.icons.PhosphorSend
 import dev.omakey.core.icons.PhosphorShift
@@ -657,6 +658,7 @@ private fun keyIcon(key: KeyDefinition, capsLockOn: Boolean, enterAction: Int): 
     SpecialKeyCode.BACKSPACE -> PhosphorBackspace
     SpecialKeyCode.ENTER -> enterIcon(enterAction)
     SpecialKeyCode.SETTINGS -> PhosphorGear
+    SpecialKeyCode.LANGUAGE -> PhosphorGlobe
     else -> null
 }
 
@@ -684,12 +686,14 @@ private fun enterDescription(enterAction: Int): String = when (enterAction) {
 private fun describeKey(key: KeyDefinition, enterAction: Int = android.view.inputmethod.EditorInfo.IME_ACTION_NONE): String = when (key.code) {
     SpecialKeyCode.SHIFT -> "Shift"
     SpecialKeyCode.BACKSPACE -> "Backspace"
-    SpecialKeyCode.SPACE -> "Space"
     SpecialKeyCode.ENTER -> enterDescription(enterAction)
     SpecialKeyCode.SYMBOLS -> "Symbols"
     SpecialKeyCode.LETTERS -> "Letters"
     SpecialKeyCode.EXTENSIONS -> "Emoji and extensions"
     SpecialKeyCode.SETTINGS -> "Settings"
+    SpecialKeyCode.LANGUAGE -> "Switch language"
+    // The spacebar carries the language name while several are enabled; say both.
+    SpecialKeyCode.SPACE -> if (key.label.isBlank()) "Space" else "Space, ${key.label}"
     else -> key.label
 }
 
@@ -746,6 +750,7 @@ private fun handleGestureEvent(
             val key = keyLookupByCode(event.keyCode)
             when {
                 key?.code == SpecialKeyCode.EXTENSIONS -> onOpenSettings()
+                key?.code == SpecialKeyCode.LANGUAGE -> viewModel.openLanguagePicker()
                 // A key with popupChars is intercepted earlier, in KeyGrid's own long-press-timer
                 // handling, which enters accent-drag mode directly instead of ever emitting this
                 // KeyLongPress event for it — so by the time one reaches here, it's guaranteed to

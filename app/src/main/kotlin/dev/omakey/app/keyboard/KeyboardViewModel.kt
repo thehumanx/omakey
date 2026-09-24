@@ -1,7 +1,9 @@
 package dev.omakey.app.keyboard
 
 import android.view.inputmethod.EditorInfo
+import dev.omakey.core.locale.FixedLocaleController
 import dev.omakey.core.locale.KeyboardLocale
+import dev.omakey.core.locale.LocaleController
 import dev.omakey.core.locale.LanguageProfile
 import dev.omakey.core.emoji.EmojiSkinTone
 import dev.omakey.core.gesture.GesturePreferences
@@ -22,6 +24,7 @@ import dev.omakey.core.layout.flippedOneHandedSide
 import dev.omakey.core.layout.nextOneHanded
 import dev.omakey.core.layout.toggledWith
 import dev.omakey.core.layout.LayoutSettings
+import dev.omakey.core.layout.withLanguageKey
 import dev.omakey.core.layout.Layouts
 import dev.omakey.core.layout.SpecialKeyCode
 import dev.omakey.core.predict.AutocorrectIndex
@@ -89,13 +92,14 @@ class KeyboardViewModel(
     // The user's chosen emoji skin tone, read per use rather than captured — it can change from
     // Settings while the keyboard is open.
     private val emojiSkinTone: () -> EmojiSkinTone = { EmojiSkinTone.DEFAULT },
-    // The active language. A provider rather than a value because switching languages (AGENTS.md
-    // §66 Phase 5) happens while this instance is alive; every language-dependent rule below reads
-    // through it instead of assuming English.
-    private val locale: () -> KeyboardLocale = { KeyboardLocale.Default },
+    // The active language and the ones the user switches between (AGENTS.md §66 Phase 5). Every
+    // language-dependent rule below reads through [locale] rather than assuming English.
+    private val localeController: LocaleController = FixedLocaleController(),
     // Resolves shift layers for languages without letter case.
     private val layouts: LayoutRepository = LayoutRepository(),
 ) {
+    private fun locale(): KeyboardLocale = localeController.active.value
+
     private val profile: LanguageProfile get() = locale().profile
 
     private val _uiState = MutableStateFlow(
@@ -251,6 +255,19 @@ class KeyboardViewModel(
         incognitoPreferences.incognito
             .onEach { enabled -> _uiState.update { it.copy(incognito = enabled) } }
             .launchIn(scope)
+        localeController.active
+            .onEach(::applyLocale)
+            .launchIn(scope)
+        localeController.enabled
+            .onEach { languages ->
+                _uiState.update {
+                    it.copy(
+                        languages = languages.map { l -> LanguageOption(l.id, l.nativeName) },
+                        layout = display(it.layout),
+                    )
+                }
+            }
+            .launchIn(scope)
         predictionReady
             .onEach { ready ->
                 _uiState.update { it.copy(suggestionsLoading = !ready) }
@@ -299,6 +316,8 @@ class KeyboardViewModel(
         // typing a password or a recovery phrase will never think to reach for a toggle, and words
         // captured from one would sit in the dictionary indefinitely.
         incognitoPreferences.onFieldChanged(isSensitiveField(info))
+        // Before the layout is chosen below, so a field that asks for a language opens in it.
+        localeController.onFieldStarted(hintLanguagesOf(info))
         val enterAction = when {
             info == null -> EditorInfo.IME_ACTION_NONE
             (info.imeOptions and EditorInfo.IME_FLAG_NO_ENTER_ACTION) != 0 -> EditorInfo.IME_ACTION_NONE
@@ -306,7 +325,7 @@ class KeyboardViewModel(
         }
         _uiState.update {
             it.copy(
-                layout = locale().letterLayout,
+                layout = display(locale().letterLayout),
                 baseRowCount = locale().letterLayout.rows.size,
                 shiftOn = autocorrectPreferences.settings.value.autoCapitalizeEnabled && profile.hasCase &&
                     textEditor.textBeforeCursor(1).isEmpty(),
@@ -322,6 +341,7 @@ class KeyboardViewModel(
                 canUndo = false,
                 canRedo = false,
                 quickAccessOpen = false,
+                languagePickerOpen = false,
                 resizing = false,
             )
         }
@@ -500,6 +520,7 @@ class KeyboardViewModel(
                 switchLayout(locale().letterLayout)
             }
             SpecialKeyCode.EXTENSIONS -> toggleExtensionPanel()
+            SpecialKeyCode.LANGUAGE -> nextLanguage()
             else -> onCharacter(code)
         }
     }
@@ -1390,7 +1411,7 @@ class KeyboardViewModel(
         val current = _uiState.value.layout
         val shiftLayer = if (profile.hasCase) null else layouts.shiftLayerOf(current)
         _uiState.update {
-            it.copy(shiftOn = true, capsLockOn = capsLock, layout = shiftLayer ?: it.layout)
+            it.copy(shiftOn = true, capsLockOn = capsLock, layout = shiftLayer?.let(::display) ?: it.layout)
         }
     }
 
@@ -1399,12 +1420,62 @@ class KeyboardViewModel(
         val base = locale().letterLayout
         _uiState.update {
             val onShiftLayer = !profile.hasCase && it.layout.id == base.shiftLayoutId
-            it.copy(shiftOn = false, capsLockOn = false, layout = if (onShiftLayer) base else it.layout)
+            it.copy(shiftOn = false, capsLockOn = false, layout = if (onShiftLayer) display(base) else it.layout)
         }
     }
 
     private fun switchLayout(layout: KeyboardLayout) {
-        _uiState.update { it.copy(layout = layout) }
+        _uiState.update { it.copy(layout = display(layout)) }
+    }
+
+    /**
+     * A language switch. Anything mid-word belongs to the previous language — its buffer, its
+     * pending correction, a word staged for learning — so all of it is dropped rather than carried
+     * into a language it was never typed in. Text already committed is left alone.
+     */
+    private fun applyLocale(locale: KeyboardLocale) {
+        discardPendingLearn()
+        resetTypingState()
+        suggestionCycleIndex = -1
+        symbolTypedInSymbolsMode = false
+        _uiState.update {
+            it.copy(
+                layout = display(locale.letterLayout),
+                baseRowCount = locale.letterLayout.rows.size,
+                activeLanguageId = locale.id,
+                shiftOn = false,
+                capsLockOn = false,
+                suggestions = emptyList(),
+                emojiSuggestions = emptyList(),
+                firstSuggestionKind = SuggestionKind.PLAIN,
+                languagePickerOpen = false,
+            )
+        }
+    }
+
+    fun nextLanguage() = localeController.next()
+
+    fun selectLanguage(id: String) {
+        localeController.switchTo(id)
+        _uiState.update { it.copy(languagePickerOpen = false, quickAccessOpen = false) }
+    }
+
+    fun openLanguagePicker() = _uiState.update { it.copy(languagePickerOpen = true, quickAccessOpen = false) }
+
+    fun closeLanguagePicker() = _uiState.update { it.copy(languagePickerOpen = false) }
+
+    /**
+     * What is actually shown for [layout]. While two or more languages are enabled, the active
+     * language's letter layers get a language key before the spacebar and its name on the spacebar
+     * — what tells the user which language they are typing in, and one tap to change it. Stored
+     * layouts never carry the key, so a single-language keyboard is exactly as it was.
+     */
+    private fun display(layout: KeyboardLayout): KeyboardLayout {
+        val locale = locale()
+        val letterLayers = setOfNotNull(locale.letterLayout.id, locale.letterLayout.shiftLayoutId)
+        if (layout.id !in letterLayers) return layout
+        val stored = layouts[layout.id] ?: locale.letterLayout.takeIf { it.id == layout.id } ?: layout
+        return if (localeController.enabled.value.size < 2) stored else stored.withLanguageKey(locale.nativeName)
     }
 
     /** Opens the emoji panel by default (matches the 😊 key's icon); tapping again closes it.
@@ -1549,4 +1620,11 @@ class KeyboardViewModel(
         const val DOUBLE_TAP_SPACE_WINDOW_MS = 500L
         val SYMBOLS_LAYOUT_IDS = setOf(Layouts.Symbols1.id, Layouts.Symbols2.id)
     }
+}
+
+/** The languages a text field asks for (`EditorInfo.hintLocales`), as ISO 639 codes, most preferred
+ * first. Empty when the field doesn't say. */
+private fun hintLanguagesOf(info: EditorInfo?): List<String> {
+    val hints = info?.hintLocales ?: return emptyList()
+    return (0 until hints.size()).map { hints[it].language }
 }

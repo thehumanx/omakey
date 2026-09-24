@@ -150,7 +150,12 @@ class LanguageModel private constructor(
     // --- probabilities ------------------------------------------------------------------------
 
     fun unigramLogProbability(id: Int): Float =
-        if (id == NO_WORD) UNKNOWN_LOG_PROBABILITY else unigramLogP.getShort(id * 2) / LOGP_SCALE
+        if (!isValid(id)) UNKNOWN_LOG_PROBABILITY else unigramLogP.getShort(id * 2) / LOGP_SCALE
+
+    /** Whether [id] is a word of *this* model. Word ids are computed in one call and used in the
+     * next (context ids especially), and a language switch in between would otherwise hand another
+     * model's ids to this one and read out of bounds. Treated as unknown instead. */
+    private fun isValid(id: Int): Boolean = id in 0 until vocabularySize
 
     /**
      * `log P(word | beforePrevious, previous)` under stupid backoff: use the trigram if the
@@ -163,7 +168,7 @@ class LanguageModel private constructor(
      * treated as one.
      */
     fun logProbability(id: Int, previousId: Int = NO_WORD, beforePreviousId: Int = NO_WORD): Float {
-        if (id == NO_WORD) return UNKNOWN_LOG_PROBABILITY
+        if (!isValid(id)) return UNKNOWN_LOG_PROBABILITY
 
         if (previousId != NO_WORD && beforePreviousId != NO_WORD) {
             val row = trigramRow(beforePreviousId, previousId)
@@ -187,7 +192,7 @@ class LanguageModel private constructor(
     /** Indices into [bigramWordId]/[bigramLogProbability] for continuations of [previousId], in
      * descending probability order. */
     fun bigramRow(previousId: Int): IntRange {
-        if (previousId == NO_WORD) return IntRange.EMPTY
+        if (!isValid(previousId)) return IntRange.EMPTY
         return bigramStart.getInt(previousId * 4) until bigramStart.getInt((previousId + 1) * 4)
     }
 
@@ -198,7 +203,7 @@ class LanguageModel private constructor(
     /** Indices into [trigramWordId]/[trigramLogProbability] for continuations of the context
      * `(firstId, secondId)`, in descending probability order; empty when the context is unseen. */
     fun trigramRow(firstId: Int, secondId: Int): IntRange {
-        if (firstId == NO_WORD || secondId == NO_WORD) return IntRange.EMPTY
+        if (!isValid(firstId) || !isValid(secondId)) return IntRange.EMPTY
         var low = 0
         var high = trigramContextCount - 1
         while (low <= high) {

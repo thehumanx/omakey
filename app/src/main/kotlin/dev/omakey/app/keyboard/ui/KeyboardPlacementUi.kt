@@ -43,6 +43,7 @@ import dev.omakey.core.icons.PhosphorArrowLeft
 import dev.omakey.core.icons.PhosphorExpand
 import dev.omakey.core.icons.PhosphorFloating
 import dev.omakey.core.icons.PhosphorGear
+import dev.omakey.core.icons.PhosphorGlobe
 import dev.omakey.core.icons.PhosphorOneHanded
 import dev.omakey.core.icons.PhosphorPalette
 import dev.omakey.core.icons.PhosphorResize
@@ -248,9 +249,10 @@ internal fun QuickAccessPanel(
     feedback: KeyboardFeedback,
     placement: KeyboardPlacement,
     heightDp: Int,
+    /** Enabled languages; the Language tile only appears when there is a choice to make. */
+    languageCount: Int,
     onOpenSettings: () -> Unit,
 ) {
-    val isGridMode = dev.omakey.core.theme.LocalKeyboardLayoutMode.current == dev.omakey.core.theme.LayoutMode.GRID
     val tiles = listOf(
         QuickTile("One-handed", PhosphorOneHanded, placement.isOneHanded) {
             feedback.onKeyPress(); viewModel.toggleOneHanded()
@@ -267,8 +269,72 @@ internal fun QuickAccessPanel(
         QuickTile("Settings", PhosphorGear, false) {
             feedback.onKeyPress(); viewModel.closeQuickAccess(); onOpenSettings()
         },
-    )
+    ) + if (languageCount > 1) {
+        listOf(QuickTile("Language", PhosphorGlobe, false) { feedback.onKeyPress(); viewModel.openLanguagePicker() })
+    } else {
+        emptyList()
+    }
 
+    TilePanel(
+        title = "Quick access",
+        closeDescription = "Close quick access",
+        onClose = { viewModel.closeQuickAccess() },
+        tiles = tiles,
+        theme = theme,
+        fontFamily = fontFamily,
+        feedback = feedback,
+        heightDp = heightDp,
+    )
+}
+
+/**
+ * The language picker: every enabled language as a tile, the active one highlighted, plus a way
+ * into Settings to add more. Opened by long-pressing the language key or from quick access, and
+ * shown in the key-grid slot for the same reason quick access is.
+ */
+@Composable
+internal fun LanguagePickerPanel(
+    viewModel: KeyboardViewModel,
+    languages: List<dev.omakey.app.keyboard.LanguageOption>,
+    activeLanguageId: String,
+    theme: OmakeyTheme,
+    fontFamily: androidx.compose.ui.text.font.FontFamily?,
+    feedback: KeyboardFeedback,
+    heightDp: Int,
+    onOpenSettings: () -> Unit,
+) {
+    val tiles = languages.map { language ->
+        QuickTile(language.nativeName, PhosphorGlobe, language.id == activeLanguageId) {
+            feedback.onKeyPress(); viewModel.selectLanguage(language.id)
+        }
+    } + QuickTile("Languages…", PhosphorGear, false) {
+        feedback.onKeyPress(); viewModel.closeLanguagePicker(); onOpenSettings()
+    }
+    TilePanel(
+        title = "Language",
+        closeDescription = "Close language picker",
+        onClose = { viewModel.closeLanguagePicker() },
+        tiles = tiles,
+        theme = theme,
+        fontFamily = fontFamily,
+        feedback = feedback,
+        heightDp = heightDp,
+    )
+}
+
+/** A back arrow and title over a 4-column grid of [tiles] — quick access and the language picker. */
+@Composable
+private fun TilePanel(
+    title: String,
+    closeDescription: String,
+    onClose: () -> Unit,
+    tiles: List<QuickTile>,
+    theme: OmakeyTheme,
+    fontFamily: androidx.compose.ui.text.font.FontFamily?,
+    feedback: KeyboardFeedback,
+    heightDp: Int,
+) {
+    val isGridMode = dev.omakey.core.theme.LocalKeyboardLayoutMode.current == dev.omakey.core.theme.LayoutMode.GRID
     Column(
         Modifier
             .fillMaxWidth()
@@ -286,9 +352,9 @@ internal fun QuickAccessPanel(
                     .clickable(
                         interactionSource = backInteraction,
                         indication = if (isGridMode) null else androidx.compose.foundation.LocalIndication.current,
-                    ) { feedback.onKeyPress(); viewModel.closeQuickAccess() }
+                    ) { feedback.onKeyPress(); onClose() }
                     .padding(horizontal = 6.dp)
-                    .semantics { contentDescription = "Close quick access" },
+                    .semantics { contentDescription = closeDescription },
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
@@ -299,7 +365,7 @@ internal fun QuickAccessPanel(
                 )
             }
             Text(
-                text = "Quick access",
+                text = title,
                 color = theme.keyTextColor.toComposeColor().copy(alpha = 0.7f),
                 fontFamily = fontFamily,
                 fontSize = 12.sp,
