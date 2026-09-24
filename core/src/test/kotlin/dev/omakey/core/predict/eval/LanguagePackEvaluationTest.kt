@@ -2,7 +2,9 @@ package dev.omakey.core.predict.eval
 
 import dev.omakey.core.locale.KeyboardLocale
 import dev.omakey.core.pack.PackInstaller
+import dev.omakey.core.db.WordEntity
 import dev.omakey.core.predict.AutocorrectIndex
+import dev.omakey.core.predict.NgramPredictionEngine
 import dev.omakey.core.predict.PersonalLanguageModel
 import dev.omakey.core.predict.lm.LanguageModel
 import dev.omakey.core.predict.spatial.KeyboardGeometry
@@ -37,6 +39,12 @@ import kotlin.random.Random
  *   accent restoration, real words   offered in the strip 79.2 %
  *   touch noise 0.35                 fixed 61.1 %   wrong 6.0 %
  *   correct words damaged            0.54 %
+ *
+ * French, same date (pack 1.0.0, 150,000 words, 5.6 MB, AZERTY):
+ *   accent restoration, non-words    fixed 87.4 %   wrong 9.3 %
+ *   touch noise 0.35                 fixed 57.8 %   wrong 6.0 %
+ *   correct words damaged            0.19 %
+ *
  * For comparison, English on its own tap-noise simulation is 66 % / 13 % with 0.73 % damage (§51.1).
  * The remaining accent misses are mostly vocabulary coverage (rare verb forms, proper names).
  * Floors below sit just under these.
@@ -64,6 +72,7 @@ class LanguagePackEvaluationTest {
         val model = LanguageModel.load(File((locale.languageModel as ModelSource.File).path))
         val geometry = KeyboardGeometry.from(locale.letterLayout, locale.profile::isWordChar)
         val index = AutocorrectIndex().apply { load(model, PersonalLanguageModel(), locale.profile, geometry) }
+        val prediction = NgramPredictionEngine(model, InMemoryWordDao(), PersonalLanguageModel(), locale.id, locale.profile)
     }
 
     private fun install(id: String): Engine {
@@ -162,6 +171,53 @@ class LanguagePackEvaluationTest {
         assertTrue("accented real words stopped being offered: $offeredRate", offeredRate >= 76.0)
         assertTrue("touch-noise correction regressed: $noise", noise.fixedRate >= 58.0 && noise.wrongRate <= 8.0)
         assertTrue("damage to correct words regressed: $damage", damage <= 0.7)
+    }
+
+    @Test
+    fun french() {
+        val engine = install("fr_FR")
+        val sentences = sentences("fr_FR")
+        assumeTrue("no held-out French sentences", sentences.isNotEmpty())
+        val index = engine.index
+
+        assertEquals("azerty_fr", engine.locale.letterLayout.id)
+        assertEquals(listOf("azerty_fr", "qwerty_fr"), engine.locale.letterLayoutChoices.map { it.id })
+        assertEquals("qwerty_fr", engine.locale.withLetterLayout("qwerty_fr").letterLayout.id)
+
+        assertEquals("très", index.correct("tres"))
+        assertEquals("être", index.correct("etre"))
+        assertEquals("français", index.correct("francais"))
+        // Elision: the word after the clitic is corrected, with the clitic as its context.
+        assertEquals("l'homme", index.correct("l'homne"))
+        assertEquals("L'homme", index.correct("L'homne")) // the clitic keeps its typed case
+        assertEquals(null, index.correct("aujourd'hui"))
+        assertTrue(index.isKnown("c'est"))
+        assertTrue(index.alternatives("cest", 3).contains("c'est"))
+        kotlinx.coroutines.runBlocking {
+            assertTrue(engine.prediction.suggestNext(null, "je", "", 5).contains("suis"))
+            assertTrue(engine.prediction.suggestNext(null, null, "l'hom", 5).contains("l'homme"))
+            assertTrue(engine.prediction.suggestNext(null, "c'est", "", 10).isNotEmpty())
+        }
+
+        val accents = measure(engine, sentences) { w -> stripAccents(w).takeIf { it != w && !index.isKnown(it) } }
+        val random = Random(66)
+        val noise = measure(engine, sentences.take(1500)) { w -> typeWithNoise(engine.geometry, w, 0.35f, random) }
+        var clean = 0; var damaged = 0
+        for (sentence in sentences) for (i in sentence.indices) {
+            val word = sentence[i]
+            if (word.length < 3) continue
+            clean++
+            val result = index.correct(word, index.contextOf(sentence.getOrNull(i - 1), sentence.getOrNull(i - 2)))
+            if (result != null && result != word) damaged++
+        }
+        val damage = 100.0 * damaged / clean
+        println("fr_FR accent restoration: $accents")
+        println("fr_FR touch noise 0.35 (AZERTY): $noise")
+        println("fr_FR correct words damaged: %.2f %% of %d".format(damage, clean))
+
+        assertTrue("accent restoration regressed: $accents", accents.fixedRate >= 85.0 && accents.wrongRate <= 11.0)
+        assertTrue("touch-noise correction regressed: $noise", noise.fixedRate >= 54.0 && noise.wrongRate <= 8.0)
+        assertTrue("damage to correct words regressed: $damage", damage <= 0.4)
     }
 
     /** [word] typed with Gaussian tap noise on [geometry], resolved to the nearest key; null if the

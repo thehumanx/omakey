@@ -2,6 +2,7 @@ package dev.omakey.core.predict
 
 import dev.omakey.core.db.WordDao
 import dev.omakey.core.db.WordEntity
+import dev.omakey.core.locale.LanguageProfile
 import dev.omakey.core.locale.toLookupForm
 import dev.omakey.core.predict.lm.LanguageModel
 
@@ -24,6 +25,9 @@ class NgramPredictionEngine(
     private val personal: PersonalLanguageModel = PersonalLanguageModel(),
     /** Language whose personal vocabulary this engine reads and writes. */
     private val locale: String = WordEntity.DEFAULT_LOCALE,
+    /** For elided forms: "l'hom" completes "hom" after "l'", and "l'homme" as context is "homme"
+     * preceded by "l'" — the way the model was built. */
+    private val profile: LanguageProfile = LanguageProfile.English,
 ) : PredictionEngine {
 
     override suspend fun suggestNext(
@@ -33,6 +37,12 @@ class NgramPredictionEngine(
         limit: Int,
     ): List<String> {
         if (limit <= 0) return emptyList()
+        profile.splitClitic(previousWord.orEmpty())?.let { (clitic, rest) ->
+            return suggestNext(clitic, rest, currentPrefix, limit)
+        }
+        profile.splitClitic(currentPrefix)?.let { (clitic, rest) ->
+            return suggestNext(previousWord, clitic, rest, limit).map { clitic + it }
+        }
         val prefix = currentPrefix.toLookupForm()
         val previousId = previousWord?.let { model.indexOf(it.toLookupForm()) } ?: LanguageModel.NO_WORD
         val beforePreviousId =
@@ -105,14 +115,18 @@ class NgramPredictionEngine(
     }
 
     override suspend fun deleteWord(word: String) {
-        val normalized = word.trim().toLookupForm()
+        val normalized = withoutClitic(word.trim()).toLookupForm()
         if (normalized.isEmpty()) return
         personal.forget(normalized)
         wordDao.delete(locale, normalized)
     }
 
+    /** The word a clitic is attached to — "homme" for "l'homme". What gets learned is the word, not
+     * every elided form of it. */
+    private fun withoutClitic(word: String): String = profile.splitClitic(word)?.second ?: word
+
     private suspend fun persist(word: String, explicit: Boolean) {
-        val normalized = word.trim().toLookupForm()
+        val normalized = withoutClitic(word.trim()).toLookupForm()
         if (normalized.isEmpty()) return
         val entry = personal.record(normalized, explicit) ?: return
         wordDao.upsert(

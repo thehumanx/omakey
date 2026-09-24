@@ -1,0 +1,19 @@
+{
+ "id": "fr_FR",
+ "displayName": "French",
+ "nativeName": "Français",
+ "packVersion": "1.0.0",
+ "packFormat": 1,
+ "letterLayout": "azerty_fr",
+ "letterLayoutChoices": [
+  "azerty_fr",
+  "qwerty_fr"
+ ],
+ "layouts": [
+  "layouts/azerty_fr.json",
+  "layouts/qwerty_fr.json"
+ ],
+ "model": "lm.bin",
+ "profile": "profile.json",
+ "license": "CC BY-SA 3.0 (derived in part from FrequencyWords); see sources"
+}

@@ -22,7 +22,7 @@ class LocaleRegistry(
      * [IllegalArgumentException] if its layouts are invalid, in which case nothing changes. */
     @Synchronized
     fun register(locale: KeyboardLocale) {
-        layouts.registerAll(listOf(locale.letterLayout) + locale.extraLayouts)
+        layouts.registerAll((listOf(locale.letterLayout) + locale.extraLayouts + locale.letterLayoutChoices).distinctBy { it.id })
         _available.value = _available.value.filter { it.id != locale.id } + locale
     }
 

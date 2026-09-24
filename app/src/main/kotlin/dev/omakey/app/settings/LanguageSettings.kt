@@ -12,6 +12,9 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -111,6 +114,19 @@ internal fun LanguagesSection(localePreferences: LocalePreferences, languagePack
                 localePreferences.setEnabled(if (on) settings.enabledIds + locale.id else settings.enabledIds - locale.id)
             },
         )
+        if (enabled && locale.letterLayoutChoices.size > 1) {
+            val chosen = settings.layoutChoices[locale.id] ?: locale.letterLayout.id
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                locale.letterLayoutChoices.forEachIndexed { i, layout ->
+                    SegmentedButton(
+                        selected = layout.id == chosen,
+                        onClick = { localePreferences.setLayoutChoice(locale.id, layout.id) },
+                        shape = SegmentedButtonDefaults.itemShape(i, locale.letterLayoutChoices.size),
+                        icon = {},
+                    ) { Text(layoutName(layout)) }
+                }
+            }
+        }
         if (installed != null) {
             val manifest = remember(installed) { languagePacks.manifestOf(locale.id) }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -274,3 +290,11 @@ private fun copyAtMost(input: java.io.InputStream, output: java.io.OutputStream,
         output.write(buffer, 0, read)
     }
 }
+
+/** "AZERTY", "QWERTY" — a layout named by its first six letters, the way keyboards are. */
+private fun layoutName(layout: dev.omakey.core.layout.KeyboardLayout): String =
+    layout.rows.firstOrNull()?.keys.orEmpty()
+        .filter { it.keyType == dev.omakey.core.layout.KeyType.CHARACTER }
+        .take(6)
+        .joinToString("") { it.label }
+        .uppercase()

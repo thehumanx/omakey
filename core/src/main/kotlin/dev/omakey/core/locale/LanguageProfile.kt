@@ -50,7 +50,25 @@ class LanguageProfile(
     /** Letters that stand in for each other nearly for free in correction, one group per string —
      * "eéèêë" lets "cancion" find "canción". See `ChannelModel.equivalentGroups`. */
     val equivalentLetters: List<String> = emptyList(),
+    /** Elided forms written joined to the next word — French "l'", "qu'", "jusqu'". The model
+     * stores them as tokens of their own ("l'homme" is "l'" then "homme"), so correction and
+     * prediction split them off with [splitClitic] and work on the rest with the clitic as context.
+     * Must match the builder's list (`build_lang_lm.py`); `CliticTokenizerTest` checks they agree. */
+    val clitics: List<String> = emptyList(),
 ) {
+    private val cliticsLongestFirst = clitics.map { it.toLookupForm() }.sortedByDescending { it.length }
+
+    /**
+     * [word] split into its leading clitic and the rest ("L'homme" → "L'", "homme"), each part in
+     * the case it was typed; null when there's no clitic or nothing after it. Longest clitic first,
+     * so "jusqu'à" is "jusqu'" + "à" rather than a failed "qu'" match.
+     */
+    fun splitClitic(word: String): Pair<String, String>? {
+        if (cliticsLongestFirst.isEmpty()) return null
+        val lookup = word.toLookupForm()
+        val clitic = cliticsLongestFirst.firstOrNull { lookup.startsWith(it) && lookup.length > it.length } ?: return null
+        return word.substring(0, clitic.length) to word.substring(clitic.length)
+    }
 
     /** Whether [c] belongs to a word: a letter, a combining mark (so Devanagari vowel signs and the
      * halant stay inside the word they modify), or one of [extraWordChars]. */

@@ -51,8 +51,12 @@ class LocaleManager(
 ) : LocaleController {
 
     override val enabled: StateFlow<List<KeyboardLocale>> =
-        combine(registry.available, preferences.settings) { _, settings -> registry.resolve(settings.enabledIds) }
-            .stateIn(scope, SharingStarted.Eagerly, registry.resolve(preferences.settings.value.enabledIds))
+        combine(registry.available, preferences.settings) { _, settings -> resolve(settings) }
+            .stateIn(scope, SharingStarted.Eagerly, resolve(preferences.settings.value))
+
+    /** Enabled languages, each with the letter layout the user picked for it. */
+    private fun resolve(settings: dev.omakey.core.locale.LocaleSettings): List<KeyboardLocale> =
+        registry.resolve(settings.enabledIds).map { it.withLetterLayout(settings.layoutChoices[it.id]) }
 
     private val _active = MutableStateFlow(initialLocale())
     override val active: StateFlow<KeyboardLocale> = _active
@@ -65,8 +69,9 @@ class LocaleManager(
             enabled.collect { languages ->
                 val current = _active.value
                 val replacement = languages.firstOrNull { it.id == current.id } ?: languages.first()
-                // Same id but a new object means the pack was updated: reload it.
-                if (replacement !== current) _active.value = replacement
+                // Equality, not identity: the list is rebuilt on every preference change, and only a
+                // real difference (an updated pack, another layout chosen) is worth a reload.
+                if (replacement != current) _active.value = replacement
             }
         }
     }
@@ -112,7 +117,7 @@ class LocaleManager(
                 model,
             )
             autocorrectIndex.load(model, personal, locale.profile, geometryFor(locale))
-            predictionEngine.delegate = NgramPredictionEngine(model, wordDao, personal, locale.id)
+            predictionEngine.delegate = NgramPredictionEngine(model, wordDao, personal, locale.id, locale.profile)
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {

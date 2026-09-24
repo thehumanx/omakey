@@ -32,6 +32,9 @@ data class KeyboardLocale(
     val letterLayout: KeyboardLayout,
     /** Layouts besides [letterLayout] that belong to this language, such as its shift layer. */
     val extraLayouts: List<KeyboardLayout> = emptyList(),
+    /** Letter layouts the user may pick from, [letterLayout] among them; empty when there's no
+     * choice. See [withLetterLayout]. */
+    val letterLayoutChoices: List<KeyboardLayout> = emptyList(),
     val languageModel: ModelSource,
     /** Text rules and per-language data tables — what counts as a word, sentence punctuation,
      * contractions, emoji words. */
@@ -39,6 +42,12 @@ data class KeyboardLocale(
 ) {
     /** ISO 639 language code, for matching a text field's `EditorInfo.hintLocales`. */
     val language: String get() = id.substringBefore('_')
+
+    /** This language with the user's chosen letter layout, if [layoutId] is one of its choices. */
+    fun withLetterLayout(layoutId: String?): KeyboardLocale {
+        val chosen = letterLayoutChoices.firstOrNull { it.id == layoutId } ?: return this
+        return if (chosen == letterLayout) this else copy(letterLayout = chosen)
+    }
 
     companion object {
         val EnUs = KeyboardLocale(

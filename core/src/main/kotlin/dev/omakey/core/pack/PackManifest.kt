@@ -20,6 +20,9 @@ data class PackManifest(
     val minAppVersionCode: Int = 0,
     /** Id of the layout in [layouts] that is the language's letter layout. */
     val letterLayout: String,
+    /** Letter layouts the user can choose between (AZERTY or QWERTY for French), first the
+     * default; empty when there's only [letterLayout]. */
+    val letterLayoutChoices: List<String> = emptyList(),
     /** Paths inside the pack of every layout JSON, the letter layout included. */
     val layouts: List<String>,
     val model: String = "lm.bin",

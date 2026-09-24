@@ -190,6 +190,17 @@ def read_hunspell(dic_path: Path, aff_path: Path, verbose: bool, accept=None) ->
         accept = WORD_RE.match
     rules: dict[str, list[tuple[str, str, str, str]]] = {}
     lines = aff_path.read_text(encoding="utf-8", errors="replace").splitlines()
+    # How a stem's flags are written: one character each (the default, and "UTF-8"), two
+    # characters each ("long" — French), or comma-separated numbers ("num").
+    flag_type = next((l.split()[1] for l in lines if l.startswith("FLAG ") and len(l.split()) > 1), "char")
+
+    def split_flags(flags: str) -> list[str]:
+        if flag_type == "long":
+            return [flags[i:i + 2] for i in range(0, len(flags) - 1, 2)]
+        if flag_type == "num":
+            return [f for f in flags.split(",") if f]
+        return list(flags)
+
     index = 0
     while index < len(lines):
         parts = lines[index].split()
@@ -216,13 +227,15 @@ def read_hunspell(dic_path: Path, aff_path: Path, verbose: bool, accept=None) ->
     for line_number, line in enumerate(dic_path.read_text(encoding="utf-8", errors="replace").splitlines()):
         if line_number == 0:  # the count header
             continue
-        stem, _, flags = line.strip().partition("/")
+        # Some dictionaries follow the entry with morphological fields ("chat/S. po:nom").
+        entry = line.strip().split()[0] if line.strip() else ""
+        stem, _, flags = entry.partition("/")
         stem = stem.strip().lower().replace("’", "'")
         if not stem:
             continue
         if accept(stem):
             words.add(stem)
-        for flag in flags:
+        for flag in split_flags(flags):
             for kind, strip, add, condition in rules.get(flag, ()):
                 try:
                     if kind == "SFX":

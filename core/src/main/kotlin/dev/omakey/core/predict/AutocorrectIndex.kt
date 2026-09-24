@@ -116,8 +116,17 @@ class AutocorrectIndex(
         companion object { val NONE = Context() }
     }
 
+    /** Context for the word after [clitic]: the clitic is its previous word, and what came
+     * before the clitic moves back one place. */
+    private fun cliticContext(clitic: String, context: Context): Context {
+        val languageModel = model ?: return context
+        return Context(previousId = languageModel.indexOf(clitic.toLookupForm()), beforePreviousId = context.previousId)
+    }
+
     fun contextOf(previousWord: String?, beforePreviousWord: String?): Context {
         val languageModel = model ?: return Context.NONE
+        // "l'homme" as the previous word is two tokens to the model: "homme", preceded by "l'".
+        profile.splitClitic(previousWord.orEmpty())?.let { (clitic, rest) -> return contextOf(rest, clitic) }
         return Context(
             previousId = previousWord?.toLookupForm()?.let { languageModel.indexOf(it) } ?: LanguageModel.NO_WORD,
             beforePreviousId = beforePreviousWord?.toLookupForm()?.let { languageModel.indexOf(it) } ?: LanguageModel.NO_WORD,
@@ -180,6 +189,7 @@ class AutocorrectIndex(
     /** Marks a word as known (e.g. explicitly saved via swipe-up) so it's never "corrected" away
      * in the future, even if it's a name/slang/word absent from the bundled vocabulary. */
     fun learn(word: String) {
+        profile.splitClitic(word)?.let { return learn(it.second) }
         val lower = word.toLookupForm()
         if (lower.isEmpty() || isKnown(lower)) return
         personal.record(lower, explicit = true)
@@ -190,6 +200,7 @@ class AutocorrectIndex(
      * vocabulary word can never be unlearned this way, so "unlearn" can't silently turn autocorrect
      * against an ordinary word like "cat". */
     fun unlearn(word: String) {
+        profile.splitClitic(word)?.let { return unlearn(it.second) }
         val lower = word.toLookupForm()
         if (!personal.isExplicit(lower)) return
         personal.forget(lower)
@@ -197,6 +208,7 @@ class AutocorrectIndex(
 
     /** Whether [word] is a real/known word — bundled vocabulary or the user's own. */
     fun isKnown(word: String): Boolean {
+        profile.splitClitic(word)?.let { return isKnown(it.second) }
         val lower = word.toLookupForm()
         // isTrusted, not contains: a word picked up from casual typing must not gain immunity from
         // correction just by having been typed once. See PersonalLanguageModel's class doc.
@@ -207,7 +219,8 @@ class AutocorrectIndex(
 
     /** Whether [word] came from the user's own swipe-up save rather than the bundled vocabulary —
      * exactly what determines whether a second swipe-up can [unlearn] it. */
-    fun isUserAdded(word: String): Boolean = personal.isExplicit(word.toLookupForm())
+    fun isUserAdded(word: String): Boolean =
+        personal.isExplicit((profile.splitClitic(word)?.second ?: word).toLookupForm())
 
     /**
      * Curated apostrophe-insertion fixes ("im" -> "I'm", "weve" -> "we've").
@@ -260,6 +273,10 @@ class AutocorrectIndex(
         taps: TouchTrace.Taps? = null,
     ): List<String> {
         val languageModel = model ?: return emptyList()
+        profile.splitClitic(word)?.let { (clitic, rest) ->
+            // Taps are dropped: they index the whole typed word, not the part after the clitic.
+            return alternatives(rest, limit, cliticContext(clitic, context), null).map { clitic + it }
+        }
         val lower = word.toLookupForm()
         if (limit <= 0 || lower.isEmpty()) return emptyList()
         if (!profile.isWord(lower)) return emptyList()
@@ -294,6 +311,9 @@ class AutocorrectIndex(
      */
     fun correct(typed: String, context: Context = Context.NONE, taps: TouchTrace.Taps? = null): String? {
         model ?: return null
+        profile.splitClitic(typed)?.let { (clitic, rest) ->
+            return correct(rest, cliticContext(clitic, context), null)?.let { clitic + it }
+        }
         val lower = typed.toLookupForm()
         if (lower.length < MIN_LENGTH || lower.length > MAX_LENGTH) return null
         if (!profile.isWord(lower)) return null
@@ -311,6 +331,7 @@ class AutocorrectIndex(
      * Deliberately does *not* filter by frequency — ranking is the caller's job. */
     fun realWordNeighbors(word: String): Set<String> {
         val languageModel = model ?: return emptySet()
+        profile.splitClitic(word)?.let { (clitic, rest) -> return realWordNeighbors(rest).mapTo(LinkedHashSet()) { clitic + it } }
         val lower = word.toLookupForm()
         if (lower.length < MIN_LENGTH || lower.length > MAX_LENGTH) return emptySet()
         if (!profile.isWord(lower)) return emptySet()

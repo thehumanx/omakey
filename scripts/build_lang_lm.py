@@ -323,6 +323,13 @@ def main() -> int:
     eval_dir.mkdir(parents=True, exist_ok=True)
     stride = max(1, len(heldout) // HELDOUT_LIMIT)
     (eval_dir / "sentences.txt").write_text("\n".join(" ".join(s) for s in heldout[::stride][:HELDOUT_LIMIT]) + "\n", encoding="utf-8")
+    if lang.clitics:
+        # How this builder tokenises elided forms, for CliticTokenizerTest to hold the keyboard's
+        # runtime split to. One case per line: the raw word, a tab, its tokens space-separated.
+        cases = ["l'homme", "L'Homme", "qu'il", "jusqu'à", "lorsqu'on", "c'est", "j'ai", "d'accord",
+                 "aujourd'hui", "presqu'île", "l’amour", "s'il", "n'est", "m'appelle", "t'aime", "l'", "maison"]
+        (eval_dir / "tokenizer_cases.txt").write_text(
+            "\n".join(f"{case}\t{' '.join(lang.tokens(case))}" for case in cases) + "\n", encoding="utf-8")
     print(f"wrote {args.out} ({len(payload) / 1e6:.1f} MB, {len(model['vocabulary']):,} words) and {eval_dir}/sentences.txt")
     return 0
 

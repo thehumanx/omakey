@@ -21,6 +21,7 @@ data class ProfileSpec(
     val equivalentLetters: List<String> = emptyList(),
     /** Exact-word emoji suggestions, lowercase word → emoji. */
     val emojiWords: Map<String, List<String>> = emptyMap(),
+    val clitics: List<String> = emptyList(),
 ) {
     fun toProfile(): LanguageProfile {
         require(doubleSpaceInserts.length == 1) { "doubleSpaceInserts must be one character" }
@@ -37,6 +38,7 @@ data class ProfileSpec(
             contractions = contractions.mapKeys { it.key.lowercase() },
             emojiFor = { word -> emoji[word.lowercase()].orEmpty().take(MAX_EMOJI) },
             equivalentLetters = equivalentLetters,
+            clitics = clitics,
         )
     }
 }

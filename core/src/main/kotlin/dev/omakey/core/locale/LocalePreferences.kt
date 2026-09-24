@@ -10,6 +10,8 @@ data class LocaleSettings(
     val enabledIds: List<String> = listOf(KeyboardLocale.Default.id),
     /** The language chosen last; the keyboard opens in it. */
     val activeId: String = KeyboardLocale.Default.id,
+    /** Chosen letter layout per language id, for languages that offer a choice. */
+    val layoutChoices: Map<String, String> = emptyMap(),
 )
 
 /** Which languages are enabled, and which one is active. */
@@ -24,6 +26,11 @@ class LocalePreferences(context: Context) {
         store.edit { putString(KEY_ENABLED, cleaned.joinToString(SEPARATOR)) }
     }
 
+    fun setLayoutChoice(localeId: String, layoutId: String) {
+        val choices = settings.value.layoutChoices + (localeId to layoutId)
+        store.edit { putString(KEY_LAYOUTS, choices.entries.joinToString(SEPARATOR) { "${it.key}=${it.value}" }) }
+    }
+
     fun setActive(id: String) {
         store.edit { putString(KEY_ACTIVE, id) }
     }
@@ -36,6 +43,9 @@ class LocalePreferences(context: Context) {
         return LocaleSettings(
             enabledIds = enabled,
             activeId = prefs.getString(KEY_ACTIVE, null) ?: enabled.first(),
+            layoutChoices = prefs.getString(KEY_LAYOUTS, null).orEmpty().split(SEPARATOR)
+                .mapNotNull { entry -> entry.split('=').takeIf { it.size == 2 }?.let { it[0] to it[1] } }
+                .toMap(),
         )
     }
 
@@ -43,6 +53,7 @@ class LocalePreferences(context: Context) {
         const val PREFS_NAME = "omakey_locale_prefs"
         const val KEY_ENABLED = "enabled_locales"
         const val KEY_ACTIVE = "active_locale"
+        const val KEY_LAYOUTS = "layout_choices"
         const val SEPARATOR = ","
     }
 }

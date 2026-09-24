@@ -42,6 +42,10 @@ object PackLoader {
         }
         val letterLayout = layouts.firstOrNull { it.id == manifest.letterLayout }
             ?: throw InvalidPackException("letter layout '${manifest.letterLayout}' is not among its layouts")
+        val choices = manifest.letterLayoutChoices.map { id ->
+            layouts.firstOrNull { it.id == id } ?: throw InvalidPackException("layout choice '$id' is not among its layouts")
+        }
+        if (choices.isNotEmpty() && letterLayout !in choices) throw InvalidPackException("letter layout is not one of its choices")
         // Shift layers must resolve within the pack; register into a scratch repository to check.
         try {
             LayoutRepository(bundled = emptyList()).registerAll(layouts)
@@ -68,6 +72,7 @@ object PackLoader {
             nativeName = manifest.nativeName,
             letterLayout = letterLayout,
             extraLayouts = layouts - letterLayout,
+            letterLayoutChoices = choices,
             languageModel = ModelSource.File(modelFile.absolutePath),
             profile = profile,
         )
