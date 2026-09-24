@@ -2,6 +2,7 @@ package dev.omakey.core.predict
 
 import dev.omakey.core.db.WordDao
 import dev.omakey.core.db.WordEntity
+import dev.omakey.core.locale.toLookupForm
 import dev.omakey.core.predict.lm.LanguageModel
 
 /**
@@ -30,10 +31,10 @@ class NgramPredictionEngine(
         limit: Int,
     ): List<String> {
         if (limit <= 0) return emptyList()
-        val prefix = currentPrefix.lowercase()
-        val previousId = previousWord?.let { model.indexOf(it.lowercase()) } ?: LanguageModel.NO_WORD
+        val prefix = currentPrefix.toLookupForm()
+        val previousId = previousWord?.let { model.indexOf(it.toLookupForm()) } ?: LanguageModel.NO_WORD
         val beforePreviousId =
-            beforePreviousWord?.let { model.indexOf(it.lowercase()) } ?: LanguageModel.NO_WORD
+            beforePreviousWord?.let { model.indexOf(it.toLookupForm()) } ?: LanguageModel.NO_WORD
 
         val best = TopCandidates(limit)
 
@@ -80,8 +81,8 @@ class NgramPredictionEngine(
     }
 
     override suspend fun contextLogProbability(previousWord: String, word: String): Float? {
-        val previousId = model.indexOf(previousWord.lowercase())
-        val wordId = model.indexOf(word.lowercase())
+        val previousId = model.indexOf(previousWord.toLookupForm())
+        val wordId = model.indexOf(word.toLookupForm())
         if (previousId == LanguageModel.NO_WORD || wordId == LanguageModel.NO_WORD) return null
         for (i in model.bigramRow(previousId)) {
             if (model.bigramWordId(i) == wordId) return model.bigramLogProbability(i)
@@ -102,14 +103,14 @@ class NgramPredictionEngine(
     }
 
     override suspend fun deleteWord(word: String) {
-        val normalized = word.trim().lowercase()
+        val normalized = word.trim().toLookupForm()
         if (normalized.isEmpty()) return
         personal.forget(normalized)
         wordDao.delete(normalized)
     }
 
     private suspend fun persist(word: String, explicit: Boolean) {
-        val normalized = word.trim().lowercase()
+        val normalized = word.trim().toLookupForm()
         if (normalized.isEmpty()) return
         val entry = personal.record(normalized, explicit) ?: return
         wordDao.upsert(

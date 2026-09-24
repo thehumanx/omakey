@@ -42,6 +42,9 @@ class LanguageProfile(
     /** Exact-word emoji suggestions for this language. Empty by default — an English table applied
      * to another language is not "fewer suggestions", it is wrong ones. */
     val emojiFor: (String) -> List<String> = { emptyList() },
+    /** Letters that stand in for each other nearly for free in correction, one group per string —
+     * "eéèêë" lets "cancion" find "canción". See `ChannelModel.equivalentGroups`. */
+    val equivalentLetters: List<String> = emptyList(),
 ) {
 
     /** Whether [c] belongs to a word: a letter, a combining mark (so Devanagari vowel signs and the

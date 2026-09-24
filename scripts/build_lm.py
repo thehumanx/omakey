@@ -27,6 +27,7 @@ right — web counts have the coverage, subtitles-style text has the phrasing.
 from __future__ import annotations
 
 import argparse
+import json
 import bz2
 import math
 import re
@@ -34,6 +35,7 @@ import struct
 import sys
 import urllib.request
 from collections import Counter
+from datetime import date
 from pathlib import Path
 
 # --- Sources -----------------------------------------------------------------------------------
@@ -80,7 +82,11 @@ WORD_RE = re.compile(r"^[a-z]+(?:'[a-z]+)*$")
 MAX_WORD_LEN = 24
 
 MAGIC = b"OMLM"
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2
+# v2 (AGENTS.md §66 Phase 3) stores each word as 1-byte indices into a per-model alphabet instead of
+# raw UTF-8, so non-ASCII vocabularies (é, ñ, Devanagari) keep the reader's O(1), allocation-free
+# character access. Hence the cap: an alphabet index must fit in a byte.
+MAX_ALPHABET = 256
 HEADER_BYTES = 64
 TOP_UNIGRAMS = 512
 
@@ -448,7 +454,7 @@ def validate(model: dict) -> None:
 # --- Binary encoding ---------------------------------------------------------------------------
 
 
-def pack(model: dict) -> bytes:
+def pack(model: dict, metadata: dict) -> bytes:
     """Little-endian, 4-byte aligned, laid out for `mmap` rather than parsing.
 
     Nothing here is decoded at load time on device: `LanguageModel` maps the file and reads through
@@ -460,14 +466,6 @@ def pack(model: dict) -> bytes:
     unigram = model["unigram"]
     bigram = model["bigram"]
     trigram = model["trigram"]
-
-    blob = bytearray()
-    offsets = [0]
-    for word in vocabulary:
-        blob.extend(word.encode("utf-8"))
-        offsets.append(len(blob))
-    while len(blob) % 4:
-        blob.append(0)
 
     def quantize(probability: float) -> int:
         return int(round(max(math.log(probability), LOGP_MIN) * LOGP_SCALE))
@@ -507,28 +505,114 @@ def pack(model: dict) -> bytes:
             trigram_logp.append(quantize(probability))
     trigram_start[len(contexts)] = len(trigram_word)
 
+    return write_binary(Sections(
+        vocabulary=vocabulary, unigram_logp=unigram_logp, top_unigrams=top_unigrams,
+        bigram_start=bigram_start, bigram_word=bigram_word, bigram_logp=bigram_logp,
+        trigram_a=trigram_a, trigram_b=trigram_b, trigram_start=trigram_start,
+        trigram_word=trigram_word, trigram_logp=trigram_logp,
+    ), metadata)
+
+
+class Sections:
+    """Everything the binary holds apart from the header, alphabet and metadata. Shared by [pack]
+    and [read_v1] so that converting an old asset and building a new one serialise identically."""
+
+    def __init__(self, **fields):
+        self.__dict__.update(fields)
+
+
+def write_binary(sections: Sections, metadata: dict) -> bytes:
+    vocabulary = sections.vocabulary
+
+    # The reader's binary searches compare typed characters against stored ones by code point, so
+    # the vocabulary must be in code-point order and every character must be a single UTF-16 unit.
+    if vocabulary != sorted(vocabulary):
+        raise ValidationError("vocabulary is not in code-point order")
+    alphabet = sorted({c for word in vocabulary for c in word})
+    if any(ord(c) > 0xFFFF for c in alphabet):
+        raise ValidationError("vocabulary contains characters outside the BMP")
+    if len(alphabet) > MAX_ALPHABET:
+        raise ValidationError(f"alphabet has {len(alphabet)} characters, max {MAX_ALPHABET}")
+    alphabet_index = {c: i for i, c in enumerate(alphabet)}
+
+    blob = bytearray()
+    offsets = [0]
+    for word in vocabulary:
+        blob.extend(alphabet_index[c] for c in word)
+        offsets.append(len(blob))
+
+    metadata_bytes = json.dumps(metadata, ensure_ascii=False, sort_keys=True).encode("utf-8")
+
     header = bytearray(HEADER_BYTES)
     struct.pack_into(
-        "<4sIIIIIII", header, 0,
+        "<4sIIIIIIIII", header, 0,
         MAGIC, FORMAT_VERSION, len(vocabulary), len(blob),
-        len(bigram_word), len(contexts), len(trigram_word), len(top_unigrams),
+        len(sections.bigram_word), len(sections.trigram_a), len(sections.trigram_word),
+        len(sections.top_unigrams), len(alphabet), len(metadata_bytes),
     )
+
+    def pad(data: bytes) -> bytes:
+        # Every section starts on a 4-byte boundary so the reader's int/short views stay aligned.
+        return data + b"\0" * (-len(data) % 4)
 
     def u32(values): return struct.pack(f"<{len(values)}I", *values)
 
-    def i16(values):
-        # Padded to a 4-byte boundary so every section that follows stays aligned for the reader's
-        # IntBuffer/ShortBuffer views.
-        packed = struct.pack(f"<{len(values)}h", *values)
-        return packed + b"\0" * (-len(packed) % 4)
+    def i16(values): return pad(struct.pack(f"<{len(values)}h", *values))
 
     return b"".join([
-        bytes(header), bytes(blob),
-        u32(offsets), i16(unigram_logp), u32(top_unigrams),
-        u32(bigram_start), u32(bigram_word), i16(bigram_logp),
-        u32(trigram_a), u32(trigram_b), u32(trigram_start),
-        u32(trigram_word), i16(trigram_logp),
+        bytes(header),
+        pad(struct.pack(f"<{len(alphabet)}H", *(ord(c) for c in alphabet))),
+        pad(metadata_bytes),
+        pad(bytes(blob)),
+        u32(offsets), i16(sections.unigram_logp), u32(sections.top_unigrams),
+        u32(sections.bigram_start), u32(sections.bigram_word), i16(sections.bigram_logp),
+        u32(sections.trigram_a), u32(sections.trigram_b), u32(sections.trigram_start),
+        u32(sections.trigram_word), i16(sections.trigram_logp),
     ])
+
+
+def read_v1(data: bytes) -> Sections:
+    """Parses a format-1 asset (raw ASCII words), for [convert_v1]."""
+    magic, version, vocab, blob_bytes, bigrams, contexts, trigrams, tops = struct.unpack_from("<4sIIIIIII", data, 0)
+    if magic != MAGIC or version != 1:
+        raise ValueError(f"not a format-1 omakey model (magic={magic!r}, version={version})")
+    offset = HEADER_BYTES
+
+    def take(count: int, fmt: str, size: int):
+        nonlocal offset
+        values = list(struct.unpack_from(f"<{count}{fmt}", data, offset))
+        offset += count * size + (-(count * size) % 4)
+        return values
+
+    blob = data[offset:offset + blob_bytes]
+    offset += blob_bytes + (-blob_bytes % 4)
+    offsets = take(vocab + 1, "I", 4)
+    vocabulary = [blob[offsets[i]:offsets[i + 1]].decode("utf-8") for i in range(vocab)]
+    return Sections(
+        vocabulary=vocabulary,
+        unigram_logp=take(vocab, "h", 2),
+        top_unigrams=take(tops, "I", 4),
+        bigram_start=take(vocab + 1, "I", 4),
+        bigram_word=take(bigrams, "I", 4),
+        bigram_logp=take(bigrams, "h", 2),
+        trigram_a=take(contexts, "I", 4),
+        trigram_b=take(contexts, "I", 4),
+        trigram_start=take(contexts + 1, "I", 4),
+        trigram_word=take(trigrams, "I", 4),
+        trigram_logp=take(trigrams, "h", 2),
+    )
+
+
+# Provenance of the English asset, carried in the binary's metadata section (AGENTS.md §66 Phase 3)
+# so a licences screen can list it without a table in the app that can drift from the data.
+ENGLISH_METADATA = {
+    "locale": "en_US",
+    "sources": [
+        {"name": "Norvig count_1w / count_2w (Google Web Trillion Word Corpus)", "url": "https://norvig.com/ngrams/"},
+        {"name": "Tatoeba English sentences", "url": "https://tatoeba.org", "license": "CC BY 2.0 FR"},
+        {"name": "Hunspell en_US (wooorm/dictionaries, SCOWL-derived)", "url": "https://github.com/wooorm/dictionaries"},
+    ],
+}
 
 
 def main() -> int:
@@ -537,7 +621,21 @@ def main() -> int:
     parser.add_argument("--cache", type=Path, default=Path("build/lm-cache"))
     parser.add_argument("--vocab", type=int, default=150_000)
     parser.add_argument("--verbose", action="store_true", default=True)
+    parser.add_argument(
+        "--convert-v1", type=Path, metavar="ASSET",
+        help="re-encode an existing format-1 asset as format 2 without rebuilding it — identical "
+             "words and probabilities, so English behaviour cannot change across the format bump",
+    )
     args = parser.parse_args()
+
+    if args.convert_v1:
+        sections = read_v1(args.convert_v1.read_bytes())
+        metadata = dict(ENGLISH_METADATA, built=date.today().isoformat(), convertedFrom="format 1")
+        payload = write_binary(sections, metadata)
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        args.out.write_bytes(payload)
+        print(f"converted {args.convert_v1} -> {args.out} ({len(payload) / 1e6:.1f} MB)")
+        return 0
 
     model = build(args.vocab, args.cache, args.verbose)
 
@@ -548,7 +646,7 @@ def main() -> int:
         return 1
     log(args.verbose, "validation passed")
 
-    payload = pack(model)
+    payload = pack(model, dict(ENGLISH_METADATA, built=date.today().isoformat()))
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_bytes(payload)
     print(f"wrote {args.out} ({len(payload) / 1e6:.1f} MB, {len(model['vocabulary']):,} words)")
