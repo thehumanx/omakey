@@ -46,7 +46,9 @@ class Lang:
     name: str
     #: Lowercase letters a word may contain.
     letters: str
-    tatoeba: str
+    #: Running text for n-grams: a Tatoeba sentence export, or (where Tatoeba has too little, as for
+    #: Nepali) a Wikipedia pages-articles dump.
+    tatoeba: str | None
     hunspell: tuple[str, str]
     #: "word count" per line (FrequencyWords format), or None to use Tatoeba unigrams alone.
     frequency_list: str | None
@@ -61,6 +63,7 @@ class Lang:
     weight_frequency_unigram: float = 0.5
     weight_conversational_unigram: float = 0.5
     vocab: int = 150_000
+    wikipedia: str | None = None
     word_re: re.Pattern = field(init=False)
 
     def __post_init__(self):
@@ -129,10 +132,82 @@ def read_tatoeba(path: Path, lang: Lang, verbose: bool):
     return unigrams, bigrams, trigrams, heldout
 
 
+WIKI_DROP = [
+    re.compile(r"<ref[^>]*/>"), re.compile(r"<ref[^>]*>.*?</ref>", re.S), re.compile(r"<!--.*?-->", re.S),
+    re.compile(r"\{\|.*?\|\}", re.S), re.compile(r"<[^>]+>"),
+]
+WIKI_TEMPLATE = re.compile(r"\{\{[^{}]*\}\}")
+WIKI_FILE = re.compile(r"\[\[(?:File|Image|चित्र|फाइल|श्रेणी|Category):[^\]]*\]\]", re.I)
+WIKI_LINK = re.compile(r"\[\[(?:[^\]|]*\|)?([^\]]*)\]\]")
+SENTENCE_SPLIT = re.compile(r"[।॥?!\n]+")
+WIKI_EMPHASIS = re.compile(r"'{2,}")
+
+
+def read_wikipedia(path: Path, lang: Lang, verbose: bool):
+    """N-gram counts from a Wikipedia pages-articles dump: article text only (namespace 0), markup
+    stripped, split into sentences at the danda as well as Latin punctuation. Every
+    HELDOUT_MODULO-th sentence is held out, counted in dump order."""
+    unigrams, bigrams, trigrams = Counter(), Counter(), Counter()
+    heldout: list[list[str]] = []
+    sentences = 0
+    counter = 0
+    in_text = False
+    namespace = None
+    buffer: list[str] = []
+
+    def flush(text: str):
+        nonlocal sentences, counter
+        for _ in range(3):  # nested templates, innermost first
+            text = WIKI_TEMPLATE.sub(" ", text)
+        text = WIKI_FILE.sub(" ", text)
+        for pattern in WIKI_DROP:
+            text = pattern.sub(" ", text)
+        text = WIKI_LINK.sub(r"\1", text)
+        text = WIKI_EMPHASIS.sub("", text)
+        for sentence in SENTENCE_SPLIT.split(text):
+            words = lang.tokens(sentence)
+            if len(words) < 2:
+                continue
+            counter += 1
+            if counter % HELDOUT_MODULO == 0:
+                heldout.append(words)
+                continue
+            sentences += 1
+            unigrams.update(words)
+            bigrams.update(zip(words, words[1:]))
+            trigrams.update(zip(words, words[1:], words[2:]))
+
+    with bz2.open(path, "rt", encoding="utf-8", errors="replace") as handle:
+        for line in handle:
+            if "<ns>" in line:
+                namespace = line.strip().removeprefix("<ns>").removesuffix("</ns>")
+            if not in_text:
+                start = line.find("<text")
+                if start < 0:
+                    continue
+                in_text = True
+                line = line[line.find(">", start) + 1:]
+            end = line.find("</text>")
+            if end >= 0:
+                buffer.append(line[:end])
+                if namespace == "0":
+                    flush("".join(buffer))
+                buffer.clear()
+                in_text = False
+            else:
+                buffer.append(line)
+    log(verbose, f"        {sentences:,} sentences -> {len(unigrams):,} uni / {len(bigrams):,} bi / "
+                 f"{len(trigrams):,} tri; {len(heldout):,} held out")
+    return unigrams, bigrams, trigrams, heldout
+
+
 def build(lang: Lang, cache: Path, verbose: bool):
     cache = cache / lang.code
-    log(verbose, f"[{lang.code}] reading conversational corpus")
-    conv_uni, conv_bi, conv_tri, heldout = read_tatoeba(fetch(lang.tatoeba, cache, verbose), lang, verbose)
+    log(verbose, f"[{lang.code}] reading running text")
+    if lang.tatoeba:
+        conv_uni, conv_bi, conv_tri, heldout = read_tatoeba(fetch(lang.tatoeba, cache, verbose), lang, verbose)
+    else:
+        conv_uni, conv_bi, conv_tri, heldout = read_wikipedia(fetch(lang.wikipedia, cache, verbose), lang, verbose)
     log(verbose, "reading dictionary")
     dic_url, aff_url = lang.hunspell
     dic_path = fetch(dic_url, cache / "dic", verbose)
@@ -252,6 +327,23 @@ def french_probes(model: dict) -> None:
     expect_top(model, "je", "suis", 5)
 
 
+def nepali_probes(model: dict) -> None:
+    common_checks(
+        model,
+        contexts=["नेपाल", "र", "को", "यो"],
+        required=["र", "छ", "को", "मा", "हो", "नेपाल", "म", "मेरो", "तपाईं", "गर्न", "थियो", "भएको", "काठमाडौं"],
+        misspellings=[],
+    )
+    # Not "को" — in Nepali that postposition is written joined ("नेपालको"), never as its own word.
+    expect_top(model, "नेपाल", "सरकार", 10)
+    if model["unigram"]["र"] <= model["unigram"]["काठमाडौं"]:
+        raise ValidationError("unigram probabilities are not frequency-ordered")
+
+
+#: Every Devanagari letter, vowel sign, virama and nasal sign Nepali uses (U+0900–0963, U+0971–097F),
+#: plus ZWNJ/ZWJ, which control conjunct rendering inside a word. Not digits, not the danda.
+DEVANAGARI = "".join(chr(c) for c in list(range(0x0900, 0x0964)) + list(range(0x0971, 0x0980))) + "‌‍"
+
 LANGS = {
     "es_ES": Lang(
         code="es_ES",
@@ -270,6 +362,27 @@ LANGS = {
              "license": "GPL-3.0-or-later OR LGPL-3.0-or-later OR MPL-1.1"},
             {"name": "FrequencyWords es (OpenSubtitles 2018)", "url": "https://github.com/hermitdave/FrequencyWords",
              "license": "CC BY-SA 3.0"},
+        ],
+    ),
+    "ne_NP": Lang(
+        code="ne_NP",
+        name="Nepali",
+        letters=DEVANAGARI,
+        tatoeba=None,
+        wikipedia="https://dumps.wikimedia.org/newiki/latest/newiki-latest-pages-articles.xml.bz2",
+        hunspell=(
+            "https://raw.githubusercontent.com/wooorm/dictionaries/main/dictionaries/ne/index.dic",
+            "https://raw.githubusercontent.com/wooorm/dictionaries/main/dictionaries/ne/index.aff",
+        ),
+        frequency_list=None,
+        # Wikipedia is edited text, and a Devanagari keyboard's worst misspellings (short/long vowel
+        # swaps) are corrected by the equivalent-letter channel rather than by keeping them out.
+        min_evidence=3,
+        probes=nepali_probes,
+        sources=[
+            {"name": "Nepali Wikipedia", "url": "https://ne.wikipedia.org", "license": "CC BY-SA 4.0"},
+            {"name": "Nepali spell-checking dictionary, Madan Puraskar Pustakalaya (via wooorm/dictionaries)",
+             "url": "https://github.com/wooorm/dictionaries", "license": "LGPL-2.1"},
         ],
     ),
     "fr_FR": Lang(
