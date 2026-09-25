@@ -16,6 +16,8 @@ import dev.omakey.core.predict.NgramPredictionEngine
 import dev.omakey.core.predict.PersonalLanguageModel
 import dev.omakey.core.predict.lm.LanguageModel
 import dev.omakey.core.predict.spatial.KeyboardGeometry
+import dev.omakey.core.translit.TransliterationIndex
+import dev.omakey.core.translit.Transliterator
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -58,6 +60,12 @@ class LocaleManager(
     private fun resolve(settings: dev.omakey.core.locale.LocaleSettings): List<KeyboardLocale> =
         registry.resolve(settings.enabledIds).map { it.withLetterLayout(settings.layoutChoices[it.id]) }
 
+    private val _transliterator = MutableStateFlow<Transliterator?>(null)
+
+    /** The active language's transliterator, once loaded — for languages whose layouts type in
+     * Latin letters (Nepali). */
+    val transliterator: StateFlow<Transliterator?> = _transliterator
+
     private val _active = MutableStateFlow(initialLocale())
     override val active: StateFlow<KeyboardLocale> = _active
 
@@ -96,6 +104,7 @@ class LocaleManager(
 
     private suspend fun load(locale: KeyboardLocale) {
         predictionEngine.delegate = null
+        _transliterator.value = null
         try {
             val model = withContext(Dispatchers.IO) {
                 when (val source = locale.languageModel) {
@@ -118,6 +127,16 @@ class LocaleManager(
             )
             autocorrectIndex.load(model, personal, locale.profile, geometryFor(locale))
             predictionEngine.delegate = NgramPredictionEngine(model, wordDao, personal, locale.id, locale.profile)
+            val source = locale.languageModel
+            val transliterates = (listOf(locale.letterLayout) + locale.letterLayoutChoices).any { it.transliteration }
+            if (transliterates && source is ModelSource.File) {
+                // Built once per install, next to the model, then memory-mapped (see
+                // TransliterationIndex for why it's built here and not shipped in the pack).
+                val index = withContext(Dispatchers.IO) {
+                    TransliterationIndex.openOrBuild(File(File(source.path).parentFile, "translit.idx"), model)
+                }
+                _transliterator.value = Transliterator(model, index)
+            }
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {

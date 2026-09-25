@@ -55,6 +55,9 @@ class LanguageProfile(
      * prediction split them off with [splitClitic] and work on the rest with the clitic as context.
      * Must match the builder's list (`build_lang_lm.py`); `CliticTokenizerTest` checks they agree. */
     val clitics: List<String> = emptyList(),
+    /** Whether autocorrect may replace a word silently at a word boundary. Off where the model is
+     * not yet trusted for that — suggestions are still offered; nothing is changed unasked. */
+    val autoApplyCorrections: Boolean = true,
 ) {
     private val cliticsLongestFirst = clitics.map { it.toLookupForm() }.sortedByDescending { it.length }
 

@@ -10,6 +10,8 @@ import dev.omakey.core.gesture.GesturePreferences
 import dev.omakey.core.gesture.GestureSettings
 import dev.omakey.core.input.TextEdit
 import dev.omakey.core.input.TextEditor
+import dev.omakey.core.input.TransliterationSession
+import dev.omakey.core.translit.Transliterator
 import dev.omakey.core.input.UndoHistory
 import dev.omakey.core.input.isSensitiveField
 import dev.omakey.core.predict.matchCase
@@ -97,6 +99,9 @@ class KeyboardViewModel(
     private val localeController: LocaleController = FixedLocaleController(),
     // Resolves shift layers for languages without letter case.
     private val layouts: LayoutRepository = LayoutRepository(),
+    // The active language's transliterator, when it has one and it has loaded (Nepali typed in
+    // Latin letters). Read per use: it changes with the language.
+    private val transliterator: () -> Transliterator? = { null },
 ) {
     private fun locale(): KeyboardLocale = localeController.active.value
 
@@ -231,6 +236,41 @@ class KeyboardViewModel(
     )
     private var activeCorrection: ActiveCorrection? = null
 
+    /** The word being typed in Latin and shown in Devanagari, while a transliteration layout is up
+     * (AGENTS.md §66 Phase 9). Every hook below that consults it does so first and returns, so
+     * ordinary typing never runs through it. */
+    private val translit = TransliterationSession(textEditor)
+
+    private fun transliterating(): Boolean = _uiState.value.layout.transliteration && transliterator() != null
+
+    private fun translitCandidates(latin: String): List<String> {
+        val engine = transliterator() ?: return emptyList()
+        val context = engine.contextOf(words.lastCommitted, words.previousToLastCommitted)
+        return engine.candidates(latin, context, SUGGESTION_LIMIT - 1)
+    }
+
+    private fun showTranslitStrip() {
+        _uiState.update {
+            it.copy(
+                suggestions = translit.strip,
+                activeSuggestionIndex = translit.selected,
+                firstSuggestionKind = SuggestionKind.PLAIN,
+                emojiSuggestions = emptyList(),
+            )
+        }
+    }
+
+    /** Ends the word being transliterated with [word] (or the selected candidate) and [separator],
+     * and records it the way a typed word is recorded: in the word history for context, and as one
+     * undo step. */
+    private fun commitTranslit(separator: String, word: String? = null) {
+        val committed = if (word != null) translit.commit(word, separator) else translit.commit(separator) ?: return
+        pushUndo(TextEdit(inserted = committed + separator))
+        words.commitWord(committed)
+        words.boundarySeparator = separator
+        updateEmojiSuggestions(committed)
+    }
+
     init {
         // Keeps an already-open keyboard in sync if the user changes theme/layout settings from
         // Settings while the IME view is alive (same process, different Activity).
@@ -346,6 +386,8 @@ class KeyboardViewModel(
             )
         }
         words.clear()
+        // The word being composed belonged to the field being left; it is gone with it.
+        translit.clear()
         symbolTypedInSymbolsMode = false
         suggestionCycleIndex = -1
         lastAutocorrect = null
@@ -590,6 +632,11 @@ class KeyboardViewModel(
      * cycle at all — restores the original word and, if it's still actively being typed and not
      * already a known word, saves it to the local dictionary (see [revertAndMaybeSave]). */
     fun onSwipeUp() {
+        if (translit.isComposing) {
+            translit.select(translit.selected - 1)
+            showTranslitStrip()
+            return
+        }
         if (tryCyclePunctuation(forward = false)) return
         val suggestions = _uiState.value.suggestions
         when {
@@ -618,6 +665,11 @@ class KeyboardViewModel(
      * comma; or swiping on a period typed directly) without the false-positive-on-plain-space
      * behavior. */
     fun onSwipeDown() {
+        if (translit.isComposing) {
+            translit.select(translit.selected + 1)
+            showTranslitStrip()
+            return
+        }
         if (tryCyclePunctuation(forward = true)) return
         val suggestions = _uiState.value.suggestions
         if (suggestions.isEmpty()) return
@@ -711,6 +763,11 @@ class KeyboardViewModel(
      * [flushWordBuffer]'s doc) — the word came from the suggestion strip, so it was already a
      * known word or an already-vetted correction. */
     fun onSuggestionAccepted(word: String) {
+        if (translit.isComposing) {
+            commitTranslit(separator = " ", word = word)
+            refreshSuggestions()
+            return
+        }
         // Accepting a suggestion for the word just committed is the user saying it was wrong.
         discardPendingLearn()
         lastAutocorrect = null
@@ -826,6 +883,22 @@ class KeyboardViewModel(
      * [TextEditor.wordAtCursor] and looks up alternatives for *that* word, which is the only way
      * to catch "cursor moved into the middle of an already-committed word" — nothing about normal
      * keystroke handling ever sees that case, since it isn't a keystroke at all. */
+    /**
+     * Selection changed. With a word composing, a change that leaves the cursor at the end of the
+     * composing region is the keyboard's own update; anything else is the user moving the cursor
+     * away, and the word is left as shown. [composingEnd] is -1 when the editor reports no
+     * composing region.
+     */
+    fun onSelectionChanged(selectionStart: Int, selectionEnd: Int, composingEnd: Int) {
+        if (translit.isComposing && (composingEnd < 0 || selectionStart != selectionEnd || selectionEnd != composingEnd)) {
+            translit.abandon()
+            refreshSuggestions()
+            return
+        }
+        if (translit.isComposing) return
+        onCursorMoved()
+    }
+
     fun onCursorMoved() {
         val wordAtCursor = textEditor.wordAtCursor()
         // The cursor sitting right at the end of a word that exactly matches what's actively
@@ -879,6 +952,16 @@ class KeyboardViewModel(
 
     private fun commitTypedText(rawText: String) {
         if (rawText.isEmpty()) return
+        if (transliterating()) {
+            if (rawText.all { it in 'a'..'z' || it in 'A'..'Z' }) {
+                suggestionCycleIndex = -1
+                translit.type(rawText.lowercase(), ::translitCandidates)
+                showTranslitStrip()
+                return
+            }
+            // Anything else ends the word before it is typed, as punctuation does in English.
+            if (translit.isComposing) commitTranslit(separator = "")
+        }
         suggestionCycleIndex = -1
         undoHistory.breakCoalescing()
         // Per character, not String.uppercase(): that can change the length ("ß" → "SS"), and a
@@ -966,6 +1049,12 @@ class KeyboardViewModel(
     }
 
     private fun onSpace() {
+        if (transliterating() && translit.isComposing) {
+            commitTranslit(separator = " ")
+            lastSpaceCommitAtMs = System.currentTimeMillis()
+            refreshSuggestions()
+            return
+        }
         if (shouldConvertDoubleSpaceToPeriod()) {
             convertPrecedingSpaceToPeriod()
             return
@@ -1032,6 +1121,7 @@ class KeyboardViewModel(
     }
 
     private fun onEnter() {
+        if (translit.isComposing) commitTranslit(separator = "")
         maybeAutocorrectBufferedWord()
         val action = _uiState.value.enterAction
         val willInsertNewline = action == EditorInfo.IME_ACTION_NONE || action == EditorInfo.IME_ACTION_UNSPECIFIED
@@ -1061,6 +1151,7 @@ class KeyboardViewModel(
      * only ever fire for something that plainly isn't a real word, never a "well" -> "we'll" style
      * variant of something already valid; those stay opt-in, offered on the suggestion strip. */
     private fun maybeAutocorrectBufferedWord() {
+        if (!profile.autoApplyCorrections) return
         val typed = words.bufferedWord
         // The user just backspaced this exact word back to what they actually typed — respect
         // that as a rejection instead of immediately re-correcting it right back on the very next
@@ -1082,6 +1173,10 @@ class KeyboardViewModel(
     }
 
     private fun onDeleteCharacter() {
+        if (translit.isComposing && translit.backspace(::translitCandidates)) {
+            if (translit.isComposing) showTranslitStrip() else refreshSuggestions()
+            return
+        }
         // Any backspace at all retracts the staged word — see [pendingLearn] for why this is
         // deliberately broader than "a backspace that touches it".
         discardPendingLearn()
@@ -1426,6 +1521,8 @@ class KeyboardViewModel(
     }
 
     private fun switchLayout(layout: KeyboardLayout) {
+        // Leaving the transliteration layer (to symbols, say) keeps the word as shown.
+        if (translit.isComposing && !layout.transliteration) translit.abandon()
         _uiState.update { it.copy(layout = display(layout)) }
     }
 
@@ -1435,6 +1532,7 @@ class KeyboardViewModel(
      * into a language it was never typed in. Text already committed is left alone.
      */
     private fun applyLocale(locale: KeyboardLocale) {
+        translit.abandon()
         discardPendingLearn()
         resetTypingState()
         suggestionCycleIndex = -1

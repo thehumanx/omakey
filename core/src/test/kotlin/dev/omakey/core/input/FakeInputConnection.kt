@@ -55,8 +55,23 @@ class FakeInputConnection(initialText: String = "", selectionStart: Int = -1, se
     override fun getSelectedText(flags: Int): CharSequence? =
         if (end > start) text.substring(start, end) else null
 
+    /** The composing region, or -1 when nothing is composing. */
+    var composingStart = -1
+        private set
+    var composingEnd = -1
+        private set
+
+    val composing: String? get() = if (composingStart >= 0) text.substring(composingStart, composingEnd) else null
+
     override fun commitText(newText: CharSequence, newCursorPosition: Int): Boolean {
         editCallCount++
+        // Like a real editor: committing replaces the composing region if there is one.
+        if (composingStart >= 0) {
+            start = composingStart
+            end = composingEnd
+            composingStart = -1
+            composingEnd = -1
+        }
         text.replace(start, end, newText.toString())
         start += newText.length
         end = start
@@ -87,10 +102,27 @@ class FakeInputConnection(initialText: String = "", selectionStart: Int = -1, se
         return true
     }
 
-    override fun setComposingText(composing: CharSequence, newCursorPosition: Int): Boolean =
-        commitText(composing, newCursorPosition)
+    override fun setComposingText(composing: CharSequence, newCursorPosition: Int): Boolean {
+        editCallCount++
+        val from = if (composingStart >= 0) composingStart else start
+        val to = if (composingStart >= 0) composingEnd else end
+        text.replace(from, to, composing.toString())
+        composingStart = from
+        composingEnd = from + composing.length
+        start = composingEnd
+        end = start
+        if (composing.isEmpty()) {
+            composingStart = -1
+            composingEnd = -1
+        }
+        return true
+    }
 
-    override fun finishComposingText(): Boolean = true
+    override fun finishComposingText(): Boolean {
+        composingStart = -1
+        composingEnd = -1
+        return true
+    }
 
     // --- not used by TextEditor -------------------------------------------------------------------
 

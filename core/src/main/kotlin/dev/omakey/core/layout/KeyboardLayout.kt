@@ -62,6 +62,11 @@ data class KeyboardLayout(
     /** For languages without letter case: the layout Shift shows instead of uppercasing, e.g. a
      * Devanagari layout's aspirate/retroflex layer. Null means Shift changes case, as in English. */
     val shiftLayoutId: String? = null,
+    /** Latin keys whose typing is transliterated into the language's own script (Nepali typed in
+     * Latin letters, shown in Devanagari). See `TransliterationSession`. */
+    val transliteration: Boolean = false,
+    /** Name shown where the user picks between layouts; derived from the keys when absent. */
+    val displayName: String? = null,
 ) {
     fun keyForCode(code: Int): KeyDefinition? {
         for (row in rows) for (key in row.keys) if (key.code == code) return key

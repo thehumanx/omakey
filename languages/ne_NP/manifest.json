@@ -1,0 +1,20 @@
+{
+ "id": "ne_NP",
+ "displayName": "Nepali",
+ "nativeName": "नेपाली",
+ "packVersion": "1.0.0",
+ "packFormat": 1,
+ "letterLayout": "qwerty_ne",
+ "letterLayoutChoices": [
+  "qwerty_ne",
+  "devanagari_ne"
+ ],
+ "layouts": [
+  "layouts/qwerty_ne.json",
+  "layouts/devanagari_ne.json",
+  "layouts/devanagari_ne_shift.json"
+ ],
+ "model": "lm.bin",
+ "profile": "profile.json",
+ "license": "CC BY-SA 4.0 (derived from Nepali Wikipedia); see sources"
+}

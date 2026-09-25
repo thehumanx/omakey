@@ -291,9 +291,10 @@ private fun copyAtMost(input: java.io.InputStream, output: java.io.OutputStream,
     }
 }
 
-/** "AZERTY", "QWERTY" — a layout named by its first six letters, the way keyboards are. */
+/** The layout's own name if it has one; otherwise "AZERTY", "QWERTY" — named by its first six
+ * letters, the way keyboards are. */
 private fun layoutName(layout: dev.omakey.core.layout.KeyboardLayout): String =
-    layout.rows.firstOrNull()?.keys.orEmpty()
+    layout.displayName ?: layout.rows.firstOrNull()?.keys.orEmpty()
         .filter { it.keyType == dev.omakey.core.layout.KeyType.CHARACTER }
         .take(6)
         .joinToString("") { it.label }

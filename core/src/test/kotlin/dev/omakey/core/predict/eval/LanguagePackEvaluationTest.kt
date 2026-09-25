@@ -220,6 +220,35 @@ class LanguagePackEvaluationTest {
         assertTrue("damage to correct words regressed: $damage", damage <= 0.4)
     }
 
+    @Test
+    fun nepali() {
+        val engine = install("ne_NP")
+        val locale = engine.locale
+        assertEquals("qwerty_ne", locale.letterLayout.id)
+        assertTrue(locale.letterLayout.transliteration)
+        val devanagari = locale.withLetterLayout("devanagari_ne").letterLayout
+        assertEquals("devanagari_ne_shift", devanagari.shiftLayoutId)
+        assertTrue(locale.extraLayouts.any { it.id == "devanagari_ne_shift" })
+        assertEquals(false, locale.profile.autoApplyCorrections)
+        assertEquals('।', locale.profile.doubleSpaceInserts)
+        // A conjunct on long-press commits all three code points.
+        assertTrue(devanagari.rows.flatMap { it.keys }.single { it.label == "क" }.popupChars.contains("क्ष"))
+
+        // The transliteration index builds inside the installed pack, as the keyboard builds it.
+        val packDir = File((locale.languageModel as ModelSource.File).path).parentFile
+        val index = dev.omakey.core.translit.TransliterationIndex.openOrBuild(File(packDir, "translit.idx"), engine.model)
+        val transliterator = dev.omakey.core.translit.Transliterator(engine.model, index)
+        assertTrue("नमस्ते" in transliterator.candidates("namaste", limit = 3))
+        assertTrue(File(packDir, "translit.idx").isFile)
+
+        // Devanagari autocorrect: व for ब is an equivalent-letter slip, and the model knows किताब.
+        val geometry = KeyboardGeometry.from(devanagari, locale.profile::isWordChar)
+        val index2 = AutocorrectIndex().apply { load(engine.model, PersonalLanguageModel(), locale.profile, geometry) }
+        assertTrue(index2.isKnown("किताब"))
+        assertTrue(index2.alternatives("किताव", 3).contains("किताब"))
+        assertTrue(index2.alternatives("तिमि", 3).contains("तिमी"))
+    }
+
     /** [word] typed with Gaussian tap noise on [geometry], resolved to the nearest key; null if the
      * word has a character that isn't a key. */
     private fun typeWithNoise(geometry: KeyboardGeometry, word: String, noise: Float, random: Random): String? {

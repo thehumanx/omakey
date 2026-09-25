@@ -1,0 +1,268 @@
+{
+ "id": "devanagari_ne",
+ "displayName": "देवनागरी",
+ "homeRow": 1,
+ "rows": [
+  {
+   "keys": [
+    {
+     "label": "ट",
+     "code": 2335,
+     "popupChars": [
+      "ठ"
+     ]
+    },
+    {
+     "label": "ौ",
+     "code": 2380,
+     "popupChars": [
+      "औ"
+     ]
+    },
+    {
+     "label": "े",
+     "code": 2375,
+     "popupChars": [
+      "ए"
+     ]
+    },
+    {
+     "label": "र",
+     "code": 2352,
+     "popupChars": [
+      "्",
+      "र्‍",
+      "ृ",
+      "ऋ"
+     ]
+    },
+    {
+     "label": "त",
+     "code": 2340,
+     "popupChars": [
+      "त्र",
+      "थ"
+     ]
+    },
+    {
+     "label": "य",
+     "code": 2351,
+     "popupChars": [
+      "ञ"
+     ]
+    },
+    {
+     "label": "ु",
+     "code": 2369,
+     "popupChars": [
+      "उ"
+     ]
+    },
+    {
+     "label": "ि",
+     "code": 2367,
+     "popupChars": [
+      "इ"
+     ]
+    },
+    {
+     "label": "ो",
+     "code": 2379,
+     "popupChars": [
+      "ओ"
+     ]
+    },
+    {
+     "label": "प",
+     "code": 2346,
+     "popupChars": [
+      "फ"
+     ]
+    }
+   ]
+  },
+  {
+   "keys": [
+    {
+     "label": "ा",
+     "code": 2366,
+     "popupChars": [
+      "आ",
+      "अ"
+     ]
+    },
+    {
+     "label": "स",
+     "code": 2360,
+     "popupChars": [
+      "श",
+      "ष",
+      "श्र"
+     ]
+    },
+    {
+     "label": "द",
+     "code": 2342,
+     "popupChars": [
+      "ध"
+     ]
+    },
+    {
+     "label": "उ",
+     "code": 2313,
+     "popupChars": [
+      "ऊ"
+     ]
+    },
+    {
+     "label": "ग",
+     "code": 2327,
+     "popupChars": [
+      "घ"
+     ]
+    },
+    {
+     "label": "ह",
+     "code": 2361,
+     "popupChars": [
+      "ः"
+     ]
+    },
+    {
+     "label": "ज",
+     "code": 2332,
+     "popupChars": [
+      "ज्ञ",
+      "झ"
+     ]
+    },
+    {
+     "label": "क",
+     "code": 2325,
+     "popupChars": [
+      "क्ष",
+      "ख"
+     ]
+    },
+    {
+     "label": "ल",
+     "code": 2354
+    },
+    {
+     "label": "्",
+     "code": 2381,
+     "popupChars": [
+      "‌",
+      "‍"
+     ]
+    }
+   ]
+  },
+  {
+   "keys": [
+    {
+     "label": "⇧",
+     "code": -1,
+     "widthWeight": 1.5,
+     "keyType": "SPECIAL"
+    },
+    {
+     "label": "ष",
+     "code": 2359,
+     "popupChars": [
+      "ङ"
+     ]
+    },
+    {
+     "label": "ड",
+     "code": 2337,
+     "popupChars": [
+      "ढ"
+     ]
+    },
+    {
+     "label": "छ",
+     "code": 2331,
+     "popupChars": [
+      "च"
+     ]
+    },
+    {
+     "label": "व",
+     "code": 2357,
+     "popupChars": [
+      "ँ"
+     ]
+    },
+    {
+     "label": "ब",
+     "code": 2348,
+     "popupChars": [
+      "भ"
+     ]
+    },
+    {
+     "label": "न",
+     "code": 2344,
+     "popupChars": [
+      "ण"
+     ]
+    },
+    {
+     "label": "म",
+     "code": 2350,
+     "popupChars": [
+      "ं"
+     ]
+    },
+    {
+     "label": "⌫",
+     "code": -2,
+     "widthWeight": 1.5,
+     "keyType": "SPECIAL"
+    }
+   ]
+  },
+  {
+   "keys": [
+    {
+     "label": "?123",
+     "code": -5,
+     "widthWeight": 1.5,
+     "keyType": "SPECIAL"
+    },
+    {
+     "label": "😊",
+     "code": -7,
+     "widthWeight": 1.0,
+     "keyType": "SPECIAL"
+    },
+    {
+     "label": " ",
+     "code": -3,
+     "widthWeight": 4.0,
+     "keyType": "SPECIAL"
+    },
+    {
+     "label": "।",
+     "code": 2404,
+     "popupChars": [
+      "॥",
+      ".",
+      ",",
+      "?",
+      "!",
+      "-"
+     ]
+    },
+    {
+     "label": "⏎",
+     "code": -4,
+     "widthWeight": 1.5,
+     "keyType": "SPECIAL"
+    }
+   ]
+  }
+ ],
+ "shiftLayoutId": "devanagari_ne_shift"
+}

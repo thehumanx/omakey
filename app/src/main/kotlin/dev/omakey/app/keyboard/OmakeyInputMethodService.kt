@@ -393,6 +393,7 @@ class OmakeyInputMethodService :
             emojiSkinTone = { emojiSkinTonePreferences.skinTone.value },
             localeController = localeManager,
             layouts = localeRegistry.layouts,
+            transliterator = { localeManager.transliterator.value },
         )
         keyboardViewModel = viewModel
 
@@ -456,7 +457,7 @@ class OmakeyInputMethodService :
         candidatesEnd: Int,
     ) {
         super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
-        keyboardViewModel?.onCursorMoved()
+        keyboardViewModel?.onSelectionChanged(newSelStart, newSelEnd, candidatesEnd)
     }
 
     override fun onEvaluateFullscreenMode(): Boolean = false
