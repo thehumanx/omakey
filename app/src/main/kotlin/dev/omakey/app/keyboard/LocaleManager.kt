@@ -85,9 +85,19 @@ class LocaleManager(
     }
 
     override fun switchTo(id: String, remember: Boolean) {
-        val locale = enabled.value.firstOrNull { it.id == id } ?: return
+        // Layout from the preferences directly, not from `enabled`: that flow catches up a moment
+        // later, and chooseLayout followed by switchTo (the globe key's cycle) must land on the
+        // layout just chosen rather than load the old one and then reload.
+        val locale = enabled.value.firstOrNull { it.id == id }
+            ?.withLetterLayout(preferences.settings.value.layoutChoices[id]) ?: return
         if (remember) preferences.setActive(id)
         _active.value = locale
+    }
+
+    override fun chooseLayout(localeId: String, layoutId: String) {
+        preferences.setLayoutChoice(localeId, layoutId)
+        val current = _active.value
+        if (current.id == localeId) _active.value = current.withLetterLayout(layoutId)
     }
 
     override fun onFieldStarted(hintLanguages: List<String>) {

@@ -340,6 +340,22 @@ def nepali_probes(model: dict) -> None:
         raise ValidationError("unigram probabilities are not frequency-ordered")
 
 
+def portuguese_probes(model: dict) -> None:
+    common_checks(
+        model,
+        contexts=["de", "que", "não", "eu", "o"],
+        required=["que", "de", "não", "é", "você", "está", "também", "então", "obrigado", "olá", "coração",
+                  "mãe", "até", "já", "pão", "português", "ação", "informação", "amanhã"],
+        # Accentless forms people type — must be absent, or accent restoration can never fire.
+        # Not "amanha": it is a real word (amanhar, "to till"), so "amanhã" can only be offered.
+        misspellings=["nao", "voce", "tambem", "entao", "coracao", "portugues", "informacao"],
+    )
+    expect_top(model, "por", "favor", 5)
+    expect_top(model, "bom", "dia", 3)
+    if model["unigram"]["de"] <= model["unigram"]["coração"]:
+        raise ValidationError("unigram probabilities are not frequency-ordered")
+
+
 #: Every Devanagari letter, vowel sign, virama and nasal sign Nepali uses (U+0900–0963, U+0971–097F),
 #: plus ZWNJ/ZWJ, which control conjunct rendering inside a word. Not digits, not the danda.
 DEVANAGARI = "".join(chr(c) for c in list(range(0x0900, 0x0964)) + list(range(0x0971, 0x0980))) + "‌‍"
@@ -383,6 +399,27 @@ LANGS = {
             {"name": "Nepali Wikipedia", "url": "https://ne.wikipedia.org", "license": "CC BY-SA 4.0"},
             {"name": "Nepali spell-checking dictionary, Madan Puraskar Pustakalaya (via wooorm/dictionaries)",
              "url": "https://github.com/wooorm/dictionaries", "license": "LGPL-2.1"},
+        ],
+    ),
+    "pt_BR": Lang(
+        code="pt_BR",
+        name="Portuguese (Brazil)",
+        letters="abcdefghijklmnopqrstuvwxyzáàâãçéêíóôõúü",
+        # Tatoeba's Portuguese export mixes Brazilian and European sentences; the dictionary gate
+        # and the Brazilian subtitle counts keep the vocabulary and ranking Brazilian.
+        tatoeba="https://downloads.tatoeba.org/exports/per_language/por/por_sentences.tsv.bz2",
+        hunspell=(
+            "https://raw.githubusercontent.com/wooorm/dictionaries/main/dictionaries/pt/index.dic",
+            "https://raw.githubusercontent.com/wooorm/dictionaries/main/dictionaries/pt/index.aff",
+        ),
+        frequency_list="https://raw.githubusercontent.com/hermitdave/FrequencyWords/master/content/2018/pt_br/pt_br_full.txt",
+        probes=portuguese_probes,
+        sources=[
+            {"name": "Tatoeba Portuguese sentences", "url": "https://tatoeba.org", "license": "CC BY 2.0 FR"},
+            {"name": "VERO Brazilian Portuguese dictionary (LibreOffice, via wooorm/dictionaries)",
+             "url": "https://github.com/wooorm/dictionaries", "license": "LGPL-3.0 OR MPL-2.0"},
+            {"name": "FrequencyWords pt_br (OpenSubtitles 2018)", "url": "https://github.com/hermitdave/FrequencyWords",
+             "license": "CC BY-SA 3.0"},
         ],
     ),
     "fr_FR": Lang(

@@ -6,7 +6,8 @@ import dev.omakey.core.layout.KeyType
 import dev.omakey.core.layout.KeyboardLayout
 import dev.omakey.core.layout.Layouts
 import dev.omakey.core.layout.SpecialKeyCode
-import dev.omakey.core.layout.withLanguageKey
+import dev.omakey.core.layout.withLanguageKeyInsteadOfEmoji
+import dev.omakey.core.layout.withSpaceLabel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import org.junit.Assert.assertEquals
@@ -74,10 +75,32 @@ class LocaleRegistryTest {
         override val enabled: StateFlow<List<KeyboardLocale>> = MutableStateFlow(languages)
         private val _active = MutableStateFlow(languages.first())
         override val active: StateFlow<KeyboardLocale> = _active
-        override fun switchTo(id: String, remember: Boolean) {
-            _active.value = enabled.value.first { it.id == id }
-        }
         override fun onFieldStarted(hintLanguages: List<String>) = Unit
+        private val choices = mutableMapOf<String, String>()
+        override fun switchTo(id: String, remember: Boolean) {
+            _active.value = enabled.value.first { it.id == id }.withLetterLayout(choices[id])
+        }
+        override fun chooseLayout(localeId: String, layoutId: String) {
+            choices[localeId] = layoutId
+            if (_active.value.id == localeId) _active.value = _active.value.withLetterLayout(layoutId)
+        }
+    }
+
+    @Test
+    fun `the globe key cycles through every layout of every language`() {
+        val azerty = Layouts.QwertyEnUS.copy(id = "azerty_fr")
+        val qwertyFr = Layouts.QwertyEnUS.copy(id = "qwerty_fr")
+        val french = spanish.copy(id = "fr_FR", letterLayout = qwertyFr, letterLayoutChoices = listOf(azerty, qwertyFr))
+        val controller = Recording(listOf(KeyboardLocale.EnUs, french, spanish))
+        val stops = List(5) {
+            controller.next()
+            controller.active.value.let { "${it.id}/${it.letterLayout.id}" }
+        }
+        // French is entered at its first layout even though QWERTY was the one in use before.
+        assertEquals(
+            listOf("fr_FR/azerty_fr", "fr_FR/qwerty_fr", "es_ES/qwerty_es", "en_US/qwerty_en_us", "fr_FR/azerty_fr"),
+            stops,
+        )
     }
 
     @Test
@@ -91,21 +114,35 @@ class LocaleRegistryTest {
     }
 
     @Test
-    fun `the language key takes its width from the spacebar and nothing else moves`() {
-        val decorated = Layouts.QwertyEnUS.withLanguageKey("English")
+    fun `the spacebar names a language by its code unless the pack says otherwise`() {
+        assertEquals("EN", KeyboardLocale.EnUs.spacebarName)
+        assertEquals("ES", spanish.spacebarName)
+        assertEquals("PT BR", spanish.copy(id = "pt_BR", shortLabel = "PT BR").spacebarName)
+    }
+
+    @Test
+    fun `the spacebar label changes only the spacebar`() {
+        val labelled = Layouts.QwertyEnUS.withSpaceLabel("English")
         val before = Layouts.QwertyEnUS.rows.last().keys
-        val after = decorated.rows.last().keys
-        assertEquals(before.sumOf { it.widthWeight.toDouble() }, after.sumOf { it.widthWeight.toDouble() }, 1e-6)
-        val languageIndex = after.indexOfFirst { it.code == SpecialKeyCode.LANGUAGE }
-        assertEquals(SpecialKeyCode.SPACE, after[languageIndex + 1].code)
-        assertEquals("English", after[languageIndex + 1].label)
-        assertEquals(Layouts.QwertyEnUS.rows.dropLast(1), decorated.rows.dropLast(1))
-        assertEquals(emptyList<String>(), decorated.validate())
-        // Idempotent: decorating twice doesn't add a second key.
-        assertEquals(decorated, decorated.withLanguageKey("English"))
-        assertTrue(after.single { it.code == SpecialKeyCode.LANGUAGE }.keyType == KeyType.SPECIAL)
-        // Symbols keep their space row untouched only if asked; the function itself is general.
-        assertEquals(1, KeyboardLayout("x", listOf(KeyRow(listOf(KeyDefinition(" ", SpecialKeyCode.SPACE, widthWeight = 4f)))))
-            .withLanguageKey("X").rows.single().keys.count { it.code == SpecialKeyCode.LANGUAGE })
+        val after = labelled.rows.last().keys
+        assertEquals(before.map { it.code }, after.map { it.code })
+        assertEquals(before.map { it.widthWeight }, after.map { it.widthWeight })
+        assertEquals("English", after.single { it.code == SpecialKeyCode.SPACE }.label)
+        assertEquals(Layouts.QwertyEnUS.rows.dropLast(1), labelled.rows.dropLast(1))
+    }
+
+    @Test
+    fun `swapping puts the language key exactly where the emoji key was`() {
+        val swapped = Layouts.QwertyEnUS.withLanguageKeyInsteadOfEmoji()
+        val before = Layouts.QwertyEnUS.rows.last().keys
+        val after = swapped.rows.last().keys
+        val emojiIndex = before.indexOfFirst { it.code == SpecialKeyCode.EXTENSIONS }
+        assertEquals(SpecialKeyCode.LANGUAGE, after[emojiIndex].code)
+        assertEquals(before[emojiIndex].widthWeight, after[emojiIndex].widthWeight)
+        assertTrue(after.none { it.code == SpecialKeyCode.EXTENSIONS })
+        assertTrue(after[emojiIndex].keyType == KeyType.SPECIAL)
+        assertEquals(emptyList<String>(), swapped.validate())
+        // No emoji key (symbols pages): nothing to swap.
+        assertEquals(Layouts.Symbols1, Layouts.Symbols1.withLanguageKeyInsteadOfEmoji())
     }
 }

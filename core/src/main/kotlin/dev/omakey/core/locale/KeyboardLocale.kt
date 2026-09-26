@@ -30,6 +30,9 @@ data class KeyboardLocale(
      * script. */
     val nativeName: String,
     val letterLayout: KeyboardLayout,
+    /** The language's name on the spacebar, from the pack manifest ("PT BR"); null means
+     * [language] in capitals. See [spacebarName]. */
+    val shortLabel: String? = null,
     /** Layouts besides [letterLayout] that belong to this language, such as its shift layer. */
     val extraLayouts: List<KeyboardLayout> = emptyList(),
     /** Letter layouts the user may pick from, [letterLayout] among them; empty when there's no
@@ -42,6 +45,9 @@ data class KeyboardLocale(
 ) {
     /** ISO 639 language code, for matching a text field's `EditorInfo.hintLocales`. */
     val language: String get() = id.substringBefore('_')
+
+    /** What the spacebar calls this language: "EN", "FR", or the pack's own label ("PT BR"). */
+    val spacebarName: String get() = shortLabel ?: language.uppercase()
 
     /** This language with the user's chosen letter layout, if [layoutId] is one of its choices. */
     fun withLetterLayout(layoutId: String?): KeyboardLocale {

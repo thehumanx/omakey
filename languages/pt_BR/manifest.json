@@ -1,0 +1,15 @@
+{
+ "id": "pt_BR",
+ "displayName": "Portuguese (Brazil)",
+ "nativeName": "Português (Brasil)",
+ "shortLabel": "PT BR",
+ "packVersion": "1.0.0",
+ "packFormat": 1,
+ "letterLayout": "qwerty_pt_br",
+ "layouts": [
+  "layouts/qwerty_pt_br.json"
+ ],
+ "model": "lm.bin",
+ "profile": "profile.json",
+ "license": "CC BY-SA 3.0 (derived in part from FrequencyWords); see sources"
+}

@@ -28,12 +28,32 @@ interface LocaleController {
      */
     fun onFieldStarted(hintLanguages: List<String>)
 
-    /** The next enabled language after the active one, wrapping. */
+    /** Makes [layoutId] [localeId]'s letter layout, remembered for next time. No-op by default. */
+    fun chooseLayout(localeId: String, layoutId: String) = Unit
+
+    /**
+     * The globe key: the next stop in a cycle through every enabled language *and* each of its
+     * layouts — English, Spanish, French AZERTY, French QWERTY, Nepali Romanized, Nepali Devanagari,
+     * back to English. A language with several layouts is entered at its first, so one tap always
+     * leads somewhere predictable, and the cycle reaches every layout without opening a menu.
+     */
     fun next() {
         val languages = enabled.value
-        if (languages.size < 2) return
-        val index = languages.indexOfFirst { it.id == active.value.id }
-        switchTo(languages[(index + 1).mod(languages.size)].id)
+        val current = active.value
+        val layouts = current.letterLayoutChoices
+        val layoutIndex = layouts.indexOfFirst { it.id == current.letterLayout.id }
+        if (layouts.size > 1 && layoutIndex in 0 until layouts.lastIndex) {
+            chooseLayout(current.id, layouts[layoutIndex + 1].id)
+            return
+        }
+        if (languages.size < 2) {
+            if (layouts.size > 1) chooseLayout(current.id, layouts.first().id)
+            return
+        }
+        val index = languages.indexOfFirst { it.id == current.id }
+        val nextLanguage = languages[(index + 1).mod(languages.size)]
+        nextLanguage.letterLayoutChoices.firstOrNull()?.let { chooseLayout(nextLanguage.id, it.id) }
+        switchTo(nextLanguage.id)
     }
 }
 

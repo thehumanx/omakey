@@ -45,6 +45,14 @@ import kotlin.random.Random
  *   touch noise 0.35                 fixed 57.8 %   wrong 6.0 %
  *   correct words damaged            0.19 %
  *
+ * Portuguese (Brazil), 2026-09-26 (pack 1.0.0, 150,000 words, 4.6 MB):
+ *   accent restoration, non-words    fixed 93.3 %   wrong 2.8 %
+ *   accent restoration, real words   offered in the strip 50.8 %
+ *   touch noise 0.35                 fixed 63.9 %   wrong 7.2 %
+ *   correct words damaged            0.38 %
+ * The lower "offered" figure is largely "e"/"é" and "a"/"à": roughly two in five of these pairs, and
+ * alternatives() never considers them because it skips words under three letters.
+ *
  * For comparison, English on its own tap-noise simulation is 66 % / 13 % with 0.73 % damage (§51.1).
  * The remaining accent misses are mostly vocabulary coverage (rare verb forms, proper names).
  * Floors below sit just under these.
@@ -221,6 +229,56 @@ class LanguagePackEvaluationTest {
     }
 
     @Test
+    fun portuguese() {
+        val engine = install("pt_BR")
+        val sentences = sentences("pt_BR")
+        assumeTrue("no held-out Portuguese sentences", sentences.isNotEmpty())
+        val index = engine.index
+
+        assertEquals("não", index.correct("nao"))
+        assertEquals("você", index.correct("voce"))
+        assertEquals("também", index.correct("tambem"))
+        assertEquals("coração", index.correct("coracao"))
+        assertEquals(null, index.correct("esta")) // a real word ("this"): "está" is only offered
+        assertTrue(index.alternatives("esta", 6).contains("está"))
+        kotlinx.coroutines.runBlocking {
+            assertTrue(engine.prediction.suggestNext(null, null, "obrig", 3).contains("obrigado"))
+        }
+
+        val accents = measure(engine, sentences) { w -> stripAccents(w).takeIf { it != w && !index.isKnown(it) } }
+        var pairTotal = 0; var pairOffered = 0
+        for (sentence in sentences) for (i in sentence.indices) {
+            val word = sentence[i]
+            val stripped = stripAccents(word)
+            if (stripped == word || !index.isKnown(stripped)) continue
+            pairTotal++
+            val context = index.contextOf(sentence.getOrNull(i - 1), sentence.getOrNull(i - 2))
+            if (index.alternatives(stripped, 6, context).contains(word)) pairOffered++
+        }
+        val random = Random(66)
+        val noise = measure(engine, sentences.take(1500)) { w -> typeWithNoise(engine.geometry, w, 0.35f, random) }
+        var clean = 0; var damaged = 0
+        for (sentence in sentences) for (i in sentence.indices) {
+            val word = sentence[i]
+            if (word.length < 3) continue
+            clean++
+            val result = index.correct(word, index.contextOf(sentence.getOrNull(i - 1), sentence.getOrNull(i - 2)))
+            if (result != null && result != word) damaged++
+        }
+        val damage = 100.0 * damaged / clean
+        val offeredRate = 100.0 * pairOffered / pairTotal
+        println("pt_BR accent restoration: $accents")
+        println("pt_BR accent pairs offered in strip: %.1f %% of %d".format(offeredRate, pairTotal))
+        println("pt_BR touch noise 0.35:  $noise")
+        println("pt_BR correct words damaged: %.2f %% of %d".format(damage, clean))
+
+        assertTrue("accent restoration regressed: $accents", accents.fixedRate >= PT_ACCENT_FIXED && accents.wrongRate <= PT_ACCENT_WRONG)
+        assertTrue("accented real words stopped being offered: $offeredRate", offeredRate >= PT_OFFERED)
+        assertTrue("touch-noise correction regressed: $noise", noise.fixedRate >= PT_NOISE_FIXED && noise.wrongRate <= PT_NOISE_WRONG)
+        assertTrue("damage to correct words regressed: $damage", damage <= PT_DAMAGE)
+    }
+
+    @Test
     fun nepali() {
         val engine = install("ne_NP")
         val locale = engine.locale
@@ -269,3 +327,11 @@ class LanguagePackEvaluationTest {
         return (kotlin.math.sqrt(-2.0 * kotlin.math.ln(u)) * kotlin.math.cos(2 * Math.PI * v)).toFloat()
     }
 }
+
+// Portuguese floors, set just under the measured values in the class doc.
+private const val PT_ACCENT_FIXED = 91.0
+private const val PT_ACCENT_WRONG = 4.0
+private const val PT_OFFERED = 48.0
+private const val PT_NOISE_FIXED = 61.0
+private const val PT_NOISE_WRONG = 9.0
+private const val PT_DAMAGE = 0.5

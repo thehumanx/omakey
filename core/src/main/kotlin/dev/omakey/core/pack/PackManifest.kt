@@ -12,6 +12,10 @@ data class PackManifest(
     val id: String,
     val displayName: String,
     val nativeName: String,
+    /** How the spacebar names the language, when the bare language code would be ambiguous —
+     * "PT BR", since Brazilian and European Portuguese are different keyboards. Omitted, it's the
+     * language code ("FR"). */
+    val shortLabel: String? = null,
     /** Semver of the pack's *data*, independent of the app's version. */
     val packVersion: String,
     /** Layout of the pack itself; an app refuses packs whose format it doesn't know. */

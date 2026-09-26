@@ -85,7 +85,32 @@ data class OmakeyTheme(
      * inferring one.
      */
     val keyTextOnAccentColor: ColorSpec? = null,
+    /**
+     * The colour of "on": caps lock, active shift, an open quick-access or language button, the
+     * selected tile in a panel, the resize handles. Null (every theme saved before this existed)
+     * means [keyTextColor] — see [accent].
+     *
+     * It exists because these states used to borrow [keyBackgroundPressed], which is a *press*
+     * colour: on Light it is a pale grey, so active shift was a grey arrow on a white key, and caps
+     * lock drew that same grey icon on that same grey fill — invisible. Reported as "the capslock
+     * state is not right" and "everything is grey/white whatever the theme".
+     */
+    val accentColor: ColorSpec? = null,
 ) {
+    /** The theme's accent — see [accentColor]. Falls back to [keyTextColor], which always contrasts
+     * with the keys (that is its job), so Light and Dark get a crisp black/white "on" state instead
+     * of a colour they never chose. */
+    val accent: ColorSpec get() = accentColor ?: keyTextColor
+
+    /** What to draw on top of [accent]: the palette's own on-accent tone if it has one, otherwise
+     * the key colour when that contrasts, otherwise plain black or white. */
+    val onAccent: ColorSpec
+        get() {
+            keyTextOnAccentColor?.let { return it }
+            if (kotlin.math.abs(keyBackground.luminance - accent.luminance) >= MIN_LABEL_CONTRAST) return keyBackground
+            return if (accent.luminance < 0.5f) ColorSpec(0xFFFFFFFF) else ColorSpec(0xFF000000)
+        }
+
     /**
      * The colour to draw a label in on top of [background].
      *
@@ -193,6 +218,7 @@ object Presets {
         spacebarAccentColor = ColorSpec(0xFF3D4EFF),
         middleRowStripeColor = ColorSpec(0x1FFFFFFF),
         gridBorderColor = ColorSpec(0xFF6B70A8),
+        accentColor = ColorSpec(0xFF3D4EFF),
     )
 
     val all = listOf(Light, Dark, Auto, Accent)

@@ -70,6 +70,7 @@ object PackLoader {
             id = manifest.id,
             displayName = manifest.displayName,
             nativeName = manifest.nativeName,
+            shortLabel = manifest.shortLabel?.take(MAX_SHORT_LABEL),
             letterLayout = letterLayout,
             extraLayouts = layouts - letterLayout,
             letterLayoutChoices = choices,
@@ -107,3 +108,6 @@ object PackLoader {
 }
 
 class InvalidPackException(message: String, cause: Throwable? = null) : Exception(message, cause)
+
+/** A spacebar has room for a few characters; anything longer in a manifest is cut rather than trusted. */
+private const val MAX_SHORT_LABEL = 8

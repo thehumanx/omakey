@@ -12,14 +12,18 @@ import androidx.compose.ui.unit.dp
  * project only needs a handful. [Icon]'s `tint` fully recolors these via `ColorFilter` regardless
  * of the placeholder fill color baked into the path data below, so the actual color doesn't
  * matter — it exists only so the path renders as solid/opaque geometry. */
-private fun pathIcon(pathData: String): ImageVector {
+private fun pathIcon(pathData: String, evenOdd: Boolean = false): ImageVector {
     val nodes = PathParser().parsePathString(pathData).toNodes()
     return ImageVector.Builder(
         defaultWidth = 24.dp,
         defaultHeight = 24.dp,
         viewportWidth = 256f,
         viewportHeight = 256f,
-    ).addPath(pathData = nodes, fill = SolidColor(androidx.compose.ui.graphics.Color.Black)).build()
+    ).addPath(
+        pathData = nodes,
+        fill = SolidColor(androidx.compose.ui.graphics.Color.Black),
+        pathFillType = if (evenOdd) androidx.compose.ui.graphics.PathFillType.EvenOdd else androidx.compose.ui.graphics.PathFillType.NonZero,
+    ).build()
 }
 
 /** `arrow-fat-up-fill` — one-shot shift (capitalizes just the next letter). */
@@ -210,5 +214,39 @@ val PhosphorPalette: ImageVector by lazy {
 val PhosphorSwitchSide: ImageVector by lazy {
     pathIcon(
         "M48,40V216a8,8,0,0,1-16,0V40a8,8,0,0,1,16,0Zm176,80H152V56a8,8,0,0,0-13.66-5.66l-72,72a8,8,0,0,0,0,11.32l72,72A8,8,0,0,0,152,200V136h72a8,8,0,0,0,0-16Z",
+    )
+}
+
+/* The three below are drawn by hand in the same 256-unit grid and fill style, not taken from
+ * Phosphor: shapes simple enough that authoring them was quicker than sourcing path data. Even-odd
+ * fill, so the inner shapes (eyes, keys) are cut out of the outer one. */
+
+/** Four squares — quick-access "Grid layout". */
+val PhosphorGrid: ImageVector by lazy {
+    pathIcon(
+        "M40,40h72v72h-72z M144,40h72v72h-72z M40,144h72v72h-72z M144,144h72v72h-72z",
+    )
+}
+
+/** A keyboard — the language panel's layout tiles. */
+val PhosphorKeyboard: ImageVector by lazy {
+    pathIcon(
+        "M40,56H216a16,16,0,0,1,16,16V184a16,16,0,0,1-16,16H40a16,16,0,0,1-16-16V72A16,16,0,0,1,40,56Z" +
+            " M56,84h24v24h-24z M96,84h24v24h-24z M136,84h24v24h-24z M176,84h24v24h-24z" +
+            " M56,120h24v24h-24z M96,120h24v24h-24z M136,120h24v24h-24z M176,120h24v24h-24z" +
+            " M80,158h96v18h-96z",
+        evenOdd = true,
+    )
+}
+
+/** A smiling face — the emoji key and emoji button, drawn as an icon so it takes the key colour
+ * like every other control key instead of rendering as a full-colour emoji glyph. */
+val PhosphorSmiley: ImageVector by lazy {
+    pathIcon(
+        "M24,128A104,104,0,0,1,232,128A104,104,0,0,1,24,128Z" +
+            " M80,108a12,12,0,0,0,24,0a12,12,0,0,0,-24,0Z" +
+            " M152,108a12,12,0,0,0,24,0a12,12,0,0,0,-24,0Z" +
+            " M76,148A56,56,0,0,0,180,148H164A40,40,0,0,1,92,148Z",
+        evenOdd = true,
     )
 }

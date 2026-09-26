@@ -21,8 +21,8 @@ object SpecialKeyCode {
      * total). */
     const val SETTINGS = -8
     /** Switches to the next enabled language; long-press opens the language picker. Never part of
-     * a stored layout — added to the letter layout at display time, only while two or more
-     * languages are enabled (see `KeyboardViewModel.withLanguageKey`). */
+     * a stored layout: normally the language button lives in the suggestion bar, and this key only
+     * replaces the emoji key when the user swaps the two (see `withLanguageKeyInsteadOfEmoji`). */
     const val LANGUAGE = -9
 }
 

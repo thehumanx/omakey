@@ -26,7 +26,8 @@ import dev.omakey.core.layout.flippedOneHandedSide
 import dev.omakey.core.layout.nextOneHanded
 import dev.omakey.core.layout.toggledWith
 import dev.omakey.core.layout.LayoutSettings
-import dev.omakey.core.layout.withLanguageKey
+import dev.omakey.core.layout.withLanguageKeyInsteadOfEmoji
+import dev.omakey.core.layout.withSpaceLabel
 import dev.omakey.core.layout.Layouts
 import dev.omakey.core.layout.SpecialKeyCode
 import dev.omakey.core.predict.AutocorrectIndex
@@ -265,7 +266,7 @@ class KeyboardViewModel(
      * undo step. */
     private fun commitTranslit(separator: String, word: String? = null) {
         val committed = if (word != null) translit.commit(word, separator) else translit.commit(separator) ?: return
-        pushUndo(TextEdit(inserted = committed + separator))
+        pushUndo(TextEdit(removed = takeSelectionReplacement(), inserted = committed + separator))
         words.commitWord(committed)
         words.boundarySeparator = separator
         updateEmojiSuggestions(committed)
@@ -284,7 +285,8 @@ class KeyboardViewModel(
             .onEach { mode -> _uiState.update { it.copy(layoutMode = mode) } }
             .launchIn(scope)
         layoutPreferences.settings
-            .onEach { settings -> _uiState.update { it.copy(layoutSettings = settings) } }
+            // Re-displayed too: the emoji/language swap changes the bottom row itself.
+            .onEach { settings -> _uiState.update { it.copy(layoutSettings = settings, layout = display(it.layout)) } }
             .launchIn(scope)
         fontPreferences.fontId
             .onEach { id -> _uiState.update { it.copy(fontId = id) } }
@@ -302,7 +304,14 @@ class KeyboardViewModel(
             .onEach { languages ->
                 _uiState.update {
                     it.copy(
-                        languages = languages.map { l -> LanguageOption(l.id, l.nativeName) },
+                        languages = languages.map { l ->
+                            LanguageOption(
+                                id = l.id,
+                                nativeName = l.nativeName,
+                                layouts = l.letterLayoutChoices.takeIf { it.size > 1 }.orEmpty()
+                                    .map { layout -> layout.id to dev.omakey.core.layout.shortName(layout) },
+                            )
+                        },
                         layout = display(it.layout),
                     )
                 }
@@ -386,6 +395,8 @@ class KeyboardViewModel(
             )
         }
         words.clear()
+        pendingSelectionReplacement = null
+        selectionActive = false
         // The word being composed belonged to the field being left; it is gone with it.
         translit.clear()
         symbolTypedInSymbolsMode = false
@@ -890,6 +901,7 @@ class KeyboardViewModel(
      * composing region.
      */
     fun onSelectionChanged(selectionStart: Int, selectionEnd: Int, composingEnd: Int) {
+        selectionActive = selectionStart != selectionEnd
         if (translit.isComposing && (composingEnd < 0 || selectionStart != selectionEnd || selectionEnd != composingEnd)) {
             translit.abandon()
             refreshSuggestions()
@@ -952,6 +964,7 @@ class KeyboardViewModel(
 
     private fun commitTypedText(rawText: String) {
         if (rawText.isEmpty()) return
+        captureSelectionBeingReplaced()
         if (transliterating()) {
             if (rawText.all { it in 'a'..'z' || it in 'A'..'Z' }) {
                 suggestionCycleIndex = -1
@@ -984,6 +997,12 @@ class KeyboardViewModel(
             refreshSuggestions()
         } else {
             flushWordBuffer(separator = text)
+            // Punctuation typed straight over a selection: one step that removed the selection and
+            // inserted the punctuation, since there is no word for it to ride along with.
+            pendingSelectionReplacement?.let {
+                pushUndo(TextEdit(removed = it, inserted = text))
+                pendingSelectionReplacement = null
+            }
             words.boundarySeparator = text
             val char = text.singleOrNull()
             // Real bug, fixed: this used to pass checkContextualCorrection = true for *every*
@@ -1350,6 +1369,7 @@ class KeyboardViewModel(
      * not.
      */
     private fun resetTypingState() {
+        settleSelectionReplacement()
         words.clearBuffer()
         activeCorrection = null
         forgetCorrectionMemory()
@@ -1365,6 +1385,39 @@ class KeyboardViewModel(
         suggestionCycleIndex = -1
     }
 
+    /**
+     * Text that was selected when the user started typing over it, and so was replaced by the
+     * first keystroke. The replacement isn't recorded on its own: it is folded into the undo step of
+     * the word typed in its place ([takeSelectionReplacement]), so one undo removes that word and
+     * puts the selection back — what every desktop editor does. Real bug, fixed: select all, type,
+     * undo only removed the new word and the old text was gone for good.
+     */
+    private var pendingSelectionReplacement: String? = null
+
+    /** From [onSelectionChanged]; lets a keystroke skip the `getSelectedText` IPC round-trip when
+     * nothing is selected, which is nearly always. */
+    private var selectionActive = false
+
+    private fun captureSelectionBeingReplaced() {
+        if (!selectionActive) return
+        val selection = textEditor.selectedText()?.takeIf { it.isNotEmpty() } ?: return
+        settleSelectionReplacement()
+        pendingSelectionReplacement = selection
+        selectionActive = false
+    }
+
+    private fun takeSelectionReplacement(): String =
+        pendingSelectionReplacement.orEmpty().also { pendingSelectionReplacement = null }
+
+    /** Records a pending replacement as its own step, together with whatever of the word typed over
+     * it is still unrecorded — for when that word is abandoned rather than finished (the cursor
+     * moved away, the field changed). */
+    private fun settleSelectionReplacement() {
+        val removed = pendingSelectionReplacement ?: return
+        pendingSelectionReplacement = null
+        pushUndo(TextEdit(removed = removed, inserted = words.bufferedWord))
+    }
+
     private fun pushUndo(event: TextEdit) {
         undoHistory.record(event)
         // Every caller except recordPlainCharDelete's own path wants coalescing off; UndoHistory
@@ -1377,6 +1430,15 @@ class KeyboardViewModel(
      * separator/whitespace involved), so undo/redo round-trip losslessly instead of the old
      * scheme's hardcoded-space assumption. */
     fun undo() {
+        // A word still being typed is not on the undo stack yet: record it first, or undo would
+        // skip over it and apply an older step at the wrong place in the text.
+        if (translit.isComposing) {
+            commitTranslit(separator = "")
+        } else if (words.bufferLength > 0) {
+            flushWordBuffer()
+        } else {
+            settleSelectionReplacement()
+        }
         val event = undoHistory.undo() ?: return
         textEditor.replaceBackward(event.inserted.length, event.removed)
         afterUndoOrRedo()
@@ -1420,7 +1482,8 @@ class KeyboardViewModel(
         suggestionCycleIndex = -1
         val committed = words.commitBufferedWord() ?: return
         val word = committed.word
-        pushUndo(TextEdit(inserted = word + separator))
+        // Merged with the selection it was typed over, so one undo puts the old text back.
+        pushUndo(TextEdit(removed = takeSelectionReplacement(), inserted = word + separator))
         // Whatever was staged at the previous word boundary has now survived an entire further
         // word without being deleted or corrected, so it counts as deliberate.
         commitPendingLearn()
@@ -1491,8 +1554,20 @@ class KeyboardViewModel(
      * caps lock gets turned on in the first place (long-press, not a tap). */
     private fun toggleShift() {
         val state = _uiState.value
-        if (state.capsLockOn || state.shiftOn) releaseShift() else engageShift(capsLock = false)
+        val now = android.os.SystemClock.uptimeMillis()
+        val doubleTap = now - lastShiftTapAtMs <= DOUBLE_TAP_SHIFT_MS
+        lastShiftTapAtMs = now
+        when {
+            state.capsLockOn -> releaseShift()
+            // Second tap of a double tap: the first turned one-shot shift on, this one latches it —
+            // the same gesture iOS and Gboard use, alongside the long-press that already existed.
+            state.shiftOn && doubleTap -> engageShift(capsLock = true)
+            state.shiftOn -> releaseShift()
+            else -> engageShift(capsLock = false)
+        }
     }
+
+    private var lastShiftTapAtMs = 0L
 
     /** Long-press on shift (see the gesture handling in `KeyGrid`) — capitalizes every letter
      * until shift is tapped again, unlike a plain tap's one-shot capitalize-next-letter. */
@@ -1542,6 +1617,7 @@ class KeyboardViewModel(
                 layout = display(locale.letterLayout),
                 baseRowCount = locale.letterLayout.rows.size,
                 activeLanguageId = locale.id,
+                activeLetterLayoutId = locale.letterLayout.id,
                 shiftOn = false,
                 capsLockOn = false,
                 suggestions = emptyList(),
@@ -1555,27 +1631,77 @@ class KeyboardViewModel(
     fun nextLanguage() = localeController.next()
 
     fun selectLanguage(id: String) {
+        languagePickerReturnsToQuickAccess = false
         localeController.switchTo(id)
         _uiState.update { it.copy(languagePickerOpen = false, quickAccessOpen = false) }
     }
 
-    fun openLanguagePicker() = _uiState.update { it.copy(languagePickerOpen = true, quickAccessOpen = false) }
+    fun chooseLayout(layoutId: String) {
+        localeController.chooseLayout(locale().id, layoutId)
+    }
 
-    fun closeLanguagePicker() = _uiState.update { it.copy(languagePickerOpen = false) }
+    /** Normal ↔ Grid, from quick access — it changes how every key is drawn, which is worth being
+     * able to compare in place rather than by leaving for Settings. */
+    fun toggleLayoutMode() {
+        val next = if (themeRepository.layoutMode.value == dev.omakey.core.theme.LayoutMode.GRID) {
+            dev.omakey.core.theme.LayoutMode.NORMAL
+        } else {
+            dev.omakey.core.theme.LayoutMode.GRID
+        }
+        themeRepository.setLayoutMode(next)
+    }
+
+    /** [fromQuickAccess]: opened from the quick-access Language tile, so closing it (system back)
+     * returns there rather than dropping the user back at the keys. */
+    fun openLanguagePicker(fromQuickAccess: Boolean = false) {
+        languagePickerReturnsToQuickAccess = fromQuickAccess
+        _uiState.update { it.copy(languagePickerOpen = true, quickAccessOpen = false) }
+    }
+
+    fun closeLanguagePicker() {
+        val backToQuickAccess = languagePickerReturnsToQuickAccess
+        languagePickerReturnsToQuickAccess = false
+        _uiState.update { it.copy(languagePickerOpen = false, quickAccessOpen = backToQuickAccess) }
+    }
+
+    private var languagePickerReturnsToQuickAccess = false
+
+    /**
+     * The system back key while one of the keyboard's own panels is open: steps back one panel
+     * (language → quick access → keys) instead of hiding the whole keyboard. Returns whether it was
+     * handled; false lets the system hide the keyboard as usual.
+     */
+    fun onBackPressed(): Boolean {
+        val state = _uiState.value
+        return when {
+            state.languagePickerOpen -> { closeLanguagePicker(); true }
+            state.resizing -> { setResizing(false); true }
+            state.quickAccessOpen -> { closeQuickAccess(); true }
+            else -> false
+        }
+    }
 
     /**
      * What is actually shown for [layout]. While two or more languages are enabled, the active
-     * language's letter layers get a language key before the spacebar and its name on the spacebar
-     * — what tells the user which language they are typing in, and one tap to change it. Stored
-     * layouts never carry the key, so a single-language keyboard is exactly as it was.
+     * language's letter layers carry its name on the spacebar — what tells the user which language
+     * they are typing in — and, if the user swapped the emoji and language buttons, a language key
+     * where the emoji key was. Stored layouts never carry either, so a single-language keyboard is
+     * exactly as it was.
      */
     private fun display(layout: KeyboardLayout): KeyboardLayout {
         val locale = locale()
         val letterLayers = setOfNotNull(locale.letterLayout.id, locale.letterLayout.shiftLayoutId)
         if (layout.id !in letterLayers) return layout
         val stored = layouts[layout.id] ?: locale.letterLayout.takeIf { it.id == layout.id } ?: layout
-        return if (localeController.enabled.value.size < 2) stored else stored.withLanguageKey(locale.nativeName)
+        if (localeController.enabled.value.size < 2) return stored
+        // "FR - AZERTY": language and layout together, so the spacebar says exactly what the globe
+        // key just switched to — two layouts of one language would otherwise look identical.
+        val labelled = stored.withSpaceLabel(spacebarLabel(locale))
+        return if (layoutPreferences.settings.value.swapEmojiAndLanguage) labelled.withLanguageKeyInsteadOfEmoji() else labelled
     }
+
+    private fun spacebarLabel(locale: KeyboardLocale): String =
+        "${locale.spacebarName} - ${dev.omakey.core.layout.shortName(locale.letterLayout)}"
 
     /** Opens the emoji panel by default (matches the 😊 key's icon); tapping again closes it.
      * Once open, the user can switch to other registered extensions via [selectExtension]. */
@@ -1714,7 +1840,11 @@ class KeyboardViewModel(
 
     private companion object {
         const val PREFERRED_EXTENSION_ID = "builtin.emoji"
-        const val SUGGESTION_LIMIT = 6
+        // Three, not six: the strip now shares its row with the quick-access and language buttons,
+        // and more than three words don't fit without scrolling.
+        const val SUGGESTION_LIMIT = 3
+
+        const val DOUBLE_TAP_SHIFT_MS = 350L
         // Matches the ~500ms window most mainstream keyboards use for double-tap-space-for-period.
         const val DOUBLE_TAP_SPACE_WINDOW_MS = 500L
         val SYMBOLS_LAYOUT_IDS = setOf(Layouts.Symbols1.id, Layouts.Symbols2.id)

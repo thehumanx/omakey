@@ -439,12 +439,15 @@ fun KeyboardRoot(
                         placement = placement,
                         heightDp = gridHeightDp,
                         languageCount = uiState.languages.size,
+                        incognito = uiState.incognito,
+                        layoutMode = uiState.layoutMode,
                         onOpenSettings = onOpenSettings,
                     )
                     "language-picker" -> LanguagePickerPanel(
                         viewModel = viewModel,
                         languages = uiState.languages,
                         activeLanguageId = uiState.activeLanguageId,
+                        activeLayoutId = uiState.activeLetterLayoutId,
                         theme = theme,
                         fontFamily = fontFamily,
                         feedback = feedback,
@@ -606,18 +609,20 @@ internal fun ExtensionPanelSlot(viewModel: KeyboardViewModel, heightDp: Int, sho
                                 .weight(1f)
                                 .clickable(
                                     interactionSource = interactionSource,
-                                    indication = if (isGridMode) null else androidx.compose.foundation.LocalIndication.current,
+                                    indication = null,
                                 ) { viewModel.selectExtension(ext.id) }
                                 .background(
                                     when {
-                                        isGridMode && (ext.id == activeId || isPressed) -> uiState.theme.keyBackgroundPressed.toComposeColor()
+                                        // Selected = accent, held = key tap colour: the same two
+                                        // rules every tappable surface on the keyboard follows.
+                                        ext.id == activeId -> uiState.theme.accent.toComposeColor()
+                                        isPressed -> uiState.theme.keyBackgroundPressed.toComposeColor()
                                         // Real bug, fixed: inactive tabs fell through to
                                         // Color.Transparent in Grid mode too, same as every other
                                         // unfilled grid-mode cell — showing the header row's own
                                         // (potentially very different, on a custom theme)
                                         // background through instead of keyboardBackground.
                                         isGridMode -> uiState.theme.keyboardBackground.toComposeColor()
-                                        ext.id == activeId -> uiState.theme.keySpecialBackground.toComposeColor()
                                         else -> Color.Transparent
                                     },
                                 )
@@ -637,20 +642,20 @@ internal fun ExtensionPanelSlot(viewModel: KeyboardViewModel, heightDp: Int, sho
                             .fillMaxHeight()
                             .clickable(
                                 interactionSource = closeInteractionSource,
-                                indication = if (isGridMode) null else androidx.compose.foundation.LocalIndication.current,
+                                indication = null,
                             ) { viewModel.extensionHost.close() }
                             .let { m ->
                                 if (isGridMode) {
                                     m.background(if (closeIsPressed) uiState.theme.keyBackgroundPressed.toComposeColor() else uiState.theme.keyboardBackground.toComposeColor())
                                         .gridCellBorder(gridBorderColor, uiState.theme.gridBorderWidth.toDp())
                                 } else {
-                                    m
+                                    m.background(if (closeIsPressed) uiState.theme.keyBackgroundPressed.toComposeColor() else Color.Transparent)
                                 }
                             }
                             .padding(horizontal = 14.dp),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Text(text = "⌨", color = uiState.theme.keyTextColor.toComposeColor(), fontSize = 18.sp)
+                        Text(text = "⌨", color = uiState.theme.labelOn(if (closeIsPressed) uiState.theme.keyBackgroundPressed else uiState.theme.keyboardBackground).toComposeColor(), fontSize = 18.sp)
                     }
                 }
             }

@@ -123,7 +123,7 @@ internal fun LanguagesSection(localePreferences: LocalePreferences, languagePack
                         onClick = { localePreferences.setLayoutChoice(locale.id, layout.id) },
                         shape = SegmentedButtonDefaults.itemShape(i, locale.letterLayoutChoices.size),
                         icon = {},
-                    ) { Text(layoutName(layout)) }
+                    ) { Text(dev.omakey.core.layout.shortName(layout)) }
                 }
             }
         }
@@ -290,12 +290,3 @@ private fun copyAtMost(input: java.io.InputStream, output: java.io.OutputStream,
         output.write(buffer, 0, read)
     }
 }
-
-/** The layout's own name if it has one; otherwise "AZERTY", "QWERTY" — named by its first six
- * letters, the way keyboards are. */
-private fun layoutName(layout: dev.omakey.core.layout.KeyboardLayout): String =
-    layout.displayName ?: layout.rows.firstOrNull()?.keys.orEmpty()
-        .filter { it.keyType == dev.omakey.core.layout.KeyType.CHARACTER }
-        .take(6)
-        .joinToString("") { it.label }
-        .uppercase()

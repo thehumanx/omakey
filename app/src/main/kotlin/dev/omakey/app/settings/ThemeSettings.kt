@@ -277,7 +277,7 @@ private fun KeyboardSwatch(theme: OmakeyTheme) {
                 Box(
                     Modifier
                         .size(10.dp)
-                        .background(theme.keyBackgroundPressed.toComposeColor(), CircleShape),
+                        .background(theme.accent.toComposeColor(), CircleShape),
                 )
             }
         }
@@ -324,6 +324,15 @@ internal fun ThemeEditorOverlay(
     var keyColor by remember { mutableStateOf(initialTheme?.keyBackground?.toComposeColor() ?: Color(0xFF2C2C2C)) }
     var stripeColor by remember { mutableStateOf(initialTheme?.middleRowStripeColor?.toComposeColor() ?: Color(0xFF3A3A3A)) }
     var spacebarColor by remember { mutableStateOf(initialTheme?.spacebarAccentColor?.toComposeColor() ?: Color(0xFF4A90D9)) }
+    // The fill behind any key (or button) while it is held. Null until the user picks one, so a new
+    // theme keeps deriving it from the key colour — changing the key colour then still gives a
+    // matching tap colour instead of a stale one.
+    var keyTapColor by remember { mutableStateOf(initialTheme?.keyBackgroundPressed?.toComposeColor()) }
+    // Caps lock, active shift, open panel buttons, selected tiles. A theme saved before this existed
+    // starts from its spacebar colour, which is the closest thing it had to an accent.
+    var accentColor by remember {
+        mutableStateOf(initialTheme?.accentColor?.toComposeColor() ?: initialTheme?.spacebarAccentColor?.toComposeColor() ?: Color(0xFF4A90D9))
+    }
     // Grid mode's own border color — independent of the auto-derived isDark default (see
     // OmakeyTheme.gridBorderColor's doc) once the user has actually edited it here.
     var gridBorderColor by remember {
@@ -336,14 +345,16 @@ internal fun ThemeEditorOverlay(
         mutableStateOf(initialTheme?.gridBorderWidth ?: dev.omakey.core.theme.GridBorderWidth.MD)
     }
 
-    val previewTheme = remember(name, background, keyColor, stripeColor, spacebarColor, gridBorderColor, gridBorderWidth) {
+    val previewTheme = remember(name, background, keyColor, keyTapColor, stripeColor, spacebarColor, accentColor, gridBorderColor, gridBorderWidth) {
         buildCustomTheme(
             id = initialTheme?.id ?: (CustomThemePreferences.ID_PREFIX + java.util.UUID.randomUUID().toString()),
             name = name.ifBlank { "My theme" },
             backgroundColor = background,
             keyColor = keyColor,
+            keyTapColor = keyTapColor,
             stripeColor = stripeColor,
             spacebarColor = spacebarColor,
+            accentColor = accentColor,
             gridBorderColor = gridBorderColor,
             gridBorderWidth = gridBorderWidth,
             // Tagged with whichever mode is actually being previewed/edited right now — not
@@ -368,8 +379,10 @@ internal fun ThemeEditorOverlay(
         if (layoutMode != dev.omakey.core.theme.LayoutMode.GRID) {
             add(ThemeEditField("Key color", keyColor) { keyColor = it })
         }
+        add(ThemeEditField("Key tap color", keyTapColor ?: previewTheme.keyBackgroundPressed.toComposeColor()) { keyTapColor = it })
         add(ThemeEditField("Home-row stripe", stripeColor) { stripeColor = it })
         add(ThemeEditField("Spacebar", spacebarColor) { spacebarColor = it })
+        add(ThemeEditField("Accent (caps lock, active buttons)", accentColor) { accentColor = it })
         // Grid-mode-only, same reasoning as hiding "Key color" above (just the reverse) — this
         // field has no visible effect while editing/previewing Normal mode, so showing it there
         // read as a control that silently does nothing (real user feedback).
@@ -835,8 +848,11 @@ internal fun buildCustomTheme(
     name: String,
     backgroundColor: Color,
     keyColor: Color,
+    /** Null derives it from [keyColor]; see the editor's `keyTapColor`. */
+    keyTapColor: Color?,
     stripeColor: Color,
     spacebarColor: Color,
+    accentColor: Color,
     gridBorderColor: Color,
     gridBorderWidth: dev.omakey.core.theme.GridBorderWidth,
     designedForLayoutMode: dev.omakey.core.theme.LayoutMode,
@@ -851,11 +867,12 @@ internal fun buildCustomTheme(
         isDark = isDark,
         keyboardBackground = backgroundColor.toColorSpec(),
         keyBackground = keyColor.toColorSpec(),
-        keyBackgroundPressed = nudgeColor(keyColor, nudge).toColorSpec(),
+        keyBackgroundPressed = (keyTapColor ?: nudgeColor(keyColor, nudge)).toColorSpec(),
         keyTextColor = textColor.toColorSpec(),
         keySpecialBackground = nudgeColor(keyColor, smallNudge).toColorSpec(),
         suggestionBarBackground = nudgeColor(backgroundColor, smallNudge).toColorSpec(),
         spacebarAccentColor = spacebarColor.toColorSpec(),
+        accentColor = accentColor.toColorSpec(),
         middleRowStripeColor = stripeColor.toColorSpec(),
         gridBorderColor = gridBorderColor.toColorSpec(),
         gridBorderWidth = gridBorderWidth,

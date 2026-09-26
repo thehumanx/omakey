@@ -40,6 +40,8 @@ data class KeyboardUiState(
     /** Enabled languages, in switching order; the language key and picker only appear with 2+. */
     val languages: List<LanguageOption> = emptyList(),
     val activeLanguageId: String = KeyboardLocale.Default.id,
+    /** The active language's letter layout, for highlighting it in the language panel. */
+    val activeLetterLayoutId: String = KeyboardLocale.Default.letterLayout.id,
     /** The language picker occupies the key-grid slot, like quick access. */
     val languagePickerOpen: Boolean = false,
     val shiftOn: Boolean = false,
@@ -99,4 +101,9 @@ data class KeyboardUiState(
 )
 
 /** One enabled language, as the picker lists it. */
-data class LanguageOption(val id: String, val nativeName: String)
+data class LanguageOption(
+    val id: String,
+    val nativeName: String,
+    /** The language's letter layouts as (id, short name), when it has more than one to choose. */
+    val layouts: List<Pair<String, String>> = emptyList(),
+)

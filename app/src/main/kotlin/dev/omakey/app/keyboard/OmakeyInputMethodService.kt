@@ -491,7 +491,16 @@ class OmakeyInputMethodService :
             return
         }
         keyboardBounds = android.graphics.Rect(left, top, right, bottom)
+        // onComputeInsets only runs on a window layout pass, and moving the keyboard inside Compose
+        // doesn't trigger one — so after a drag the touchable region stayed where the keyboard used
+        // to be, and taps at its new position fell through to the app. One layout request, posted
+        // and coalesced, once the bounds stop changing; not one per frame of the drag.
+        insetsHandler.removeCallbacks(requestInsetsUpdate)
+        insetsHandler.postDelayed(requestInsetsUpdate, INSETS_SETTLE_MS)
     }
+
+    private val insetsHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val requestInsetsUpdate = Runnable { window?.window?.decorView?.requestLayout() }
 
     /**
      * Makes floating mode possible, and does nothing in any other placement.
@@ -531,7 +540,22 @@ class OmakeyInputMethodService :
         startActivity(intent)
     }
 
+    /**
+     * Back steps out of the keyboard's own panels (language → quick access → keys) before it hides
+     * the keyboard. Consuming the down event is enough: the framework only hides the IME on a back
+     * key-up whose down it was tracking, and nothing starts tracking when this returns true.
+     */
+    override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent): Boolean {
+        if (keyCode == android.view.KeyEvent.KEYCODE_BACK && isInputViewShown &&
+            keyboardViewModel?.onBackPressed() == true
+        ) {
+            return true
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+
     override fun onDestroy() {
+        insetsHandler.removeCallbacks(requestInsetsUpdate)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
         clipboardManager.removePrimaryClipChangedListener(clipboardListener)
         // Symmetry with the registrations in onCreate. Not strictly required — SharedPreferences
@@ -557,6 +581,7 @@ class OmakeyInputMethodService :
     }
 
     private companion object {
+        const val INSETS_SETTLE_MS = 60L
         /** Ceiling on a single copied clipboard image. Generous enough for any screenshot or photo
          * a user would plausibly paste, small enough that 50 of them is a bounded amount of
          * app-private storage rather than an open-ended one. */
