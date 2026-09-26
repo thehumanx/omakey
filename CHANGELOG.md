@@ -3,6 +3,27 @@
 All notable changes to omakey are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Added
+- **Languages.** Spanish, French and Nepali, as optional downloads from Settings → Languages.
+  English stays built in; nothing is downloaded unless you ask. Packs contain only data, never
+  code, and are checked against a signed list before they're installed.
+  - Spanish: ñ, ¿ ¡, and missing accents restored as you type ("cancion" → "canción").
+  - French: AZERTY or QWERTY, restored accents, and "l'", "j'", "qu'" and friends handled as
+    their own words so corrections land on the right part.
+  - Nepali: type in English letters and get Devanagari, with other spellings in the strip and the
+    English spelling always one tap away; or use the Devanagari keyboard directly.
+- **Switching languages.** A globe key next to the spacebar (tap to switch, hold to pick), a
+  Language tile in Quick access, and the language's name on the spacebar. Apps that say which
+  language a field expects get that language automatically.
+- **Words you teach the keyboard are kept per language**, and Settings → Learned words shows which
+  language each one belongs to.
+
+### Changed
+- The privacy notice now covers language pack downloads, the only other thing besides update checks
+  that uses the network.
+
 ## [4.1.0] — 2026-09-12
 
 A maintenance release. Floating mode was broken in a way that wasn't obvious, clipboard history was

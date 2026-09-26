@@ -33,12 +33,13 @@ testing fast typing, autocorrect, and everything else. I'm improving it on a reg
 Google allows sideloading, this is probably where it stays — and maybe after that, I put it on
 the Store.
 
-It's offline by default. The only thing that ever touches the network for now is checking for app
-updates — nothing you type, copy, or type into any app ever leaves your phone.
+It's offline by default. The only things that ever touch the network are checking for app updates
+and downloading a language pack when you ask for one — nothing you type, copy, or type into any app
+ever leaves your phone.
 
 ## App Updates / Plans and PSA
 - I've publicly shared this keyboard only on Reddit threads (besides my website) and few kind volunteers have tried and provided feedback on fixes/improvements and features. 
-- The keyboard currently only supports English, my plan is to introduce other language as well but it's not my current priority. 
+- Spanish, French and Nepali are coming as downloadable language packs (built, still being tested). English stays built in.
 - I am prioritizing more on optimizing the UX and autocorrection/prediction engine as its being written from the scratch.
 - The keyboard is optimized for battery usage as well. Fleksy used to take around 5-10%, while this takes just around 1%.
 - Note: Not tested for old hardwares, if you do, please test and lmk feedback.
@@ -46,7 +47,7 @@ updates — nothing you type, copy, or type into any app ever leaves your phone.
 
 ---
 - Upcoming fixes: improve quickaccess toolkit (added in v4.0.0), improve theming
-- Planned features: multi-lang support, voice input
+- Planned features: more languages, voice input
 - Not planned: glide-typing
 
 
@@ -77,7 +78,8 @@ updates — nothing you type, copy, or type into any app ever leaves your phone.
 - **Not a glide/swipe-to-type keyboard.** The gestures here are shortcuts for actions — delete a
   word, insert a space, cycle a suggestion — not tracing letters across the layout. You still tap
   out each word. Every gesture omakey has is documented below.
-- **English (US QWERTY), for now.** No other languages or layouts yet.
+- **Not every language.** English is built in; Spanish, French and Nepali are optional downloads.
+  More will follow, one at a time, each tested before it ships.
 - **Not on the Play Store yet.** Sideload it or build it from source — see [Getting
   started](#getting-started) below.
 - **No cloud backup, no sync.** Your learned words, your clipboard, your settings stay on your
@@ -139,6 +141,25 @@ moment, while looking at whatever you're typing into:
   disturb the others.
 - **Theme** — cycle Light, Dark, Follow-system and Accent without leaving the keyboard.
 - **Settings** — one tap, instead of knowing to long-press the extensions key.
+
+### More than one language
+
+English is built in. Other languages are separate downloads, so the keyboard stays small and you
+only carry the ones you use. Settings → Languages → "Get more languages" lists what's available.
+
+- **Spanish** — ñ on the keyboard, ¿ and ¡, and accents put back for you: type "cancion" and
+  "canción" is what you get.
+- **French** — AZERTY or QWERTY, your choice. Accents are restored the same way, and words like
+  "l'homme" or "j'ai" are understood as two words, so the correction lands on the right one.
+- **Nepali** — type it the way you'd text it, in English letters ("namaste", "mero"), and the
+  Devanagari appears as you go; tap a different choice in the strip if the first isn't right, or
+  keep the English spelling for English words. There's also a proper Devanagari keyboard if you'd
+  rather type the script directly.
+
+With more than one language turned on, a globe key appears next to the spacebar: tap it to switch,
+hold it to pick. The spacebar shows which language you're in. Each language learns its own words, so
+switching never mixes one language's vocabulary into another. Removing a language keeps what it
+learned, in case you add it back.
 
 ### Suggestions and autocorrect
 
