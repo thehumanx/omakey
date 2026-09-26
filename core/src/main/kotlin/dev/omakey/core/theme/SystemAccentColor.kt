@@ -91,6 +91,7 @@ fun systemDynamicTheme(context: Context, forDarkTheme: Boolean, id: String, name
                 // exactly as the platform pairs colorPrimary with colorOnPrimary.
                 keyBackgroundPressed = accent.accent,
                 keyTextOnAccentColor = accent.onAccent,
+                accentColor = accent.accent,
                 // Neutral by default, like every other preset: the spacebar only picks up the
                 // accent if the user turns on "pick accent colour from system".
                 spacebarAccentColor = color(android.R.color.system_neutral2_700),
@@ -109,6 +110,7 @@ fun systemDynamicTheme(context: Context, forDarkTheme: Boolean, id: String, name
                 keyTextColor = color(android.R.color.system_neutral1_900),
                 keyBackgroundPressed = accent.accent,
                 keyTextOnAccentColor = accent.onAccent,
+                accentColor = accent.accent,
                 spacebarAccentColor = color(android.R.color.system_neutral1_0),
                 middleRowStripeColor = ColorSpec(0x14000000),
                 gridBorderColor = color(android.R.color.system_neutral2_600),

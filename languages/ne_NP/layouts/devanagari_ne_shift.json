@@ -1,0 +1,198 @@
+{
+ "id": "devanagari_ne_shift",
+ "displayName": "देवनागरी",
+ "homeRow": 1,
+ "rows": [
+  {
+   "keys": [
+    {
+     "label": "ठ",
+     "code": 2336
+    },
+    {
+     "label": "औ",
+     "code": 2324
+    },
+    {
+     "label": "ै",
+     "code": 2376,
+     "popupChars": [
+      "ऐ"
+     ]
+    },
+    {
+     "label": "ृ",
+     "code": 2371,
+     "popupChars": [
+      "ऋ"
+     ]
+    },
+    {
+     "label": "थ",
+     "code": 2341
+    },
+    {
+     "label": "ञ",
+     "code": 2334
+    },
+    {
+     "label": "ू",
+     "code": 2370,
+     "popupChars": [
+      "ऊ"
+     ]
+    },
+    {
+     "label": "ी",
+     "code": 2368,
+     "popupChars": [
+      "ई"
+     ]
+    },
+    {
+     "label": "ओ",
+     "code": 2323
+    },
+    {
+     "label": "फ",
+     "code": 2347
+    }
+   ]
+  },
+  {
+   "keys": [
+    {
+     "label": "आ",
+     "code": 2310,
+     "popupChars": [
+      "अ"
+     ]
+    },
+    {
+     "label": "श",
+     "code": 2358,
+     "popupChars": [
+      "श्र"
+     ]
+    },
+    {
+     "label": "ध",
+     "code": 2343
+    },
+    {
+     "label": "ऊ",
+     "code": 2314
+    },
+    {
+     "label": "घ",
+     "code": 2328
+    },
+    {
+     "label": "अ",
+     "code": 2309
+    },
+    {
+     "label": "झ",
+     "code": 2333
+    },
+    {
+     "label": "ख",
+     "code": 2326
+    },
+    {
+     "label": "ळ",
+     "code": 2355
+    },
+    {
+     "label": "ZWNJ",
+     "code": 57601,
+     "text": "‌"
+    }
+   ]
+  },
+  {
+   "keys": [
+    {
+     "label": "⇧",
+     "code": -1,
+     "widthWeight": 1.5,
+     "keyType": "SPECIAL"
+    },
+    {
+     "label": "ङ",
+     "code": 2329
+    },
+    {
+     "label": "ढ",
+     "code": 2338
+    },
+    {
+     "label": "च",
+     "code": 2330
+    },
+    {
+     "label": "ँ",
+     "code": 2305
+    },
+    {
+     "label": "भ",
+     "code": 2349
+    },
+    {
+     "label": "ण",
+     "code": 2339
+    },
+    {
+     "label": "ं",
+     "code": 2306
+    },
+    {
+     "label": "⌫",
+     "code": -2,
+     "widthWeight": 1.5,
+     "keyType": "SPECIAL"
+    }
+   ]
+  },
+  {
+   "keys": [
+    {
+     "label": "?123",
+     "code": -5,
+     "widthWeight": 1.5,
+     "keyType": "SPECIAL"
+    },
+    {
+     "label": "😊",
+     "code": -7,
+     "widthWeight": 1.0,
+     "keyType": "SPECIAL"
+    },
+    {
+     "label": " ",
+     "code": -3,
+     "widthWeight": 4.0,
+     "keyType": "SPECIAL"
+    },
+    {
+     "label": "।",
+     "code": 2404,
+     "popupChars": [
+      "॥",
+      ".",
+      ",",
+      "?",
+      "!",
+      "-"
+     ]
+    },
+    {
+     "label": "⏎",
+     "code": -4,
+     "widthWeight": 1.5,
+     "keyType": "SPECIAL"
+    }
+   ]
+  }
+ ]
+}

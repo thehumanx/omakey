@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [WordEntity::class, ClipboardEntity::class],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 abstract class OmakeyDatabase : RoomDatabase() {
@@ -65,10 +65,37 @@ abstract class OmakeyDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Makes learned words per-language: adds `locale` and makes the primary key
+         * `(locale, word)`, so each language keeps its own personal vocabulary (AGENTS.md §66
+         * Phase 4). Every existing row was learned while English was the only language, so it is
+         * tagged `en_US` — history, not a guess.
+         *
+         * SQLite cannot change a primary key in place, hence the rebuild: new table, copy, drop,
+         * rename. The CREATE statement matches Room's own for [WordEntity] exactly (compare
+         * `core/schemas/…/5.json`), because Room validates the schema on open and refuses a table
+         * that differs even in column order.
+         */
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `words_new` (`word` TEXT NOT NULL, `frequency` INTEGER NOT NULL, " +
+                        "`isUserAdded` INTEGER NOT NULL, `lastUsedTimestamp` INTEGER NOT NULL, " +
+                        "`explicit` INTEGER NOT NULL, `locale` TEXT NOT NULL, PRIMARY KEY(`locale`, `word`))",
+                )
+                db.execSQL(
+                    "INSERT INTO words_new (word, frequency, isUserAdded, lastUsedTimestamp, explicit, locale) " +
+                        "SELECT word, frequency, isUserAdded, lastUsedTimestamp, explicit, '${WordEntity.DEFAULT_LOCALE}' FROM words",
+                )
+                db.execSQL("DROP TABLE words")
+                db.execSQL("ALTER TABLE words_new RENAME TO words")
+            }
+        }
+
         /** Exposed so `OmakeyDatabaseMigrationTest` exercises the migrations that actually ship
          * rather than a copy of them, and so a new migration can't be added to the test's chain
          * while being forgotten here (or the reverse). */
-        val MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+        val MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
 
         fun getInstance(context: Context): OmakeyDatabase =
             instance ?: synchronized(this) {

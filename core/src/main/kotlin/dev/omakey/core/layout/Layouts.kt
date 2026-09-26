@@ -27,6 +27,7 @@ object Layouts {
     // simply left unmirrored rather than double-mapped onto an existing key.
     val QwertyEnUS = KeyboardLayout(
         id = "qwerty_en_us",
+        homeRow = 1,
         rows = listOf(
             KeyRow(
                 listOf(
@@ -121,4 +122,7 @@ object Layouts {
             ),
         ),
     )
+
+    /** Every bundled full-keyboard layout, for [LayoutRepository]. */
+    val all: List<KeyboardLayout> get() = listOf(QwertyEnUS, Symbols1, Symbols2)
 }

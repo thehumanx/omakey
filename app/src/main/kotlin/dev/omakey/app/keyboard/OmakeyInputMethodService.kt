@@ -3,7 +3,6 @@ package dev.omakey.app.keyboard
 import android.content.ClipboardManager
 import android.content.Context
 import android.inputmethodservice.InputMethodService
-import android.util.Log
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import androidx.compose.runtime.collectAsState
@@ -25,7 +24,6 @@ import dev.omakey.app.keyboard.ui.KeyboardRoot
 import dev.omakey.core.clipboard.ClipboardHistoryStore
 import dev.omakey.core.clipboard.ClipboardPreferences
 import dev.omakey.core.db.ClipboardEntity
-import dev.omakey.core.db.WordEntity
 import dev.omakey.core.db.OmakeyDatabase
 import dev.omakey.core.emoji.EmojiRecentsPreferences
 import dev.omakey.core.emoji.EmojiSkinTonePreferences
@@ -33,16 +31,14 @@ import dev.omakey.core.feedback.HapticSoundPreferences
 import dev.omakey.core.gesture.GesturePreferences
 import dev.omakey.core.input.TextEditor
 import dev.omakey.core.layout.KeyboardPlacement
-import dev.omakey.core.locale.KeyboardLocale
+import dev.omakey.core.locale.LocalePreferences
+import dev.omakey.core.locale.LocaleRegistry
 import dev.omakey.core.layout.LayoutPreferences
 import dev.omakey.core.predict.AutocorrectIndex
 import dev.omakey.core.predict.AutocorrectPreferences
 import dev.omakey.core.predict.DeferredPredictionEngine
 import dev.omakey.core.predict.IncognitoPreferences
-import dev.omakey.core.predict.NgramPredictionEngine
-import dev.omakey.core.predict.PersonalLanguageModel
 import dev.omakey.core.predict.PredictionPreferences
-import dev.omakey.core.predict.lm.LanguageModel
 import dev.omakey.core.theme.AccessibilityPreferences
 import dev.omakey.core.theme.FontPreferences
 import dev.omakey.core.theme.LocalOmakeyTheme
@@ -81,7 +77,9 @@ class OmakeyInputMethodService :
 
     private lateinit var database: OmakeyDatabase
     private val predictionEngine = DeferredPredictionEngine()
-    private lateinit var personalModel: PersonalLanguageModel
+    private lateinit var localeRegistry: LocaleRegistry
+    private lateinit var localePreferences: LocalePreferences
+    private lateinit var localeManager: LocaleManager
     private lateinit var incognitoPreferences: IncognitoPreferences
     private lateinit var autocorrectIndex: AutocorrectIndex
     private lateinit var autocorrectPreferences: AutocorrectPreferences
@@ -244,12 +242,15 @@ class OmakeyInputMethodService :
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
 
         database = OmakeyDatabase.getInstance(applicationContext)
-        personalModel = PersonalLanguageModel()
         incognitoPreferences = IncognitoPreferences(applicationContext)
         autocorrectIndex = AutocorrectIndex()
         autocorrectPreferences = AutocorrectPreferences(applicationContext)
         predictionPreferences = PredictionPreferences(applicationContext)
-        textEditor = TextEditor { currentInputConnection }
+        textEditor = TextEditor(
+            connectionProvider = { currentInputConnection },
+            // Read per call; the manager is created a few lines below, before any input arrives.
+            profile = { localeManager.active.value.profile },
+        )
         themeRepository = ThemeRepository(applicationContext)
         accessibilityPreferences = AccessibilityPreferences(applicationContext)
         layoutPreferences = LayoutPreferences(applicationContext)
@@ -274,33 +275,24 @@ class OmakeyInputMethodService :
         }
         updatePreferences.close()
 
-        // Off the main thread so onCreateInputView is never blocked — the keyboard is typeable
-        // immediately and suggestions populate the moment this finishes, which is fast now: the
-        // model is memory-mapped rather than parsed, so this is a few page faults plus loading
-        // however many words the user has personally saved.
-        //
-        // This replaces a first-run import that inserted ~180,000 rows into SQLite in batches and
-        // needed resumability machinery because the OS could kill the service partway through.
-        // There is nothing left to resume: mapping a file either succeeds or throws.
+        // Loads the active language's model, personal vocabulary and key geometry off the main
+        // thread, so onCreateInputView is never blocked — the keyboard is typeable immediately and
+        // suggestions populate the moment loading finishes. Reloads on every language switch.
+        // Shared with Settings, so a pack installed there shows up here without a restart.
+        localeRegistry = dev.omakey.app.languages.LanguagePacks.get(applicationContext).registry
+        localePreferences = LocalePreferences(applicationContext)
+        localeManager = LocaleManager(
+            context = applicationContext,
+            registry = localeRegistry,
+            preferences = localePreferences,
+            wordDao = database.wordDao(),
+            autocorrectIndex = autocorrectIndex,
+            predictionEngine = predictionEngine,
+            scope = serviceScope,
+        )
         serviceScope.launch {
-            runCatching {
-                val model = LanguageModel.load(applicationContext, KeyboardLocale.Default.languageModelAsset)
-                personalModel.load(
-                    database.wordDao().allUserAdded().map {
-                        PersonalLanguageModel.Entry(
-                            word = it.word,
-                            count = it.frequency / WordEntity.COUNT_SCALE,
-                            lastUsed = it.lastUsedTimestamp,
-                            explicit = it.explicit,
-                        )
-                    },
-                    model,
-                )
-                autocorrectIndex.load(model, personalModel)
-                predictionEngine.delegate = NgramPredictionEngine(model, database.wordDao(), personalModel)
-            }.onFailure { Log.e(TAG, "Language model unavailable; typing works, suggestions won't", it) }
-            // The old importer tracked its progress here. Left-over state is meaningless now and
-            // would otherwise sit in the app's data directory forever.
+            // The old dictionary importer tracked its progress here. Left-over state is meaningless
+            // now and would otherwise sit in the app's data directory forever.
             applicationContext.getSharedPreferences("omakey_seed_state", Context.MODE_PRIVATE)
                 .edit().clear().apply()
         }
@@ -399,6 +391,9 @@ class OmakeyInputMethodService :
             onClipboardCopy = onClipboardCopy,
             clipboardText = ::currentClipboardText,
             emojiSkinTone = { emojiSkinTonePreferences.skinTone.value },
+            localeController = localeManager,
+            layouts = localeRegistry.layouts,
+            transliterator = { localeManager.transliterator.value },
         )
         keyboardViewModel = viewModel
 
@@ -462,7 +457,7 @@ class OmakeyInputMethodService :
         candidatesEnd: Int,
     ) {
         super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
-        keyboardViewModel?.onCursorMoved()
+        keyboardViewModel?.onSelectionChanged(newSelStart, newSelEnd, candidatesEnd)
     }
 
     override fun onEvaluateFullscreenMode(): Boolean = false
@@ -496,7 +491,16 @@ class OmakeyInputMethodService :
             return
         }
         keyboardBounds = android.graphics.Rect(left, top, right, bottom)
+        // onComputeInsets only runs on a window layout pass, and moving the keyboard inside Compose
+        // doesn't trigger one — so after a drag the touchable region stayed where the keyboard used
+        // to be, and taps at its new position fell through to the app. One layout request, posted
+        // and coalesced, once the bounds stop changing; not one per frame of the drag.
+        insetsHandler.removeCallbacks(requestInsetsUpdate)
+        insetsHandler.postDelayed(requestInsetsUpdate, INSETS_SETTLE_MS)
     }
+
+    private val insetsHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val requestInsetsUpdate = Runnable { window?.window?.decorView?.requestLayout() }
 
     /**
      * Makes floating mode possible, and does nothing in any other placement.
@@ -536,7 +540,22 @@ class OmakeyInputMethodService :
         startActivity(intent)
     }
 
+    /**
+     * Back steps out of the keyboard's own panels (language → quick access → keys) before it hides
+     * the keyboard. Consuming the down event is enough: the framework only hides the IME on a back
+     * key-up whose down it was tracking, and nothing starts tracking when this returns true.
+     */
+    override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent): Boolean {
+        if (keyCode == android.view.KeyEvent.KEYCODE_BACK && isInputViewShown &&
+            keyboardViewModel?.onBackPressed() == true
+        ) {
+            return true
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+
     override fun onDestroy() {
+        insetsHandler.removeCallbacks(requestInsetsUpdate)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
         clipboardManager.removePrimaryClipChangedListener(clipboardListener)
         // Symmetry with the registrations in onCreate. Not strictly required — SharedPreferences
@@ -544,6 +563,7 @@ class OmakeyInputMethodService :
         // but "we rely on an implementation detail nobody chose to rely on" is a worse position
         // than releasing what we took, and the service has a definite end of life to do it at.
         incognitoPreferences.close()
+        localePreferences.close()
         clipboardPreferences.close()
         autocorrectPreferences.close()
         predictionPreferences.close()
@@ -561,8 +581,7 @@ class OmakeyInputMethodService :
     }
 
     private companion object {
-        const val TAG = "OmakeyIME"
-
+        const val INSETS_SETTLE_MS = 60L
         /** Ceiling on a single copied clipboard image. Generous enough for any screenshot or photo
          * a user would plausibly paste, small enough that 50 of them is a bounded amount of
          * app-private storage rather than an open-ended one. */

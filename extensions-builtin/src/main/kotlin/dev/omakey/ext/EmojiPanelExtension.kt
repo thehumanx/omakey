@@ -200,7 +200,7 @@ class EmojiPanelExtension : OmakeyExtension {
                                     .height(if (isEmoticons) 48.dp else 44.dp)
                                     .clickable(
                                         interactionSource = interactionSource,
-                                        indication = if (isGridMode) null else androidx.compose.foundation.LocalIndication.current,
+                                        indication = null,
                                     ) {
                                         host.insertText(emoji)
                                         recentsRepository?.recordUse(emoji)
@@ -215,7 +215,11 @@ class EmojiPanelExtension : OmakeyExtension {
                                             m.background(if (isPressed) theme.keyBackgroundPressed.toComposeColor() else theme.keyboardBackground.toComposeColor())
                                                 .gridCellBorder(gridBorderColor, theme.gridBorderWidth.toDp())
                                         } else {
-                                            m
+                                            // Same key tap colour as a letter key while held.
+                                            m.background(
+                                                if (isPressed) theme.keyBackgroundPressed.toComposeColor() else Color.Transparent,
+                                                androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+                                            )
                                         }
                                     },
                             ) {
@@ -246,7 +250,10 @@ class EmojiPanelExtension : OmakeyExtension {
                 Modifier
                     .fillMaxWidth()
                     .height(40.dp)
-                    .background(if (isGridMode) theme.keyboardBackground.toComposeColor() else Color.Black.copy(alpha = 0.15f))
+                    // The suggestion bar's colour in Normal mode, so the panel's bottom bar matches
+                    // the strip above the keys — it was a hardcoded black tint, which looked like a
+                    // shadow on light themes and disappeared on dark ones.
+                    .background(if (isGridMode) theme.keyboardBackground.toComposeColor() else theme.suggestionBarBackground.toComposeColor())
                     // Plain border() directly on this same Row as its own background — see
                     // KeyboardRoot.kt's GRID_BORDER_WIDTH doc for why a border on an ancestor
                     // (the old gridRegionOuterEdge) kept getting silently covered instead.
@@ -258,14 +265,14 @@ class EmojiPanelExtension : OmakeyExtension {
                         .fillMaxHeight()
                         .clickable(
                             interactionSource = abcInteractionSource,
-                            indication = if (isGridMode) null else androidx.compose.foundation.LocalIndication.current,
+                            indication = null,
                         ) { host.close() }
                         .let { m ->
                             if (isGridMode) {
                                 m.background(if (abcIsPressed) theme.keyBackgroundPressed.toComposeColor() else theme.keyboardBackground.toComposeColor())
                                     .gridCellBorder(gridBorderColor, theme.gridBorderWidth.toDp())
                             } else {
-                                m
+                                m.background(if (abcIsPressed) theme.keyBackgroundPressed.toComposeColor() else Color.Transparent)
                             }
                         }
                         .padding(horizontal = 12.dp),
@@ -295,13 +302,15 @@ class EmojiPanelExtension : OmakeyExtension {
                                 .width(36.dp)
                                 .clickable(
                                     interactionSource = interactionSource,
-                                    indication = if (isGridMode) null else androidx.compose.foundation.LocalIndication.current,
+                                    indication = null,
                                 ) { categoryIndex = categories.indexOf(cat) }
                                 .background(
                                     when {
-                                        isGridMode && (isSelected || isPressed) -> theme.keyBackgroundPressed.toComposeColor()
+                                        // The open category is "selected", so it takes the theme's
+                                        // accent — it was a fixed white tint, invisible on light themes.
+                                        isSelected -> theme.accent.toComposeColor()
+                                        isPressed -> theme.keyBackgroundPressed.toComposeColor()
                                         isGridMode -> theme.keyboardBackground.toComposeColor()
-                                        isSelected -> Color.White.copy(alpha = 0.12f)
                                         else -> Color.Transparent
                                     },
                                 )
@@ -310,7 +319,7 @@ class EmojiPanelExtension : OmakeyExtension {
                         ) {
                             // Missing color here made every tab icon (not just "#") default to
                             // black-on-dark and effectively disappear against the panel background.
-                            Text(text = cat.icon, color = textColor, fontSize = 18.sp)
+                            Text(text = cat.icon, color = if (isSelected) theme.onAccent.toComposeColor() else textColor, fontSize = 18.sp)
                         }
                     }
                 }
@@ -332,7 +341,7 @@ class EmojiPanelExtension : OmakeyExtension {
                                     m.background(if (isPressed) theme.keyBackgroundPressed.toComposeColor() else theme.keyboardBackground.toComposeColor())
                                         .gridCellBorder(gridBorderColor, theme.gridBorderWidth.toDp(), includeLeft = true)
                                 } else {
-                                    m
+                                    m.background(if (isPressed) theme.keyBackgroundPressed.toComposeColor() else Color.Transparent)
                                 }
                             }
                             .padding(horizontal = 12.dp),

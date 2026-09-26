@@ -3,6 +3,7 @@ package dev.omakey.app.keyboard.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -39,7 +40,8 @@ import dev.omakey.core.theme.gridCellBorder
 import dev.omakey.core.icons.PhosphorClipboardHistory
 import dev.omakey.core.icons.PhosphorCopy
 import dev.omakey.core.icons.PhosphorCut
-import dev.omakey.core.icons.PhosphorIncognito
+import dev.omakey.core.icons.PhosphorGlobe
+import dev.omakey.core.icons.PhosphorSmiley
 import dev.omakey.core.icons.PhosphorPaste
 import dev.omakey.core.icons.PhosphorQuickAccess
 import dev.omakey.core.icons.PhosphorRedo
@@ -69,8 +71,15 @@ private fun pageToTab(page: Int): dev.omakey.app.keyboard.TopStripTab = when (pa
 
 /**
  * The strip above the key grid — one shared slot with three horizontally swipeable pages
- * (Fleksy-style, not tap-driven tabs): word suggestions (default), a numbers row, and
- * text-editing tools + clipboard.
+ * (Fleksy-style, not tap-driven tabs):
+ *  1. **Suggestion bar** — quick access on the left, suggested words and emoji in the middle, and
+ *     the language button (or the emoji button, if the user swapped the two) on the right.
+ *  2. **Numbers.**
+ *  3. **Text tools** — undo/redo, select/copy/cut/paste, clipboard.
+ *
+ * The quick-access and language buttons live on the suggestion page only, not pinned across all
+ * three: the numbers and tools pages need the full width, and the suggestion page is the one the
+ * keyboard sits on by default.
  */
 @Composable
 internal fun TopStrip(
@@ -86,11 +95,9 @@ internal fun TopStrip(
         initialPage = if (clipboardModeActive) 2 else tabToPage(uiState.topStripTab),
     ) { 3 }
 
-    // Two-way sync with the ViewModel: a swipe here updates topStripTab (so other logic — e.g.
-    // resetForNewField snapping back to Suggestions on a new text field — has one source of
-    // truth), and an external change to topStripTab (not currently triggered from elsewhere, but
-    // keeps the pager honest if something ever does) scrolls the pager to match. Suppressed
-    // entirely in clipboard mode — see below, the pager is locked to the Tools page there anyway.
+    // Two-way sync with the ViewModel: a swipe here updates topStripTab (persisted, so the strip
+    // reopens on the page it was left on), and an external change scrolls the pager to match.
+    // Suppressed in clipboard mode, where the pager is locked to the tools page.
     if (!clipboardModeActive) {
         androidx.compose.runtime.LaunchedEffect(pagerState.currentPage) {
             viewModel.selectTopStripTab(pageToTab(pagerState.currentPage))
@@ -100,9 +107,6 @@ internal fun TopStrip(
             if (pagerState.currentPage != target) pagerState.scrollToPage(target)
         }
     } else {
-        // Force (and keep forcing) the Tools page while clipboard mode is active, regardless of
-        // whatever tab was last active — entering clipboard mode always shows the dimmed Tools
-        // row, never leaves the user on Suggestions/Numbers underneath it.
         androidx.compose.runtime.LaunchedEffect(Unit) {
             if (pagerState.currentPage != 2) pagerState.scrollToPage(2)
         }
@@ -113,120 +117,157 @@ internal fun TopStrip(
         Modifier
             .fillMaxWidth()
             .height(44.dp)
-            // Grid mode fills with keyboardBackground (the same single "Background" field every
-            // grid-mode cell fills with — see KeyRowView), not suggestionBarBackground, so the
-            // strip reads consistently even with nothing in it (e.g. no suggestions to show)
-            // instead of showing through to a separately-configured, possibly very different
-            // color underneath the per-chip fills.
+            // Grid mode fills with keyboardBackground (the single "Background" field every grid
+            // cell uses), not suggestionBarBackground, so an empty strip reads the same as a full one.
             .background(if (isGridMode) theme.keyboardBackground.toComposeColor() else theme.suggestionBarBackground.toComposeColor())
-            // Applied directly on this same element as its own background (see GRID_BORDER_WIDTH's
-            // doc for why that matters) — but skipping the bottom edge specifically, since
-            // KeyGrid sits flush directly below with zero gap and already self-borders its own
-            // top edge; a second full border here would double up right at that one seam (real
-            // bug, fixed — reported as "the border above QWERTY is thicker than the others").
+            // Skips the bottom edge: KeyGrid sits flush below and already borders its own top, and
+            // drawing both doubled the seam (real bug: "the border above QWERTY is thicker").
             .let { m -> if (isGridMode) m.gridBorderExceptBottom(theme.gridBorderColor.toComposeColor(), theme.gridBorderWidth.toDp()) else m },
     ) {
-        // Row, not the bare pager it used to be: the quick-access button is pinned at the left and
-        // the three swipeable pages take the rest. Pinned rather than being a fourth page, because
-        // it must be reachable in one tap from whichever page the user is on — a page you have to
-        // swipe to is not quick access. Costs ~44dp of suggestion width, the same trade Gboard makes.
-        Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
-            QuickAccessButton(theme = theme, viewModel = viewModel, feedback = feedback, active = quickAccessOpen)
-            Box(Modifier.weight(1f).fillMaxHeight()) {
         androidx.compose.foundation.pager.HorizontalPager(
             state = pagerState,
             modifier = Modifier.fillMaxSize(),
-            // Locked to the current page in clipboard mode — swiping between suggestions/numbers/
-            // tools makes no sense while a full-screen clipboard picker is open underneath.
             userScrollEnabled = !clipboardModeActive,
-            // Default snap threshold (0.5f — needs a near-full-width flick to commit to the next
-            // page) read as "swipe for extension bar is not seamless." Lowered so a shorter,
-            // easier swipe still lands on the next/previous page.
+            // The default 0.5 threshold needed a near-full-width flick ("not seamless").
             flingBehavior = androidx.compose.foundation.pager.PagerDefaults.flingBehavior(
                 state = pagerState,
                 snapPositionalThreshold = 0.2f,
             ),
         ) { page ->
-            // Same "Show key backgrounds" toggle KeyRowView already respects for the main letter
-            // grid (LayoutSettings.showKeyBackgrounds) — extended here so the extension bar's own
-            // controls (suggestion/emoji chips, number keys, text-editing tool icons) stay legible
-            // against a custom theme too, instead of relying purely on text color contrast against
-            // suggestionBarBackground. Real user feedback: with a light suggestion-bar background
-            // and light key text, this row was unreadable until backgrounds were turned on here too.
+            // Same "Show key backgrounds" toggle the letter grid uses, so the strip's controls stay
+            // legible on a theme whose suggestion-bar and text colours are close.
             val showKeyBackgrounds = uiState.layoutSettings.showKeyBackgrounds
             when (page) {
-                0 -> SuggestionsTabContent(
-                    suggestions = uiState.suggestions,
-                    emojiSuggestions = uiState.emojiSuggestions,
-                    loading = uiState.suggestionsLoading,
-                    firstSuggestionKind = uiState.firstSuggestionKind,
-                    activeSuggestionIndex = uiState.activeSuggestionIndex,
-                    theme = theme,
-                    fontFamily = fontFamily,
-                    showKeyBackgrounds = showKeyBackgrounds,
-                    onAccept = viewModel::onSuggestionAccepted,
-                    onAcceptEmoji = viewModel::onEmojiSuggestionAccepted,
-                )
+                0 -> SuggestionBar(viewModel, uiState, theme, fontFamily, feedback, quickAccessOpen, showKeyBackgrounds)
                 1 -> NumbersTabContent(theme, fontFamily, viewModel, feedback, uiState.layout.id, showKeyBackgrounds)
                 else -> ToolsTabContent(
                     theme, fontFamily, viewModel, feedback, uiState.canUndo, uiState.canRedo,
-                    incognito = uiState.incognito,
                     clipboardModeActive = clipboardModeActive,
                     showKeyBackgrounds = showKeyBackgrounds,
                 )
             }
         }
-            }
+    }
+}
+
+/** Page one of the strip: quick access, then suggestions, then the language (or emoji) button. */
+@Composable
+private fun SuggestionBar(
+    viewModel: KeyboardViewModel,
+    uiState: dev.omakey.app.keyboard.KeyboardUiState,
+    theme: OmakeyTheme,
+    fontFamily: androidx.compose.ui.text.font.FontFamily?,
+    feedback: KeyboardFeedback,
+    quickAccessOpen: Boolean,
+    showKeyBackgrounds: Boolean,
+) {
+    val multilingual = uiState.languages.size > 1
+    val swapped = uiState.layoutSettings.swapEmojiAndLanguage
+    Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+        StripButton(
+            theme = theme,
+            active = quickAccessOpen,
+            description = if (quickAccessOpen) "Close quick access" else "Quick access",
+            onClick = { feedback.onKeyPress(); viewModel.toggleQuickAccess() },
+        ) { tint -> Icon(PhosphorQuickAccess, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp)) }
+        // In Grid mode the suggestion area draws its own right edge. The suggestion cells draw theirs
+        // too, but with no suggestions (or only emoji, which don't fill the width) nothing did, and
+        // the button on the right lost its left border (real bug). Both edges fall on the same
+        // pixels when cells are present, so it doesn't thicken.
+        val isGridMode = dev.omakey.core.theme.LocalKeyboardLayoutMode.current == dev.omakey.core.theme.LayoutMode.GRID
+        Box(
+            Modifier.weight(1f).fillMaxHeight().let { m ->
+                if (isGridMode && multilingual) {
+                    m.gridCellBorder(theme.gridBorderColor.toComposeColor(), theme.gridBorderWidth.toDp(), includeBottom = false)
+                } else {
+                    m
+                }
+            },
+        ) {
+            SuggestionsTabContent(
+                suggestions = uiState.suggestions,
+                emojiSuggestions = uiState.emojiSuggestions,
+                loading = uiState.suggestionsLoading,
+                firstSuggestionKind = uiState.firstSuggestionKind,
+                activeSuggestionIndex = uiState.activeSuggestionIndex,
+                theme = theme,
+                fontFamily = fontFamily,
+                showKeyBackgrounds = showKeyBackgrounds,
+                onAccept = viewModel::onSuggestionAccepted,
+                onAcceptEmoji = viewModel::onEmojiSuggestionAccepted,
+            )
+        }
+        // With one language there is no language button, and the emoji key stays in the bottom row
+        // whichever way round the setting is, so there is nothing to put here.
+        if (multilingual && !swapped) {
+            StripButton(
+                theme = theme,
+                active = uiState.languagePickerOpen,
+                description = "Switch language",
+                onClick = { feedback.onKeyPress(); viewModel.nextLanguage() },
+                onLongClick = { feedback.onKeyPress(); viewModel.openLanguagePicker() },
+            ) { tint -> Icon(PhosphorGlobe, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp)) }
+        } else if (multilingual) {
+            StripButton(
+                theme = theme,
+                active = uiState.activeExtensionId != null,
+                description = "Emoji and extensions",
+                onClick = { feedback.onKeyPress(); viewModel.onKeyTap(dev.omakey.core.layout.SpecialKeyCode.EXTENSIONS) },
+            ) { tint -> Icon(PhosphorSmiley, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp)) }
         }
     }
 }
 
-/** The nine-dot button at the left of the top strip. Highlighted while its panel is open, so it
- * reads as a toggle rather than a one-way door — tapping it again is how the panel closes. */
+/**
+ * A square icon button at either end of the suggestion bar. Filled with the theme's accent while
+ * [active] (its panel is open), so it reads as a toggle — tapping it again closes the panel.
+ */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-private fun QuickAccessButton(
+private fun StripButton(
     theme: OmakeyTheme,
-    viewModel: KeyboardViewModel,
-    feedback: KeyboardFeedback,
     active: Boolean,
+    description: String,
+    onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
+    content: @Composable (tint: androidx.compose.ui.graphics.Color) -> Unit,
 ) {
     val isGridMode = dev.omakey.core.theme.LocalKeyboardLayoutMode.current == dev.omakey.core.theme.LayoutMode.GRID
     val interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
-    val background = if (active || isPressed) theme.keyBackgroundPressed else theme.keySpecialBackground
+    val background = when {
+        active -> theme.accent
+        isPressed -> theme.keyBackgroundPressed
+        isGridMode -> theme.keyboardBackground
+        else -> null
+    }
+    val tint = when {
+        active -> theme.onAccent
+        background != null -> theme.labelOn(background)
+        else -> theme.keyTextColor
+    }.toComposeColor()
     Box(
         Modifier
             .fillMaxHeight()
             .width(44.dp)
             .padding(if (isGridMode) 0.dp else 6.dp)
             .let { m ->
-                if (isGridMode) {
-                    m.background(background.toComposeColor())
+                when {
+                    isGridMode -> m.background(background!!.toComposeColor())
                         .gridCellBorder(theme.gridBorderColor.toComposeColor(), theme.gridBorderWidth.toDp(), includeBottom = false)
-                } else if (active || isPressed) {
-                    m.background(background.toComposeColor(), androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
-                } else {
-                    m
+                    background != null -> m.background(background.toComposeColor(), androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                    else -> m
                 }
             }
-            .clickable(
+            .combinedClickable(
                 interactionSource = interactionSource,
-                indication = if (isGridMode) null else androidx.compose.foundation.LocalIndication.current,
-            ) { feedback.onKeyPress(); viewModel.toggleQuickAccess() }
-            .semantics { contentDescription = if (active) "Close quick access" else "Quick access" },
+                indication = null,
+                onLongClick = onLongClick,
+                onClick = onClick,
+            )
+            .semantics { contentDescription = description },
         contentAlignment = Alignment.Center,
-    ) {
-        Icon(
-            imageVector = PhosphorQuickAccess,
-            contentDescription = null,
-            tint = if (active || isGridMode || isPressed) {
-                theme.labelOn(background).toComposeColor()
-            } else {
-                theme.keyTextColor.toComposeColor()
-            },
-            modifier = Modifier.size(20.dp),
-        )
-    }
+    ) { content(tint) }
 }
 
 // internal (not private) so the theme editor's live preview (SettingsActivity's ThemePreviewMock)
@@ -274,11 +315,13 @@ internal fun SuggestionsTabContent(
         return
     }
 
-    LazyRow(
-        Modifier.fillMaxWidth().fillMaxHeight().padding(horizontal = if (isGridMode) 0.dp else 8.dp),
+    // A plain Row with the words sharing the width equally, not a scrolling list: at most three
+    // words (SUGGESTION_LIMIT) fit, and fixed slots put each candidate in the same place every time.
+    Row(
+        Modifier.fillMaxWidth().fillMaxHeight().padding(horizontal = if (isGridMode) 0.dp else 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        itemsIndexed(suggestions) { index, suggestion ->
+        suggestions.forEachIndexed { index, suggestion ->
             val isActive = index == activeIndex
             // Quoted, same as Gboard/Fleksy's convention for "this slot is a typo fix," not just
             // another word choice — lets the user tell at a glance that swiping/tapping it
@@ -299,12 +342,13 @@ internal fun SuggestionsTabContent(
             val isPressed by interactionSource.collectIsPressedAsState()
             Box(
                 Modifier
-                    .let { m -> if (isGridMode) m.fillMaxHeight() else m.padding(horizontal = 4.dp) }
+                    .weight(1f)
+                    .let { m -> if (isGridMode) m.fillMaxHeight() else m.padding(horizontal = 2.dp) }
                     .clickable(
                         interactionSource = interactionSource,
                         // Grid mode's own solid press-fill (below) already gives clear feedback —
                         // a ripple on top of that reads as a redundant second effect.
-                        indication = if (isGridMode) null else androidx.compose.foundation.LocalIndication.current,
+                        indication = null,
                     ) { onAccept(suggestion) }
                     .let { m ->
                         // Same grid-cell treatment as KeyRowView: edge-to-edge, square, bordered,
@@ -322,7 +366,7 @@ internal fun SuggestionsTabContent(
                                 // which sits flush above KeyGrid; KeyGrid's own top self-border
                                 // already owns that seam (see gridCellBorder's includeBottom doc).
                                 .gridCellBorder(theme.gridBorderColor.toComposeColor(), theme.gridBorderWidth.toDp(), includeBottom = false)
-                                .padding(horizontal = 12.dp, vertical = 6.dp)
+                                .padding(horizontal = 4.dp, vertical = 6.dp)
                         } else if (showKeyBackgrounds) {
                             // Same "Show key backgrounds" toggle the main key grid uses —
                             // keySpecialBackground (not keyBackground) since a suggestion chip is
@@ -331,9 +375,10 @@ internal fun SuggestionsTabContent(
                             m.background(
                                 if (isPressed) theme.keyBackgroundPressed.toComposeColor() else theme.keySpecialBackground.toComposeColor(),
                                 androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
-                            ).padding(horizontal = 10.dp, vertical = 6.dp)
+                            ).padding(horizontal = 4.dp, vertical = 6.dp)
                         } else {
-                            m.padding(horizontal = 10.dp, vertical = 6.dp)
+                            // Borderless, but still fills with the key tap colour while held.
+                            m.background(if (isPressed) theme.keyBackgroundPressed.toComposeColor() else androidx.compose.ui.graphics.Color.Transparent, androidx.compose.foundation.shape.RoundedCornerShape(8.dp)).padding(horizontal = 4.dp, vertical = 6.dp)
                         }
                     },
                 contentAlignment = Alignment.Center,
@@ -343,13 +388,15 @@ internal fun SuggestionsTabContent(
                     color = itemColor,
                     fontFamily = fontFamily,
                     fontSize = 16.sp,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                 )
             }
         }
         // Independent of the word suggestions above — see KeyboardUiState.emojiSuggestions's own
         // doc — a plain, un-highlighted row of emoji chips that ride along at the end, tapping one
         // just inserts it rather than replacing/cycling anything.
-        items(emojiSuggestions) { emoji ->
+        emojiSuggestions.forEach { emoji ->
             val interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
             val isPressed by interactionSource.collectIsPressedAsState()
             Box(
@@ -357,7 +404,7 @@ internal fun SuggestionsTabContent(
                     .let { m -> if (isGridMode) m.fillMaxHeight() else m.padding(horizontal = 4.dp) }
                     .clickable(
                         interactionSource = interactionSource,
-                        indication = if (isGridMode) null else androidx.compose.foundation.LocalIndication.current,
+                        indication = null,
                     ) { onAcceptEmoji(emoji) }
                     .let { m ->
                         if (isGridMode) {
@@ -370,7 +417,8 @@ internal fun SuggestionsTabContent(
                                 androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
                             ).padding(horizontal = 8.dp, vertical = 6.dp)
                         } else {
-                            m.padding(horizontal = 8.dp, vertical = 6.dp)
+                            // Borderless, but still fills with the key tap colour while held.
+                            m.background(if (isPressed) theme.keyBackgroundPressed.toComposeColor() else androidx.compose.ui.graphics.Color.Transparent, androidx.compose.foundation.shape.RoundedCornerShape(8.dp)).padding(horizontal = 8.dp, vertical = 6.dp)
                         }
                     },
                 contentAlignment = Alignment.Center,
@@ -389,7 +437,6 @@ private fun ToolsTabContent(
     feedback: KeyboardFeedback,
     canUndo: Boolean,
     canRedo: Boolean,
-    incognito: Boolean,
     // Non-null while the clipboard panel is open — every icon except Clipboard itself renders
     // dimmed and non-interactive, and Clipboard becomes a toggle-back-to-keys button instead of
     // an open action (see item 7: clipboard-mode top bar redesign).
@@ -429,16 +476,6 @@ private fun ToolsTabContent(
                     feedback.onKeyPress()
                     if (clipboardModeActive) viewModel.extensionHost.close() else viewModel.selectExtension("builtin.clipboard")
                 },
-            )
-            // Reachable from the keyboard itself rather than only from Settings: the moment you
-            // want it is the moment you are already typing something you'd rather not have
-            // remembered, and leaving the field to find a toggle defeats the purpose.
-            add(
-                ToolAction(
-                    if (incognito) "Stop incognito" else "Incognito",
-                    PhosphorIncognito,
-                    true,
-                ) { feedback.onKeyPress(); viewModel.toggleIncognito() },
             )
         }
         Row(Modifier.fillMaxWidth().fillMaxHeight(), verticalAlignment = Alignment.CenterVertically) {
@@ -549,7 +586,7 @@ private fun ToolButton(
                         interactionSource = interactionSource,
                         // Grid mode's own solid press-fill (below) already gives clear feedback —
                         // a ripple on top of that reads as a redundant second effect.
-                        indication = if (isGridMode) null else androidx.compose.foundation.LocalIndication.current,
+                        indication = null,
                         onClick = onClick,
                     )
                 } else {
@@ -578,7 +615,8 @@ private fun ToolButton(
                         androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
                     ).padding(horizontal = 12.dp, vertical = 8.dp)
                 } else {
-                    m.padding(horizontal = 12.dp, vertical = 8.dp)
+                    // Borderless, but still fills with the key tap colour while held.
+                    m.background(if (isPressed) theme.keyBackgroundPressed.toComposeColor() else androidx.compose.ui.graphics.Color.Transparent, androidx.compose.foundation.shape.RoundedCornerShape(8.dp)).padding(horizontal = 12.dp, vertical = 8.dp)
                 }
             }
             .semantics { contentDescription = description },

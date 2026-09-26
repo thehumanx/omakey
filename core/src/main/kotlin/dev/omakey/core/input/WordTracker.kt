@@ -69,6 +69,11 @@ class WordTracker {
         buffer.append(char)
     }
 
+    /** For keys that type more than one character, e.g. a Devanagari conjunct. */
+    fun appendToBuffer(text: CharSequence) {
+        buffer.append(text)
+    }
+
     fun clearBuffer() {
         buffer.setLength(0)
     }

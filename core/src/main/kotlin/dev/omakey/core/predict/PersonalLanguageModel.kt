@@ -1,5 +1,6 @@
 package dev.omakey.core.predict
 
+import dev.omakey.core.locale.toLookupForm
 import dev.omakey.core.predict.lm.LanguageModel
 import kotlin.math.exp
 import kotlin.math.ln
@@ -110,7 +111,7 @@ class PersonalLanguageModel(private val clock: () -> Long = { System.currentTime
      * remembering — that is where a personal signal actually changes an outcome.
      */
     fun record(word: String, explicit: Boolean): Entry? {
-        val lower = word.lowercase()
+        val lower = word.toLookupForm()
         if (lower.isEmpty()) return null
         val existing = byWord[lower]
         if (!explicit && existing == null && !isWorthLearning(lower)) return null
@@ -132,19 +133,19 @@ class PersonalLanguageModel(private val clock: () -> Long = { System.currentTime
     }
 
     fun forget(word: String) {
-        val lower = word.lowercase()
+        val lower = word.toLookupForm()
         val removed = byWord.remove(lower) ?: return
         vocabulary?.indexOf(lower)?.takeIf { it != LanguageModel.NO_WORD }?.let { byVocabularyId.remove(it) }
         totalCount -= removed.count
         if (totalCount < 0f) totalCount = 0f
     }
 
-    fun contains(word: String): Boolean = word.lowercase() in byWord
+    fun contains(word: String): Boolean = word.toLookupForm() in byWord
 
     /** Whether this word may be treated as real, and so left alone by autocorrect. See the class
      * doc — this is deliberately much harder to earn than mere presence. */
     fun isTrusted(word: String): Boolean {
-        val entry = byWord[word.lowercase()] ?: return false
+        val entry = byWord[word.toLookupForm()] ?: return false
         return entry.isAdmitted(clock())
     }
 
@@ -155,7 +156,7 @@ class PersonalLanguageModel(private val clock: () -> Long = { System.currentTime
 
     /** Whether the user saved this deliberately — exactly what decides if a second swipe-up can
      * un-learn it, so a casually-typed word is never removable that way. */
-    fun isExplicit(word: String): Boolean = byWord[word.lowercase()]?.explicit == true
+    fun isExplicit(word: String): Boolean = byWord[word.toLookupForm()]?.explicit == true
 
     /** Interpolates the personal estimate over the corpus one for a word already resolved to a
      * vocabulary id — the form the correction hot loop uses. */
@@ -167,7 +168,7 @@ class PersonalLanguageModel(private val clock: () -> Long = { System.currentTime
 
     fun adjust(word: String, staticLogProbability: Float): Float {
         if (byWord.isEmpty()) return staticLogProbability
-        val entry = byWord[word.lowercase()] ?: return staticLogProbability
+        val entry = byWord[word.toLookupForm()] ?: return staticLogProbability
         return interpolate(entry, staticLogProbability)
     }
 

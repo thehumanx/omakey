@@ -53,6 +53,7 @@ fun resolveEffectiveTheme(stored: OmakeyTheme, useSystemAccent: Boolean): Omakey
                 // colour the theme's own keyTextColor was never chosen against. See
                 // OmakeyTheme.labelOn.
                 keyTextOnAccentColor = accent.onAccent,
+                accentColor = accent.accent,
             )
         }
     }

@@ -3,6 +3,72 @@
 All notable changes to omakey are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [5.0.0] — 2026-09-26
+
+The languages release. Spanish, French, Brazilian Portuguese and Nepali arrive as small optional
+downloads, and a lot of the keyboard around them was reworked while testing them: the strip above
+the keys, Settings, the theme colours, and floating mode.
+
+### Added
+- **Languages.** Spanish, French, Brazilian Portuguese and Nepali, as optional downloads from Settings → Languages.
+  English stays built in; nothing is downloaded unless you ask. Packs contain only data, never
+  code, and are checked against a signed list before they're installed.
+  - Spanish: ñ, ¿ ¡, and missing accents restored as you type ("cancion" → "canción").
+  - Portuguese (Brazil): ç next to L, and accents and tildes restored as you type ("nao" → "não").
+  - French: AZERTY or QWERTY, restored accents, and "l'", "j'", "qu'" and friends handled as
+    their own words so corrections land on the right part.
+  - Nepali: type in English letters and get Devanagari, with other spellings in the strip and the
+    English spelling always one tap away; or use the Devanagari keyboard directly.
+- **Switching languages.** A globe button at the right of the suggestion bar (tap to switch, hold
+  to pick), a Language tile in Quick access, and the language and layout, faded, on the spacebar ("FR - AZERTY", "PT BR - QWERTY"). Apps
+  that say which language a field expects get that language automatically. Settings → Keyboard can
+  swap the globe and emoji buttons.
+- **Double-tap Shift for caps lock**, alongside the long-press that already worked.
+- **Words you teach the keyboard are kept per language**, and Settings → Learned words shows which
+  language each one belongs to.
+
+### Changed
+- **The strip above the keys is reorganised.** The first page is the suggestion bar — Quick access on
+  the left, suggestions and emoji in the middle, the language button on the right. The second is
+  numbers, the third undo/redo and text tools. Incognito moved into Quick access.
+- **Three suggestions instead of six**, spread evenly across the bar, since six never fit.
+- **Settings is split into pages** — Appearance, Keyboard, Languages, Typing, Gestures, Privacy &
+  data, Sound & haptics, Accessibility, About — instead of one very long scroll.
+- **Themes have an accent colour.** Caps lock, active Shift, open buttons and selected Quick access
+  tiles use it, so they follow your theme instead of always being grey. Custom themes get an Accent
+  field in the editor.
+- **One colour rule across the keyboard.** Any key or button fills with the theme's *key tap
+  color* while held — in both layout styles, the suggestion bar, the emoji panel and Quick access —
+  and anything selected or switched on uses the accent. The delete shimmer and the emoji panel's
+  selected category follow the accent too, and the emoji panel lost its fixed black and white tints.
+  The theme editor has a new "Key tap color".
+- **The globe cycles layouts as well as languages** — English, Spanish, French AZERTY, French QWERTY,
+  Portuguese, Nepali Romanized, Nepali Devanagari. The language panel lists the current language's layouts.
+- **Quick access** gains a Grid layout toggle. The back arrow in Quick access and the language panel
+  is gone; the system back button steps back instead (language → Quick access → keys).
+- The emoji key and emoji button are an icon in the key colour, not a colour emoji.
+- Settings is fully neutral grey; some controls were still falling back to purple.
+- Long-pressing the emoji key no longer opens Settings (Quick access has a Settings tile).
+- The privacy notice now covers language pack downloads, the only other thing besides update checks
+  that uses the network.
+
+### Fixed
+- **Caps lock was hard to see.** On the Light theme its icon was drawn in the same grey as its own
+  background; active Shift was a pale grey arrow on a white key.
+- **Undo after typing over a selection.** Select text, start typing, and undo now brings the
+  selected text back instead of only removing what you typed.
+- Undo while a word was still being typed could undo an older step at the wrong place.
+- **Only the first drag of the floating keyboard followed your finger**; after that it stayed put and
+  jumped on release. Resizing and raising had the same problem.
+- **Dragging the floating keyboard stutters no more.** Every frame of the drag was redrawing the whole
+  key grid. Taps right after a drag also reach the keyboard at its new position now, instead of the
+  app underneath.
+- **A floating keyboard moved in landscape is visible in portrait.** Its position was kept from the
+  wider screen and left it off the edge.
+- The globe button's border went missing in Grid mode when there were no suggestions.
+- In Grid mode the line under the suggestion bar disappeared while Quick access or the language
+  panel was open.
+
 ## [4.1.0] — 2026-09-12
 
 A maintenance release. Floating mode was broken in a way that wasn't obvious, clipboard history was

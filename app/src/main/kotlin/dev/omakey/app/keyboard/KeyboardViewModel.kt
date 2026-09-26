@@ -1,25 +1,33 @@
 package dev.omakey.app.keyboard
 
 import android.view.inputmethod.EditorInfo
+import dev.omakey.core.locale.FixedLocaleController
 import dev.omakey.core.locale.KeyboardLocale
+import dev.omakey.core.locale.LocaleController
+import dev.omakey.core.locale.LanguageProfile
 import dev.omakey.core.emoji.EmojiSkinTone
-import dev.omakey.core.emoji.WordEmojiSuggestions
 import dev.omakey.core.gesture.GesturePreferences
 import dev.omakey.core.gesture.GestureSettings
 import dev.omakey.core.input.TextEdit
 import dev.omakey.core.input.TextEditor
+import dev.omakey.core.input.TransliterationSession
+import dev.omakey.core.translit.Transliterator
 import dev.omakey.core.input.UndoHistory
 import dev.omakey.core.input.isSensitiveField
 import dev.omakey.core.predict.matchCase
 import dev.omakey.core.predict.splitCorrection
 import dev.omakey.core.input.WordTracker
+import dev.omakey.core.layout.KeyDefinition
 import dev.omakey.core.layout.KeyboardLayout
 import dev.omakey.core.layout.KeyboardPlacement
 import dev.omakey.core.layout.LayoutPreferences
+import dev.omakey.core.layout.LayoutRepository
 import dev.omakey.core.layout.flippedOneHandedSide
 import dev.omakey.core.layout.nextOneHanded
 import dev.omakey.core.layout.toggledWith
 import dev.omakey.core.layout.LayoutSettings
+import dev.omakey.core.layout.withLanguageKeyInsteadOfEmoji
+import dev.omakey.core.layout.withSpaceLabel
 import dev.omakey.core.layout.Layouts
 import dev.omakey.core.layout.SpecialKeyCode
 import dev.omakey.core.predict.AutocorrectIndex
@@ -87,7 +95,19 @@ class KeyboardViewModel(
     // The user's chosen emoji skin tone, read per use rather than captured — it can change from
     // Settings while the keyboard is open.
     private val emojiSkinTone: () -> EmojiSkinTone = { EmojiSkinTone.DEFAULT },
+    // The active language and the ones the user switches between (AGENTS.md §66 Phase 5). Every
+    // language-dependent rule below reads through [locale] rather than assuming English.
+    private val localeController: LocaleController = FixedLocaleController(),
+    // Resolves shift layers for languages without letter case.
+    private val layouts: LayoutRepository = LayoutRepository(),
+    // The active language's transliterator, when it has one and it has loaded (Nepali typed in
+    // Latin letters). Read per use: it changes with the language.
+    private val transliterator: () -> Transliterator? = { null },
 ) {
+    private fun locale(): KeyboardLocale = localeController.active.value
+
+    private val profile: LanguageProfile get() = locale().profile
+
     private val _uiState = MutableStateFlow(
         KeyboardUiState(
             theme = themeRepository.currentTheme.value,
@@ -119,7 +139,7 @@ class KeyboardViewModel(
     private var lastSpaceCommitAtMs: Long = 0L
 
     /** True once a symbol/digit has actually been typed while on `Symbols1`/`Symbols2` (set in
-     * [commitTypedChar]) — the *next* [onSpace] then switches back to the letters layout after
+     * [commitTypedText]) — the *next* [onSpace] then switches back to the letters layout after
      * inserting the space, matching how the space bar behaves on mainstream keyboards after
      * punctuation. Reset on entering symbols mode fresh or leaving it (see [onKeyTap]'s
      * `SYMBOLS`/`LETTERS` branches) so a plain page-switch with nothing typed doesn't trigger it. */
@@ -217,6 +237,41 @@ class KeyboardViewModel(
     )
     private var activeCorrection: ActiveCorrection? = null
 
+    /** The word being typed in Latin and shown in Devanagari, while a transliteration layout is up
+     * (AGENTS.md §66 Phase 9). Every hook below that consults it does so first and returns, so
+     * ordinary typing never runs through it. */
+    private val translit = TransliterationSession(textEditor)
+
+    private fun transliterating(): Boolean = _uiState.value.layout.transliteration && transliterator() != null
+
+    private fun translitCandidates(latin: String): List<String> {
+        val engine = transliterator() ?: return emptyList()
+        val context = engine.contextOf(words.lastCommitted, words.previousToLastCommitted)
+        return engine.candidates(latin, context, SUGGESTION_LIMIT - 1)
+    }
+
+    private fun showTranslitStrip() {
+        _uiState.update {
+            it.copy(
+                suggestions = translit.strip,
+                activeSuggestionIndex = translit.selected,
+                firstSuggestionKind = SuggestionKind.PLAIN,
+                emojiSuggestions = emptyList(),
+            )
+        }
+    }
+
+    /** Ends the word being transliterated with [word] (or the selected candidate) and [separator],
+     * and records it the way a typed word is recorded: in the word history for context, and as one
+     * undo step. */
+    private fun commitTranslit(separator: String, word: String? = null) {
+        val committed = if (word != null) translit.commit(word, separator) else translit.commit(separator) ?: return
+        pushUndo(TextEdit(removed = takeSelectionReplacement(), inserted = committed + separator))
+        words.commitWord(committed)
+        words.boundarySeparator = separator
+        updateEmojiSuggestions(committed)
+    }
+
     init {
         // Keeps an already-open keyboard in sync if the user changes theme/layout settings from
         // Settings while the IME view is alive (same process, different Activity).
@@ -230,7 +285,8 @@ class KeyboardViewModel(
             .onEach { mode -> _uiState.update { it.copy(layoutMode = mode) } }
             .launchIn(scope)
         layoutPreferences.settings
-            .onEach { settings -> _uiState.update { it.copy(layoutSettings = settings) } }
+            // Re-displayed too: the emoji/language swap changes the bottom row itself.
+            .onEach { settings -> _uiState.update { it.copy(layoutSettings = settings, layout = display(it.layout)) } }
             .launchIn(scope)
         fontPreferences.fontId
             .onEach { id -> _uiState.update { it.copy(fontId = id) } }
@@ -240,6 +296,26 @@ class KeyboardViewModel(
             .launchIn(scope)
         incognitoPreferences.incognito
             .onEach { enabled -> _uiState.update { it.copy(incognito = enabled) } }
+            .launchIn(scope)
+        localeController.active
+            .onEach(::applyLocale)
+            .launchIn(scope)
+        localeController.enabled
+            .onEach { languages ->
+                _uiState.update {
+                    it.copy(
+                        languages = languages.map { l ->
+                            LanguageOption(
+                                id = l.id,
+                                nativeName = l.nativeName,
+                                layouts = l.letterLayoutChoices.takeIf { it.size > 1 }.orEmpty()
+                                    .map { layout -> layout.id to dev.omakey.core.layout.shortName(layout) },
+                            )
+                        },
+                        layout = display(it.layout),
+                    )
+                }
+            }
             .launchIn(scope)
         predictionReady
             .onEach { ready ->
@@ -289,6 +365,8 @@ class KeyboardViewModel(
         // typing a password or a recovery phrase will never think to reach for a toggle, and words
         // captured from one would sit in the dictionary indefinitely.
         incognitoPreferences.onFieldChanged(isSensitiveField(info))
+        // Before the layout is chosen below, so a field that asks for a language opens in it.
+        localeController.onFieldStarted(hintLanguagesOf(info))
         val enterAction = when {
             info == null -> EditorInfo.IME_ACTION_NONE
             (info.imeOptions and EditorInfo.IME_FLAG_NO_ENTER_ACTION) != 0 -> EditorInfo.IME_ACTION_NONE
@@ -296,8 +374,10 @@ class KeyboardViewModel(
         }
         _uiState.update {
             it.copy(
-                layout = KeyboardLocale.Default.letterLayout,
-                shiftOn = autocorrectPreferences.settings.value.autoCapitalizeEnabled && textEditor.textBeforeCursor(1).isEmpty(),
+                layout = display(locale().letterLayout),
+                baseRowCount = locale().letterLayout.rows.size,
+                shiftOn = autocorrectPreferences.settings.value.autoCapitalizeEnabled && profile.hasCase &&
+                    textEditor.textBeforeCursor(1).isEmpty(),
                 capsLockOn = false,
                 suggestions = emptyList(),
                 emojiSuggestions = emptyList(),
@@ -310,10 +390,15 @@ class KeyboardViewModel(
                 canUndo = false,
                 canRedo = false,
                 quickAccessOpen = false,
+                languagePickerOpen = false,
                 resizing = false,
             )
         }
         words.clear()
+        pendingSelectionReplacement = null
+        selectionActive = false
+        // The word being composed belonged to the field being left; it is gone with it.
+        translit.clear()
         symbolTypedInSymbolsMode = false
         suggestionCycleIndex = -1
         lastAutocorrect = null
@@ -485,9 +570,10 @@ class KeyboardViewModel(
             }
             SpecialKeyCode.LETTERS -> {
                 symbolTypedInSymbolsMode = false
-                switchLayout(KeyboardLocale.Default.letterLayout)
+                switchLayout(locale().letterLayout)
             }
             SpecialKeyCode.EXTENSIONS -> toggleExtensionPanel()
+            SpecialKeyCode.LANGUAGE -> nextLanguage()
             else -> onCharacter(code)
         }
     }
@@ -500,7 +586,7 @@ class KeyboardViewModel(
      * commits ". ", cursor ends up right after it, and a swipe down/up should turn that "."
      * into "," / "!" / etc. rather than cycling word suggestions (which is what swipe up/down
      * normally does — see [onSwipeUp]/[onSwipeDown]). */
-    private val punctuationCycle = listOf('.', ',', '!', '?', ';', ':', '\'', '"')
+    private val punctuationCycle: List<Char> get() = profile.punctuationCycle
 
     /** Only fires when the cursor isn't inside a word-in-progress (the [WordTracker] buffer is empty —
      * a live word is what "cursor is inside the word" means here, since a mid-word cursor from
@@ -557,6 +643,11 @@ class KeyboardViewModel(
      * cycle at all — restores the original word and, if it's still actively being typed and not
      * already a known word, saves it to the local dictionary (see [revertAndMaybeSave]). */
     fun onSwipeUp() {
+        if (translit.isComposing) {
+            translit.select(translit.selected - 1)
+            showTranslitStrip()
+            return
+        }
         if (tryCyclePunctuation(forward = false)) return
         val suggestions = _uiState.value.suggestions
         when {
@@ -585,6 +676,11 @@ class KeyboardViewModel(
      * comma; or swiping on a period typed directly) without the false-positive-on-plain-space
      * behavior. */
     fun onSwipeDown() {
+        if (translit.isComposing) {
+            translit.select(translit.selected + 1)
+            showTranslitStrip()
+            return
+        }
         if (tryCyclePunctuation(forward = true)) return
         val suggestions = _uiState.value.suggestions
         if (suggestions.isEmpty()) return
@@ -678,6 +774,11 @@ class KeyboardViewModel(
      * [flushWordBuffer]'s doc) — the word came from the suggestion strip, so it was already a
      * known word or an already-vetted correction. */
     fun onSuggestionAccepted(word: String) {
+        if (translit.isComposing) {
+            commitTranslit(separator = " ", word = word)
+            refreshSuggestions()
+            return
+        }
         // Accepting a suggestion for the word just committed is the user saying it was wrong.
         discardPendingLearn()
         lastAutocorrect = null
@@ -793,6 +894,23 @@ class KeyboardViewModel(
      * [TextEditor.wordAtCursor] and looks up alternatives for *that* word, which is the only way
      * to catch "cursor moved into the middle of an already-committed word" — nothing about normal
      * keystroke handling ever sees that case, since it isn't a keystroke at all. */
+    /**
+     * Selection changed. With a word composing, a change that leaves the cursor at the end of the
+     * composing region is the keyboard's own update; anything else is the user moving the cursor
+     * away, and the word is left as shown. [composingEnd] is -1 when the editor reports no
+     * composing region.
+     */
+    fun onSelectionChanged(selectionStart: Int, selectionEnd: Int, composingEnd: Int) {
+        selectionActive = selectionStart != selectionEnd
+        if (translit.isComposing && (composingEnd < 0 || selectionStart != selectionEnd || selectionEnd != composingEnd)) {
+            translit.abandon()
+            refreshSuggestions()
+            return
+        }
+        if (translit.isComposing) return
+        onCursorMoved()
+    }
+
     fun onCursorMoved() {
         val wordAtCursor = textEditor.wordAtCursor()
         // The cursor sitting right at the end of a word that exactly matches what's actively
@@ -833,30 +951,60 @@ class KeyboardViewModel(
         _uiState.update { it.copy(suggestions = alternatives, firstSuggestionKind = SuggestionKind.CORRECTION) }
     }
 
-    private fun onCharacter(code: Int) = commitTypedChar(Character.toChars(code)[0])
+    /** A tap on a character key. Looked up in the current layout rather than decoded from [code]
+     * alone, because a key may type more than one character ([KeyDefinition.text]). */
+    private fun onCharacter(code: Int) {
+        val text = _uiState.value.layout.keyForCode(code)?.committedText ?: String(Character.toChars(code))
+        commitTypedText(text)
+    }
 
     /** Also used for accent-popup selections (long-press on a key with popupChars), which arrive
-     * as a Char rather than a key code since accent variants aren't part of the base layout. */
-    fun onAccentSelected(char: Char) = commitTypedChar(char)
+     * as text rather than a key code since accent variants aren't part of the base layout. */
+    fun onAccentSelected(text: String) = commitTypedText(text)
 
-    private fun commitTypedChar(rawChar: Char) {
+    private fun commitTypedText(rawText: String) {
+        if (rawText.isEmpty()) return
+        captureSelectionBeingReplaced()
+        if (transliterating()) {
+            if (rawText.all { it in 'a'..'z' || it in 'A'..'Z' }) {
+                suggestionCycleIndex = -1
+                translit.type(rawText.lowercase(), ::translitCandidates)
+                showTranslitStrip()
+                return
+            }
+            // Anything else ends the word before it is typed, as punctuation does in English.
+            if (translit.isComposing) commitTranslit(separator = "")
+        }
         suggestionCycleIndex = -1
         undoHistory.breakCoalescing()
-        var char = rawChar
-        if (_uiState.value.shiftOn) char = char.uppercaseChar()
+        // Per character, not String.uppercase(): that can change the length ("ß" → "SS"), and a
+        // key tap must type what the key shows.
+        val text = if (_uiState.value.shiftOn && profile.hasCase) {
+            buildString(rawText.length) { rawText.forEach { append(it.uppercaseChar()) } }
+        } else {
+            rawText
+        }
+        val isWordText = profile.isWord(text)
         // Punctuation typed directly after a word (no space) is a word boundary too — correct
         // before committing the punctuation itself, so it lands after the fixed word.
-        if (!char.isLetter()) {
+        if (!isWordText) {
             maybeAutocorrectBufferedWord()
         }
-        textEditor.commitCharacter(char)
+        textEditor.insertText(text)
         if (_uiState.value.layout.id in SYMBOLS_LAYOUT_IDS) symbolTypedInSymbolsMode = true
-        if (char.isLetter()) {
-            words.appendToBuffer(char)
+        if (isWordText) {
+            words.appendToBuffer(text)
             refreshSuggestions()
         } else {
-            flushWordBuffer(separator = char.toString())
-            words.boundarySeparator = char.toString()
+            flushWordBuffer(separator = text)
+            // Punctuation typed straight over a selection: one step that removed the selection and
+            // inserted the punctuation, since there is no word for it to ride along with.
+            pendingSelectionReplacement?.let {
+                pushUndo(TextEdit(removed = it, inserted = text))
+                pendingSelectionReplacement = null
+            }
+            words.boundarySeparator = text
+            val char = text.singleOrNull()
             // Real bug, fixed: this used to pass checkContextualCorrection = true for *every*
             // non-letter character, including digits and arbitrary symbols-page characters (@, #,
             // $, ...) that never actually end a word the way sentence punctuation does. Since
@@ -868,11 +1016,12 @@ class KeyboardViewModel(
             // committed, reappearing every time the user typed a digit/symbol with no live word
             // buffered. Only [punctuationCycle]'s actual sentence-ending/quoting characters (also
             // reused by swipe up/down's own punctuation-cycling) should re-trigger that check.
-            refreshSuggestions(checkContextualCorrection = char in punctuationCycle)
+            refreshSuggestions(checkContextualCorrection = char != null && char in punctuationCycle)
             if (char == '=') tryShowCalculatorResult()
         }
-        if (_uiState.value.shiftOn && !_uiState.value.capsLockOn) {
-            _uiState.update { it.copy(shiftOn = false) } // one-shot shift, matches typical mobile keyboard behavior
+        val opensSentence = text.length == 1 && text[0] in profile.openingPunctuation
+        if (_uiState.value.shiftOn && !_uiState.value.capsLockOn && !opensSentence) {
+            releaseShift() // one-shot shift, matches typical mobile keyboard behavior
         }
     }
 
@@ -884,7 +1033,7 @@ class KeyboardViewModel(
      * effect is just the missing "19" getting appended.
      *
      * Called right after '=' itself has already been committed as ordinary punctuation (see
-     * [commitTypedChar]), so [textBeforeCursor] already includes it — but also re-derived from
+     * [commitTypedText]), so [textBeforeCursor] already includes it — but also re-derived from
      * [refreshSuggestionsAfterDeletion] on every backspace, not just fresh '=' keystrokes. Real
      * bug, fixed: this used to be a one-shot side effect of typing '=', with nothing re-running
      * it afterward — backspacing away just the applied result (leaving the cursor sitting right
@@ -919,6 +1068,12 @@ class KeyboardViewModel(
     }
 
     private fun onSpace() {
+        if (transliterating() && translit.isComposing) {
+            commitTranslit(separator = " ")
+            lastSpaceCommitAtMs = System.currentTimeMillis()
+            refreshSuggestions()
+            return
+        }
         if (shouldConvertDoubleSpaceToPeriod()) {
             convertPrecedingSpaceToPeriod()
             return
@@ -930,7 +1085,7 @@ class KeyboardViewModel(
         lastSpaceCommitAtMs = System.currentTimeMillis()
         if (symbolTypedInSymbolsMode) {
             symbolTypedInSymbolsMode = false
-            switchLayout(KeyboardLocale.Default.letterLayout)
+            switchLayout(locale().letterLayout)
         }
         refreshSuggestions(checkContextualCorrection = true)
         maybeAutoCapitalize()
@@ -958,7 +1113,8 @@ class KeyboardViewModel(
 
     private fun convertPrecedingSpaceToPeriod() {
         textEditor.deleteCharacterBackward()
-        textEditor.commitCharacter('.')
+        val terminator = profile.doubleSpaceInserts
+        textEditor.commitCharacter(terminator)
         textEditor.insertSpace()
         // Real bug, fixed: this used to record just " " here, but the actual text sitting
         // between the word and the cursor is ". " (period *and* space, 2 characters) — the very
@@ -967,7 +1123,7 @@ class KeyboardViewModel(
         // of the old word behind every time (e.g. "hello. " cycling to "hhell. "). See
         // [ActiveCorrection.separator]'s doc — it's retyped verbatim after the replacement on
         // every cycle step, so it must match the real on-screen separator exactly.
-        words.boundarySeparator = ". "
+        words.boundarySeparator = "$terminator "
         lastSpaceCommitAtMs = 0L
         refreshSuggestions(checkContextualCorrection = true)
         maybeAutoCapitalize()
@@ -976,14 +1132,15 @@ class KeyboardViewModel(
     /** Off by default (per user request) — only capitalizes the very start of a field or right
      * after sentence-ending punctuation, never mid-sentence. Caps lock always wins over this. */
     private fun maybeAutoCapitalize() {
-        if (!autocorrectPreferences.settings.value.autoCapitalizeEnabled) return
+        if (!autocorrectPreferences.settings.value.autoCapitalizeEnabled || !profile.hasCase) return
         if (_uiState.value.capsLockOn) return
         val before = textEditor.textBeforeCursor(3).trimEnd { it == ' ' }
-        val shouldCapitalize = before.isEmpty() || before.last() in ".!?"
+        val shouldCapitalize = before.isEmpty() || before.last() in profile.capitalizeAfter
         if (shouldCapitalize) _uiState.update { it.copy(shiftOn = true) }
     }
 
     private fun onEnter() {
+        if (translit.isComposing) commitTranslit(separator = "")
         maybeAutocorrectBufferedWord()
         val action = _uiState.value.enterAction
         val willInsertNewline = action == EditorInfo.IME_ACTION_NONE || action == EditorInfo.IME_ACTION_UNSPECIFIED
@@ -1013,6 +1170,7 @@ class KeyboardViewModel(
      * only ever fire for something that plainly isn't a real word, never a "well" -> "we'll" style
      * variant of something already valid; those stay opt-in, offered on the suggestion strip. */
     private fun maybeAutocorrectBufferedWord() {
+        if (!profile.autoApplyCorrections) return
         val typed = words.bufferedWord
         // The user just backspaced this exact word back to what they actually typed — respect
         // that as a rejection instead of immediately re-correcting it right back on the very next
@@ -1034,6 +1192,10 @@ class KeyboardViewModel(
     }
 
     private fun onDeleteCharacter() {
+        if (translit.isComposing && translit.backspace(::translitCandidates)) {
+            if (translit.isComposing) showTranslitStrip() else refreshSuggestions()
+            return
+        }
         // Any backspace at all retracts the staged word — see [pendingLearn] for why this is
         // deliberately broader than "a backspace that touches it".
         discardPendingLearn()
@@ -1207,6 +1369,7 @@ class KeyboardViewModel(
      * not.
      */
     private fun resetTypingState() {
+        settleSelectionReplacement()
         words.clearBuffer()
         activeCorrection = null
         forgetCorrectionMemory()
@@ -1222,6 +1385,39 @@ class KeyboardViewModel(
         suggestionCycleIndex = -1
     }
 
+    /**
+     * Text that was selected when the user started typing over it, and so was replaced by the
+     * first keystroke. The replacement isn't recorded on its own: it is folded into the undo step of
+     * the word typed in its place ([takeSelectionReplacement]), so one undo removes that word and
+     * puts the selection back — what every desktop editor does. Real bug, fixed: select all, type,
+     * undo only removed the new word and the old text was gone for good.
+     */
+    private var pendingSelectionReplacement: String? = null
+
+    /** From [onSelectionChanged]; lets a keystroke skip the `getSelectedText` IPC round-trip when
+     * nothing is selected, which is nearly always. */
+    private var selectionActive = false
+
+    private fun captureSelectionBeingReplaced() {
+        if (!selectionActive) return
+        val selection = textEditor.selectedText()?.takeIf { it.isNotEmpty() } ?: return
+        settleSelectionReplacement()
+        pendingSelectionReplacement = selection
+        selectionActive = false
+    }
+
+    private fun takeSelectionReplacement(): String =
+        pendingSelectionReplacement.orEmpty().also { pendingSelectionReplacement = null }
+
+    /** Records a pending replacement as its own step, together with whatever of the word typed over
+     * it is still unrecorded — for when that word is abandoned rather than finished (the cursor
+     * moved away, the field changed). */
+    private fun settleSelectionReplacement() {
+        val removed = pendingSelectionReplacement ?: return
+        pendingSelectionReplacement = null
+        pushUndo(TextEdit(removed = removed, inserted = words.bufferedWord))
+    }
+
     private fun pushUndo(event: TextEdit) {
         undoHistory.record(event)
         // Every caller except recordPlainCharDelete's own path wants coalescing off; UndoHistory
@@ -1234,6 +1430,15 @@ class KeyboardViewModel(
      * separator/whitespace involved), so undo/redo round-trip losslessly instead of the old
      * scheme's hardcoded-space assumption. */
     fun undo() {
+        // A word still being typed is not on the undo stack yet: record it first, or undo would
+        // skip over it and apply an older step at the wrong place in the text.
+        if (translit.isComposing) {
+            commitTranslit(separator = "")
+        } else if (words.bufferLength > 0) {
+            flushWordBuffer()
+        } else {
+            settleSelectionReplacement()
+        }
         val event = undoHistory.undo() ?: return
         textEditor.replaceBackward(event.inserted.length, event.removed)
         afterUndoOrRedo()
@@ -1277,12 +1482,13 @@ class KeyboardViewModel(
         suggestionCycleIndex = -1
         val committed = words.commitBufferedWord() ?: return
         val word = committed.word
-        pushUndo(TextEdit(inserted = word + separator))
+        // Merged with the selection it was typed over, so one undo puts the old text back.
+        pushUndo(TextEdit(removed = takeSelectionReplacement(), inserted = word + separator))
         // Whatever was staged at the previous word boundary has now survived an entire further
         // word without being deleted or corrected, so it counts as deliberate.
         commitPendingLearn()
         pendingLearn = if (incognitoPreferences.shouldLearn() && lastAutocorrect == null &&
-            word.all { it.isLetter() }
+            profile.isWord(word)
         ) {
             // The word before this one, read before the commit shifted it — see
             // [WordTracker.commitWord] for why that comes back from the call rather than being
@@ -1347,20 +1553,155 @@ class KeyboardViewModel(
      * underneath it, which would leave caps lock's own flag stuck on. See [enableCapsLock] for how
      * caps lock gets turned on in the first place (long-press, not a tap). */
     private fun toggleShift() {
-        _uiState.update {
-            if (it.capsLockOn) it.copy(shiftOn = false, capsLockOn = false) else it.copy(shiftOn = !it.shiftOn)
+        val state = _uiState.value
+        val now = android.os.SystemClock.uptimeMillis()
+        val doubleTap = now - lastShiftTapAtMs <= DOUBLE_TAP_SHIFT_MS
+        lastShiftTapAtMs = now
+        when {
+            state.capsLockOn -> releaseShift()
+            // Second tap of a double tap: the first turned one-shot shift on, this one latches it —
+            // the same gesture iOS and Gboard use, alongside the long-press that already existed.
+            state.shiftOn && doubleTap -> engageShift(capsLock = true)
+            state.shiftOn -> releaseShift()
+            else -> engageShift(capsLock = false)
         }
     }
 
+    private var lastShiftTapAtMs = 0L
+
     /** Long-press on shift (see the gesture handling in `KeyGrid`) — capitalizes every letter
      * until shift is tapped again, unlike a plain tap's one-shot capitalize-next-letter. */
-    fun enableCapsLock() {
-        _uiState.update { it.copy(shiftOn = true, capsLockOn = true) }
+    fun enableCapsLock() = engageShift(capsLock = true)
+
+    /**
+     * Shift on. For a language with letter case that is only a flag — letters are uppercased as
+     * they are typed. For one without, it swaps in the layout's shift layer
+     * ([KeyboardLayout.shiftLayoutId]), which is what Shift means on a Devanagari keyboard.
+     */
+    private fun engageShift(capsLock: Boolean) {
+        val current = _uiState.value.layout
+        val shiftLayer = if (profile.hasCase) null else layouts.shiftLayerOf(current)
+        _uiState.update {
+            it.copy(shiftOn = true, capsLockOn = capsLock, layout = shiftLayer?.let(::display) ?: it.layout)
+        }
+    }
+
+    /** Shift and caps lock off, and back from a shift layer to the layer it came from. */
+    private fun releaseShift() {
+        val base = locale().letterLayout
+        _uiState.update {
+            val onShiftLayer = !profile.hasCase && it.layout.id == base.shiftLayoutId
+            it.copy(shiftOn = false, capsLockOn = false, layout = if (onShiftLayer) display(base) else it.layout)
+        }
     }
 
     private fun switchLayout(layout: KeyboardLayout) {
-        _uiState.update { it.copy(layout = layout) }
+        // Leaving the transliteration layer (to symbols, say) keeps the word as shown.
+        if (translit.isComposing && !layout.transliteration) translit.abandon()
+        _uiState.update { it.copy(layout = display(layout)) }
     }
+
+    /**
+     * A language switch. Anything mid-word belongs to the previous language — its buffer, its
+     * pending correction, a word staged for learning — so all of it is dropped rather than carried
+     * into a language it was never typed in. Text already committed is left alone.
+     */
+    private fun applyLocale(locale: KeyboardLocale) {
+        translit.abandon()
+        discardPendingLearn()
+        resetTypingState()
+        suggestionCycleIndex = -1
+        symbolTypedInSymbolsMode = false
+        _uiState.update {
+            it.copy(
+                layout = display(locale.letterLayout),
+                baseRowCount = locale.letterLayout.rows.size,
+                activeLanguageId = locale.id,
+                activeLetterLayoutId = locale.letterLayout.id,
+                shiftOn = false,
+                capsLockOn = false,
+                suggestions = emptyList(),
+                emojiSuggestions = emptyList(),
+                firstSuggestionKind = SuggestionKind.PLAIN,
+                languagePickerOpen = false,
+            )
+        }
+    }
+
+    fun nextLanguage() = localeController.next()
+
+    fun selectLanguage(id: String) {
+        languagePickerReturnsToQuickAccess = false
+        localeController.switchTo(id)
+        _uiState.update { it.copy(languagePickerOpen = false, quickAccessOpen = false) }
+    }
+
+    fun chooseLayout(layoutId: String) {
+        localeController.chooseLayout(locale().id, layoutId)
+    }
+
+    /** Normal ↔ Grid, from quick access — it changes how every key is drawn, which is worth being
+     * able to compare in place rather than by leaving for Settings. */
+    fun toggleLayoutMode() {
+        val next = if (themeRepository.layoutMode.value == dev.omakey.core.theme.LayoutMode.GRID) {
+            dev.omakey.core.theme.LayoutMode.NORMAL
+        } else {
+            dev.omakey.core.theme.LayoutMode.GRID
+        }
+        themeRepository.setLayoutMode(next)
+    }
+
+    /** [fromQuickAccess]: opened from the quick-access Language tile, so closing it (system back)
+     * returns there rather than dropping the user back at the keys. */
+    fun openLanguagePicker(fromQuickAccess: Boolean = false) {
+        languagePickerReturnsToQuickAccess = fromQuickAccess
+        _uiState.update { it.copy(languagePickerOpen = true, quickAccessOpen = false) }
+    }
+
+    fun closeLanguagePicker() {
+        val backToQuickAccess = languagePickerReturnsToQuickAccess
+        languagePickerReturnsToQuickAccess = false
+        _uiState.update { it.copy(languagePickerOpen = false, quickAccessOpen = backToQuickAccess) }
+    }
+
+    private var languagePickerReturnsToQuickAccess = false
+
+    /**
+     * The system back key while one of the keyboard's own panels is open: steps back one panel
+     * (language → quick access → keys) instead of hiding the whole keyboard. Returns whether it was
+     * handled; false lets the system hide the keyboard as usual.
+     */
+    fun onBackPressed(): Boolean {
+        val state = _uiState.value
+        return when {
+            state.languagePickerOpen -> { closeLanguagePicker(); true }
+            state.resizing -> { setResizing(false); true }
+            state.quickAccessOpen -> { closeQuickAccess(); true }
+            else -> false
+        }
+    }
+
+    /**
+     * What is actually shown for [layout]. While two or more languages are enabled, the active
+     * language's letter layers carry its name on the spacebar — what tells the user which language
+     * they are typing in — and, if the user swapped the emoji and language buttons, a language key
+     * where the emoji key was. Stored layouts never carry either, so a single-language keyboard is
+     * exactly as it was.
+     */
+    private fun display(layout: KeyboardLayout): KeyboardLayout {
+        val locale = locale()
+        val letterLayers = setOfNotNull(locale.letterLayout.id, locale.letterLayout.shiftLayoutId)
+        if (layout.id !in letterLayers) return layout
+        val stored = layouts[layout.id] ?: locale.letterLayout.takeIf { it.id == layout.id } ?: layout
+        if (localeController.enabled.value.size < 2) return stored
+        // "FR - AZERTY": language and layout together, so the spacebar says exactly what the globe
+        // key just switched to — two layouts of one language would otherwise look identical.
+        val labelled = stored.withSpaceLabel(spacebarLabel(locale))
+        return if (layoutPreferences.settings.value.swapEmojiAndLanguage) labelled.withLanguageKeyInsteadOfEmoji() else labelled
+    }
+
+    private fun spacebarLabel(locale: KeyboardLocale): String =
+        "${locale.spacebarName} - ${dev.omakey.core.layout.shortName(locale.letterLayout)}"
 
     /** Opens the emoji panel by default (matches the 😊 key's icon); tapping again closes it.
      * Once open, the user can switch to other registered extensions via [selectExtension]. */
@@ -1379,14 +1720,14 @@ class KeyboardViewModel(
         _uiState.update { it.copy(activeExtensionId = id, quickAccessOpen = false) }
     }
 
-    /** Cheap, synchronous static-table lookup (see [WordEmojiSuggestions]) — unlike word
+    /** Cheap, synchronous static-table lookup (the language's [LanguageProfile.emojiFor]) — unlike word
      * suggestions/predictions, never worth a background [refreshJob] of its own. */
     private fun updateEmojiSuggestions(word: String?) {
         // Toned for display as well as insertion, so a chip shows what tapping it produces.
         // onEmojiSuggestionAccepted re-applies the tone to whatever it is handed, which is a no-op
         // for an already-toned chip (apply strips before re-adding) — so the two can't disagree.
         val tone = emojiSkinTone()
-        val emoji = word?.let(WordEmojiSuggestions::suggest).orEmpty().map(tone::apply)
+        val emoji = word?.let(profile.emojiFor).orEmpty().map(tone::apply)
         _uiState.update { it.copy(emojiSuggestions = emoji) }
     }
 
@@ -1499,9 +1840,20 @@ class KeyboardViewModel(
 
     private companion object {
         const val PREFERRED_EXTENSION_ID = "builtin.emoji"
-        const val SUGGESTION_LIMIT = 6
+        // Three, not six: the strip now shares its row with the quick-access and language buttons,
+        // and more than three words don't fit without scrolling.
+        const val SUGGESTION_LIMIT = 3
+
+        const val DOUBLE_TAP_SHIFT_MS = 350L
         // Matches the ~500ms window most mainstream keyboards use for double-tap-space-for-period.
         const val DOUBLE_TAP_SPACE_WINDOW_MS = 500L
         val SYMBOLS_LAYOUT_IDS = setOf(Layouts.Symbols1.id, Layouts.Symbols2.id)
     }
+}
+
+/** The languages a text field asks for (`EditorInfo.hintLocales`), as ISO 639 codes, most preferred
+ * first. Empty when the field doesn't say. */
+private fun hintLanguagesOf(info: EditorInfo?): List<String> {
+    val hints = info?.hintLocales ?: return emptyList()
+    return (0 until hints.size()).map { hints[it].language }
 }

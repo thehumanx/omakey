@@ -54,7 +54,7 @@ object TapNoiseCorpus {
         var corrupted = false
 
         for ((index, character) in word.withIndex()) {
-            val center = KeyboardGeometry.centerOf(character) ?: return null
+            val center = KeyboardGeometry.QWERTY.centerOf(character) ?: return null
             val x = center.first + (random.gaussian() * noise).toFloat()
             val y = center.second + (random.gaussian() * noise).toFloat()
             xs[index] = x
@@ -82,7 +82,7 @@ object TapNoiseCorpus {
         var best = 'a'
         var bestDistance = Float.MAX_VALUE
         for (character in 'a'..'z') {
-            val distance = KeyboardGeometry.squaredDistanceFromPoint(x, y, character)
+            val distance = KeyboardGeometry.QWERTY.squaredDistanceFromPoint(x, y, character)
             if (distance < bestDistance) {
                 bestDistance = distance
                 best = character

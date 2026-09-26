@@ -2,28 +2,66 @@ package dev.omakey.core.input
 
 import android.view.KeyEvent
 import android.view.inputmethod.InputConnection
+import dev.omakey.core.locale.LanguageProfile
 
 /**
  * The sole InputConnection access point. Both gesture actions and key taps must route through
  * this, never touch InputConnection directly, so the gesture engine stays framework-agnostic
  * and testable, and multi-step edits are consistently batched.
  *
- * **omakey deliberately does not use composing text.** Every character is committed outright with
- * `commitText`; `setComposingText`/`finishComposingText` are never called. This was previously an
- * accident of history rather than a decision — thin unused `commitComposing`/`finishComposing`
- * wrappers sat here with nothing explaining them — so, recording it: committing directly means the
- * in-progress word gets no platform underline and host apps can't tell provisional text from
- * settled text, but it also keeps us out of a large class of host-app compatibility bugs
- * (composing regions surviving cursor moves, fighting host spell-checkers and autofill), and
- * omakey's own correction model already replaces committed words in place. Revisit only with a
- * concrete reason; switching is not a local change.
+ * **Composing text is used for transliteration only.** Ordinary typing commits every character
+ * outright with `commitText`: the in-progress word gets no platform underline, but it stays out of a
+ * large class of host-app compatibility bugs (composing regions surviving cursor moves, fighting host
+ * spell-checkers and autofill), and omakey's own correction model already replaces committed words
+ * in place.
+ *
+ * Transliteration (AGENTS.md §66 Phase 9) is the concrete reason that decision said to wait for:
+ * what's on screen while typing "namaste" must be नमस्ते, not the Latin letters, and it must change
+ * with every keystroke without those changes each becoming a committed edit. So [setComposing] shows
+ * the current candidate, [commitComposing] settles it, and [cancelComposing] drops it — used by
+ * `TransliterationSession` and nothing else.
  */
-class TextEditor(private val connectionProvider: () -> InputConnection?) {
+class TextEditor(
+    private val connectionProvider: () -> InputConnection?,
+    /** The active language's rules, read per call — the language can change while the keyboard is
+     * open (AGENTS.md §66 Phase 5). Decides what [wordAtCursor], [wordBeforeCursor] and word
+     * deletion treat as a word; see [LanguageProfile.isWordChar] for why that isn't `isLetter()`. */
+    private val profile: () -> LanguageProfile = { LanguageProfile.English },
+) {
 
     private val ic: InputConnection? get() = connectionProvider()
 
+    private fun isWordChar(c: Char): Boolean = profile().isWordChar(c)
+
+    /** Word deletion groups digits with letters ("abc123" is one swipe), as it always has. */
+    private fun isWordOrDigit(c: Char): Boolean = isWordChar(c) || c.isDigit()
+
     fun commitCharacter(char: Char) {
         ic?.commitText(char.toString(), 1)
+    }
+
+    /** Shows [text] as the provisional composing region, replacing any earlier one. */
+    fun setComposing(text: String) {
+        ic?.setComposingText(text, 1)
+    }
+
+    /** Replaces the composing region with [text] (plus anything after it, such as a separator) and
+     * ends composing. `commitText` replaces the composing region by definition. */
+    fun commitComposing(text: String) {
+        ic?.commitText(text, 1)
+    }
+
+    /** Leaves whatever is composing on screen as committed text and ends composing — for when the
+     * user moves the cursor away mid-word. */
+    fun finishComposing() {
+        ic?.finishComposingText()
+    }
+
+    /** Removes the composing region entirely. */
+    fun cancelComposing() {
+        val connection = ic ?: return
+        connection.setComposingText("", 1)
+        connection.finishComposingText()
     }
 
     fun insertSpace() {
@@ -108,8 +146,8 @@ class TextEditor(private val connectionProvider: () -> InputConnection?) {
         // is a separate swipe after that, matching how those two "things" read as distinct even
         // though there's no whitespace separating them.
         if (index > 0) {
-            val isWord = textBefore[index - 1].isLetterOrDigit()
-            while (index > 0 && !textBefore[index - 1].isWhitespace() && textBefore[index - 1].isLetterOrDigit() == isWord) index--
+            val isWord = isWordOrDigit(textBefore[index - 1])
+            while (index > 0 && !textBefore[index - 1].isWhitespace() && isWordOrDigit(textBefore[index - 1]) == isWord) index--
         }
         val before = textBefore.substring(index, end)
 
@@ -121,10 +159,10 @@ class TextEditor(private val connectionProvider: () -> InputConnection?) {
         // matching [wordAtCursor]'s "touching the cursor on both sides" definition of a word.
         var after = ""
         if (!trimmedTrailingWhitespace && before.isNotEmpty()) {
-            val isWord = before.last().isLetterOrDigit()
+            val isWord = isWordOrDigit(before.last())
             val textAfter = ic?.getTextAfterCursor(MAX_CURSOR_CONTEXT_CHARS, 0)?.toString() ?: ""
             var afterEnd = 0
-            while (afterEnd < textAfter.length && !textAfter[afterEnd].isWhitespace() && textAfter[afterEnd].isLetterOrDigit() == isWord) afterEnd++
+            while (afterEnd < textAfter.length && !textAfter[afterEnd].isWhitespace() && isWordOrDigit(textAfter[afterEnd]) == isWord) afterEnd++
             after = textAfter.substring(0, afterEnd)
         }
 
@@ -183,8 +221,8 @@ class TextEditor(private val connectionProvider: () -> InputConnection?) {
         val connection = ic ?: return null
         val before = connection.getTextBeforeCursor(MAX_CURSOR_CONTEXT_CHARS, 0)?.toString() ?: ""
         val after = connection.getTextAfterCursor(MAX_CURSOR_CONTEXT_CHARS, 0)?.toString() ?: ""
-        val beforePart = before.takeLastWhile { it.isLetter() }
-        val afterPart = after.takeWhile { it.isLetter() }
+        val beforePart = before.takeLastWhile(::isWordChar)
+        val afterPart = after.takeWhile(::isWordChar)
         if (beforePart.isEmpty() && afterPart.isEmpty()) return null
         return WordAtCursor(word = beforePart + afterPart, charsBeforeCursor = beforePart.length, charsAfterCursor = afterPart.length)
     }
@@ -215,10 +253,10 @@ class TextEditor(private val connectionProvider: () -> InputConnection?) {
         if (textBefore.isEmpty()) return null
         var end = textBefore.length
         var index = end
-        while (index > 0 && !textBefore[index - 1].isLetter()) index--
+        while (index > 0 && !isWordChar(textBefore[index - 1])) index--
         val separator = textBefore.substring(index, end)
         end = index
-        while (index > 0 && textBefore[index - 1].isLetter()) index--
+        while (index > 0 && isWordChar(textBefore[index - 1])) index--
         val word = textBefore.substring(index, end)
         if (word.isEmpty()) return null
         return WordBeforeCursor(word, separator)

@@ -33,26 +33,27 @@ testing fast typing, autocorrect, and everything else. I'm improving it on a reg
 Google allows sideloading, this is probably where it stays — and maybe after that, I put it on
 the Store.
 
-It's offline by default. The only thing that ever touches the network for now is checking for app
-updates — nothing you type, copy, or type into any app ever leaves your phone.
+It's offline by default. The only things that ever touch the network are checking for app updates
+and downloading a language pack when you ask for one — nothing you type, copy, or type into any app
+ever leaves your phone.
 
 ## App Updates / Plans and PSA
 - I've publicly shared this keyboard only on Reddit threads (besides my website) and few kind volunteers have tried and provided feedback on fixes/improvements and features. 
-- The keyboard currently only supports English, my plan is to introduce other language as well but it's not my current priority. 
+- Languages beyond English arrived in 5.0.0: Spanish, French, Brazilian Portuguese and Nepali, each a small optional download. More to follow.
 - I am prioritizing more on optimizing the UX and autocorrection/prediction engine as its being written from the scratch.
 - The keyboard is optimized for battery usage as well. Fleksy used to take around 5-10%, while this takes just around 1%.
 - Note: Not tested for old hardwares, if you do, please test and lmk feedback.
 - send feedback or feature requests to omakey@iambishistha.com if you have any. thanks for trying.
 
 ---
-- Upcoming fixes: improve quickaccess toolkit (added in v4.0.0), improve theming
-- Planned features: multi-lang support, voice input
+- Upcoming: a second pass on the suggestion engine
+- Planned features: more languages, voice input
 - Not planned: glide-typing
 
 
 ## What omakey offers
 
-- A floating keyboard you can put anywhere on screen (doesn't work as expected now, update incoming)
+- A floating keyboard you can put anywhere on screen.
 - One-handed mode and drag-to-resize.
 - Inline calculator — type `12+7=` and `12+7=19` shows up in the suggestion strip, ready to tap (took inspo from iOS keyboard).
 - Undo/redo — two buttons that step back and forward through your last several typed or deleted
@@ -77,7 +78,8 @@ updates — nothing you type, copy, or type into any app ever leaves your phone.
 - **Not a glide/swipe-to-type keyboard.** The gestures here are shortcuts for actions — delete a
   word, insert a space, cycle a suggestion — not tracing letters across the layout. You still tap
   out each word. Every gesture omakey has is documented below.
-- **English (US QWERTY), for now.** No other languages or layouts yet.
+- **Not every language.** English is built in; Spanish, French, Brazilian Portuguese and Nepali are optional downloads.
+  More will follow, one at a time, each tested before it ships.
 - **Not on the Play Store yet.** Sideload it or build it from source — see [Getting
   started](#getting-started) below.
 - **No cloud backup, no sync.** Your learned words, your clipboard, your settings stay on your
@@ -125,8 +127,10 @@ menus involved:
 
 ### Put the keyboard where you want it
 
-A button at the left of the suggestion strip opens Quick access — the things you decide in the
+A button at the left of the suggestion bar opens Quick access — the things you decide in the
 moment, while looking at whatever you're typing into:
+
+- **Incognito** — stop the keyboard learning from what you type, for as long as it's on.
 
 - **Floating** — detach the keyboard and drag it anywhere by the grab bar along its top. The app
   behind it stays visible *and* usable: tapping outside the keyboard reaches the app, and the app
@@ -137,8 +141,33 @@ moment, while looking at whatever you're typing into:
   in the middle to raise a normal or one-handed keyboard off the bottom edge for easier thumb
   reach. Floating, one-handed and normal each remember their own size, so changing one doesn't
   disturb the others.
+- **Grid layout** — flip between the normal and bordered-grid key styles.
 - **Theme** — cycle Light, Dark, Follow-system and Accent without leaving the keyboard.
-- **Settings** — one tap, instead of knowing to long-press the extensions key.
+- **Language** — pick a language and, where it has more than one, its layout.
+- **Settings** — one tap away.
+
+### More than one language
+
+English is built in. Other languages are separate downloads, so the keyboard stays small and you
+only carry the ones you use. Settings → Languages → "Get more languages" lists what's available.
+
+- **Spanish** — ñ on the keyboard, ¿ and ¡, and accents put back for you: type "cancion" and
+  "canción" is what you get.
+- **Portuguese (Brazil)** — ç on the keyboard next to L, and accents and tildes put back for you:
+  "nao" becomes "não", "voce" becomes "você".
+- **French** — AZERTY or QWERTY, your choice. Accents are restored the same way, and words like
+  "l'homme" or "j'ai" are understood as two words, so the correction lands on the right one.
+- **Nepali** — type it the way you'd text it, in English letters ("namaste", "mero"), and the
+  Devanagari appears as you go; tap a different choice in the strip if the first isn't right, or
+  keep the English spelling for English words. There's also a proper Devanagari keyboard if you'd
+  rather type the script directly.
+
+With more than one language turned on, a globe button appears at the right of the suggestion bar:
+tap it to step through every language and layout, hold it to pick one. The spacebar quietly shows
+where you are ("PT BR - QWERTY"). Prefer the globe down by the spacebar? Settings → Keyboard swaps
+it with the emoji button. Each language learns its own words, so switching never mixes one
+language's vocabulary into another. Removing a language keeps what it
+learned, in case you add it back.
 
 ### Suggestions and autocorrect
 
@@ -184,7 +213,7 @@ Swipe to the Tools tab for:
 - **Clipboard history** — every recent copy, text and images, one tap away. Long-press an entry to
   pin or remove it; pinned entries stay at the top and are never cleared out to make room for newer
   ones. Opening clipboard mode dims everything else so it's clearly its own space.
-- Settings → Typing has the full list: see everything that's saved, unpin or remove single
+- Settings → Privacy & data has the full list: see everything that's saved, unpin or remove single
   entries, clear all of it, or turn clipboard history off entirely. Turning it off stops new
   entries without deleting what's already there.
 - Passwords are never saved. Clips an app marks as sensitive are skipped, and nothing is recorded
@@ -205,13 +234,16 @@ Swipe to the Tools tab for:
 
 - Built-in themes — Light, Dark, Follow-system, and Accent, which builds the whole keyboard from
   your device's own Material You palette and follows your system light/dark setting. Plus an
-  option to pull just the spacebar and pressed keys from that palette on any theme.
+  option to pull just the accent from that palette on any theme.
+- One colour rule everywhere: whatever you're pressing fills with the theme's tap colour, and
+  whatever is switched on — caps lock, Shift, an open panel, the selected tile — takes its accent.
 - A live keyboard preview in Settings that reflects your theme, layout style, font, key
   backgrounds, home-row highlight and capitalization as you change them.
 - **Grid layout mode**, independent of whichever color theme you're on — bordered, edge-to-edge
   cells with no gaps, a pressed key filling solid instead of just dimming. Border color and
   thickness (Small/Medium/Large) are both yours to set.
-- A full custom theme builder — HSV picker, a hex field you can type into or copy from, and a
+- A full custom theme builder — background, key, tap, accent, spacebar, home-row and grid border
+  colours, with an HSV picker, a hex field you can type into or copy from, and a
   live, full-size keyboard preview the whole time you're editing. Custom themes remember which
   layout they were built for, so you're only ever shown ones that actually fit.
 - Adjustable key font — System, Poppins, Figtree, Solway or Aleo.
@@ -244,22 +276,28 @@ all stay local.
 
 Clipboard history is the one thing omakey stores that you didn't type at it, so it gets explicit
 limits: clips an app marks as sensitive (passwords, mostly) are never saved, nothing is saved while
-incognito is on or a password field is focused, and Settings → Typing lets you review it, clear it,
-or switch it off entirely.
+incognito is on or a password field is focused, and Settings → Privacy & data lets you review it,
+clear it, or switch it off entirely.
 
-The one exception: checking for app updates. Settings' About section has a manual "Check for
-updates" button, and (on by default, toggleable off) a periodic check every 12 hours that
-notifies you if a newer version is out. Either way, the only thing that ever happens on the
-network is a lookup against GitHub's public Releases API — no typed text, no other data, and
-never any auto-download or auto-install.
+Two things use the network, and nothing else does:
+
+- **Update checks.** Settings' About section has a manual "Check for updates" button, and (on by
+  default, toggleable off) a periodic check every 12 hours that notifies you if a newer version is
+  out. It's a lookup against GitHub's public Releases API — never an auto-download or auto-install.
+- **Language packs.** Languages other than English are separate downloads. Nothing is fetched until
+  you tap "Get more languages" in Settings → Languages and pick one. Packs contain only data
+  (a keyboard layout, word lists, a language model) — never code — and are checked against a
+  signed list before they're installed.
+
+Neither sends anything you type, or any other data about you.
 
 ## Status
 
-omakey is on release 4.1.0, a maintenance release that fixed floating mode — it looked right, but
-the app underneath was still being pushed up and taps outside the keyboard went nowhere — added a
-grab bar for moving it, stopped clipboard history from saving passwords, and finished clipboard
-pinning. 4.0.0 before it made the keyboard movable in the first place, and fixed autocorrect's
-blind spot around the first letter of a word.
+omakey is on release 5.0.0, the languages release: Spanish, French, Brazilian Portuguese and
+Nepali as optional downloads, with a globe button to switch between them and their layouts. It also
+reorganises the strip above the keys, splits Settings into pages, gives every theme a proper accent
+colour, and makes the floating keyboard follow your finger. 4.1.0 before it fixed floating mode and
+stopped clipboard history from saving passwords.
 
 Typing, gestures, autocorrect, prediction, both layout styles, the clipboard manager, and the emoji
 panel are all working today and getting updated regularly — see [CHANGELOG.md](CHANGELOG.md) for the

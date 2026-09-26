@@ -50,6 +50,11 @@ data class LayoutSettings(
     /** Width of the one-handed keyboard; the rest of the row is the gutter holding its side
      * buttons. Independent of the floating size for the same reason as above. */
     val oneHandedWidthDp: Int = DEFAULT_ONE_HANDED_WIDTH_DP,
+    /** Where the emoji and language buttons sit. Default: the language button at the right end of
+     * the suggestion bar and the emoji key in the bottom row, next to the spacebar. Swapped puts the
+     * language key in the bottom row and the emoji button in the suggestion bar. Only matters with
+     * two or more languages enabled — with one, there is no language button at all. */
+    val swapEmojiAndLanguage: Boolean = false,
 ) {
     companion object {
         const val DEFAULT_HEIGHT_DP = 260
@@ -86,6 +91,7 @@ class LayoutPreferences(context: Context) {
     fun setAlwaysShowUppercaseLetters(show: Boolean) = update { it.copy(alwaysShowUppercaseLetters = show) }
     fun setShowTapPreview(show: Boolean) = update { it.copy(showTapPreview = show) }
     fun setEdgePadding(enabled: Boolean) = update { it.copy(edgePadding = enabled) }
+    fun setSwapEmojiAndLanguage(swap: Boolean) = update { it.copy(swapEmojiAndLanguage = swap) }
 
     fun setPlacement(placement: KeyboardPlacement) = update { it.copy(placement = placement) }
 
@@ -117,6 +123,7 @@ class LayoutPreferences(context: Context) {
             putInt(KEY_FLOATING_X, next.floatingXDp)
             putInt(KEY_FLOATING_Y, next.floatingYDp)
             putInt(KEY_ONE_HANDED_WIDTH, next.oneHandedWidthDp)
+            putBoolean(KEY_SWAP_EMOJI_LANGUAGE, next.swapEmojiAndLanguage)
         }
     }
 
@@ -139,10 +146,12 @@ class LayoutPreferences(context: Context) {
         floatingXDp = prefs.getInt(KEY_FLOATING_X, LayoutSettings.UNSET_POSITION),
         floatingYDp = prefs.getInt(KEY_FLOATING_Y, KeyboardPlacementGeometry.DEFAULT_FLOATING_Y_DP),
         oneHandedWidthDp = prefs.getInt(KEY_ONE_HANDED_WIDTH, LayoutSettings.DEFAULT_ONE_HANDED_WIDTH_DP),
+        swapEmojiAndLanguage = prefs.getBoolean(KEY_SWAP_EMOJI_LANGUAGE, false),
     )
 
     private companion object {
         const val PREFS_NAME = "omakey_layout_prefs"
+        const val KEY_SWAP_EMOJI_LANGUAGE = "swap_emoji_and_language"
         const val KEY_HEIGHT = "keyboard_height_dp"
         const val KEY_KEY_BACKGROUNDS = "show_key_backgrounds"
         const val KEY_MIDDLE_STRIPE = "show_middle_row_stripe"

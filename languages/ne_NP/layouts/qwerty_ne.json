@@ -1,0 +1,216 @@
+{
+ "id": "qwerty_ne",
+ "displayName": "Romanized",
+ "homeRow": 1,
+ "transliteration": true,
+ "rows": [
+  {
+   "keys": [
+    {
+     "label": "q",
+     "code": 113,
+     "popupChars": [
+      "१",
+      "1"
+     ]
+    },
+    {
+     "label": "w",
+     "code": 119,
+     "popupChars": [
+      "२",
+      "2"
+     ]
+    },
+    {
+     "label": "e",
+     "code": 101,
+     "popupChars": [
+      "३",
+      "3"
+     ]
+    },
+    {
+     "label": "r",
+     "code": 114,
+     "popupChars": [
+      "४",
+      "4"
+     ]
+    },
+    {
+     "label": "t",
+     "code": 116,
+     "popupChars": [
+      "५",
+      "5"
+     ]
+    },
+    {
+     "label": "y",
+     "code": 121,
+     "popupChars": [
+      "६",
+      "6"
+     ]
+    },
+    {
+     "label": "u",
+     "code": 117,
+     "popupChars": [
+      "७",
+      "7"
+     ]
+    },
+    {
+     "label": "i",
+     "code": 105,
+     "popupChars": [
+      "८",
+      "8"
+     ]
+    },
+    {
+     "label": "o",
+     "code": 111,
+     "popupChars": [
+      "९",
+      "9"
+     ]
+    },
+    {
+     "label": "p",
+     "code": 112,
+     "popupChars": [
+      "०",
+      "0"
+     ]
+    }
+   ]
+  },
+  {
+   "keys": [
+    {
+     "label": "a",
+     "code": 97
+    },
+    {
+     "label": "s",
+     "code": 115
+    },
+    {
+     "label": "d",
+     "code": 100
+    },
+    {
+     "label": "f",
+     "code": 102
+    },
+    {
+     "label": "g",
+     "code": 103
+    },
+    {
+     "label": "h",
+     "code": 104
+    },
+    {
+     "label": "j",
+     "code": 106
+    },
+    {
+     "label": "k",
+     "code": 107
+    },
+    {
+     "label": "l",
+     "code": 108
+    }
+   ]
+  },
+  {
+   "keys": [
+    {
+     "label": "⇧",
+     "code": -1,
+     "widthWeight": 1.5,
+     "keyType": "SPECIAL"
+    },
+    {
+     "label": "z",
+     "code": 122
+    },
+    {
+     "label": "x",
+     "code": 120
+    },
+    {
+     "label": "c",
+     "code": 99
+    },
+    {
+     "label": "v",
+     "code": 118
+    },
+    {
+     "label": "b",
+     "code": 98
+    },
+    {
+     "label": "n",
+     "code": 110
+    },
+    {
+     "label": "m",
+     "code": 109
+    },
+    {
+     "label": "⌫",
+     "code": -2,
+     "widthWeight": 1.5,
+     "keyType": "SPECIAL"
+    }
+   ]
+  },
+  {
+   "keys": [
+    {
+     "label": "?123",
+     "code": -5,
+     "widthWeight": 1.5,
+     "keyType": "SPECIAL"
+    },
+    {
+     "label": "😊",
+     "code": -7,
+     "widthWeight": 1.0,
+     "keyType": "SPECIAL"
+    },
+    {
+     "label": " ",
+     "code": -3,
+     "widthWeight": 4.0,
+     "keyType": "SPECIAL"
+    },
+    {
+     "label": "।",
+     "code": 2404,
+     "popupChars": [
+      "॥",
+      ".",
+      ",",
+      "?",
+      "!",
+      "-"
+     ]
+    },
+    {
+     "label": "⏎",
+     "code": -4,
+     "widthWeight": 1.5,
+     "keyType": "SPECIAL"
+    }
+   ]
+  }
+ ]
+}

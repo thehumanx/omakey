@@ -13,7 +13,7 @@ import org.junit.Test
  */
 class TextEditorTest {
 
-    private fun editorOver(connection: FakeInputConnection) = TextEditor { connection }
+    private fun editorOver(connection: FakeInputConnection) = TextEditor(connectionProvider = { connection })
 
     @Test
     fun `replaceBackward swaps the characters before the cursor`() {

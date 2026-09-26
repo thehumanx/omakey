@@ -21,6 +21,13 @@ package dev.omakey.core.predict.spatial
  * distance-2 match to an overwhelmingly likely one.
  */
 class ChannelModel(
+    /** Where the keys are — per layout since AGENTS.md §66 Phase 2; QWERTY by default. */
+    val geometry: KeyboardGeometry = KeyboardGeometry.QWERTY,
+    /** Groups of letters that stand in for each other at [equivalentCost] regardless of where their
+     * keys are — "eéèêë" for accent restoration in Spanish and French, "िी" for Nepali vowel length.
+     * Each string is one group. From the language's [dev.omakey.core.locale.LanguageProfile]; empty
+     * for English. */
+    private val equivalentGroups: List<String> = emptyList(),
     private val sigma: Float = SIGMA,
     private val substitutionCap: Float = SUBSTITUTION_CAP,
     private val insertionCost: Float = INSERTION_COST,
@@ -30,10 +37,45 @@ class ChannelModel(
      * this is the exchange rate between "this doesn't look like what they typed" and "this isn't a
      * word people write". A constructor parameter rather than a constant so the tuning sweep in
      * `EngineTuningTest` can search over it. */
+    private val equivalentCost: Float = EQUIVALENT_COST,
     val languageModelWeight: Float = LANGUAGE_MODEL_WEIGHT,
 ) {
 
     private val twoSigmaSquared = 2f * sigma * sigma
+
+    /** Group number (1-based, 0 = none) per character below [GROUP_TABLE_SIZE] — a table rather
+     * than a map because [substitution] runs inside the correction DP. Null when there are no
+     * groups, so English pays one null check. */
+    private val groupOf: IntArray? = if (equivalentGroups.isEmpty()) {
+        null
+    } else {
+        IntArray(GROUP_TABLE_SIZE).also { table ->
+            for ((group, letters) in equivalentGroups.withIndex()) {
+                for (c in letters) if (c.code < GROUP_TABLE_SIZE) table[c.code] = group + 1
+            }
+        }
+    }
+
+    private fun areEquivalent(a: Char, b: Char): Boolean {
+        val table = groupOf ?: return false
+        if (a.code >= GROUP_TABLE_SIZE || b.code >= GROUP_TABLE_SIZE) return false
+        val group = table[a.code]
+        return group != 0 && group == table[b.code]
+    }
+
+    /** The same model for another language: its keyboard and its equivalent letters, with every
+     * tuned cost kept. */
+    fun forLanguage(geometry: KeyboardGeometry, equivalentGroups: List<String>): ChannelModel = ChannelModel(
+        geometry = geometry,
+        equivalentGroups = equivalentGroups,
+        sigma = sigma,
+        substitutionCap = substitutionCap,
+        insertionCost = insertionCost,
+        deletionCost = deletionCost,
+        transpositionCost = transpositionCost,
+        equivalentCost = equivalentCost,
+        languageModelWeight = languageModelWeight,
+    )
 
     /** Cost of having typed [typed] while aiming for [intended], assuming the tap landed at the
      * centre of [typed]'s key. The degraded form of [substitutionAt], used when no touch data is
@@ -41,7 +83,8 @@ class ChannelModel(
      * a word being corrected retroactively long after it was typed. */
     fun substitution(typed: Char, intended: Char): Float {
         if (typed == intended) return 0f
-        return minOf(KeyboardGeometry.squaredDistance(typed, intended) / twoSigmaSquared, substitutionCap)
+        val spatial = minOf(geometry.squaredDistance(typed, intended) / twoSigmaSquared, substitutionCap)
+        return if (areEquivalent(typed, intended)) minOf(spatial, equivalentCost) else spatial
     }
 
     /**
@@ -59,8 +102,9 @@ class ChannelModel(
     fun substitutionAt(typed: Char, intended: Char, taps: TouchTrace.Taps?, index: Int): Float {
         if (typed == intended) return 0f
         if (taps == null || index < 0 || index >= taps.size) return substitution(typed, intended)
-        val squaredDistance = KeyboardGeometry.squaredDistanceFromPoint(taps.x(index), taps.y(index), intended)
-        return minOf(squaredDistance / twoSigmaSquared, substitutionCap)
+        val squaredDistance = geometry.squaredDistanceFromPoint(taps.x(index), taps.y(index), intended)
+        val spatial = minOf(squaredDistance / twoSigmaSquared, substitutionCap)
+        return if (areEquivalent(typed, intended)) minOf(spatial, equivalentCost) else spatial
     }
 
     /** A character present in the intended word that never got typed. */
@@ -105,5 +149,16 @@ class ChannelModel(
          * is not overfitting; it is using the evidence that actually discriminates.
          */
         const val LANGUAGE_MODEL_WEIGHT = 0.35f
+
+        /** Cost of swapping a letter for an equivalent one (e ↔ é). Well under an adjacent-key slip
+         * (≈1.0 at the default σ), so a dropped accent is the cheapest explanation for a near miss.
+         *
+         * Swept on Spanish held-out accent restoration (2026-09-24): flat from 0.05 to 0.3 (91 %
+         * fixed / 7.6 % wrong either way), worse above (0.6 → 90.3 / 8.1, 1.0 → 89.5 / 8.9). The
+         * aggregate doesn't choose within the flat region, so the original value stands. */
+        const val EQUIVALENT_COST = 0.3f
+
+        /** Covers Latin, its extensions and Devanagari (U+0900–097F). */
+        private const val GROUP_TABLE_SIZE = 0x1000
     }
 }

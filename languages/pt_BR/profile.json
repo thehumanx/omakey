@@ -1,0 +1,173 @@
+{
+ "script": "LATIN",
+ "hasCase": true,
+ "capitalizeAfter": ".!?",
+ "openingPunctuation": "",
+ "doubleSpaceInserts": ".",
+ "punctuationCycle": ".,!?;:'\"",
+ "equivalentLetters": [
+  "aáàâã",
+  "eéêè",
+  "ií",
+  "oóôõò",
+  "uúü",
+  "cç"
+ ],
+ "emojiWords": {
+  "oi": [
+   "👋"
+  ],
+  "olá": [
+   "👋"
+  ],
+  "tchau": [
+   "👋"
+  ],
+  "obrigado": [
+   "🙏"
+  ],
+  "obrigada": [
+   "🙏"
+  ],
+  "amor": [
+   "❤️"
+  ],
+  "coração": [
+   "❤️"
+  ],
+  "feliz": [
+   "😊"
+  ],
+  "triste": [
+   "😢"
+  ],
+  "chorar": [
+   "😭"
+  ],
+  "kkk": [
+   "😂"
+  ],
+  "kkkk": [
+   "😂"
+  ],
+  "haha": [
+   "😂"
+  ],
+  "rsrs": [
+   "😆"
+  ],
+  "beijo": [
+   "😘"
+  ],
+  "beijos": [
+   "😘"
+  ],
+  "festa": [
+   "🎉"
+  ],
+  "aniversário": [
+   "🎂",
+   "🎉"
+  ],
+  "parabéns": [
+   "🎉",
+   "🎂"
+  ],
+  "café": [
+   "☕"
+  ],
+  "cerveja": [
+   "🍺"
+  ],
+  "vinho": [
+   "🍷"
+  ],
+  "pizza": [
+   "🍕"
+  ],
+  "cachorro": [
+   "🐶"
+  ],
+  "gato": [
+   "🐱"
+  ],
+  "fogo": [
+   "🔥"
+  ],
+  "sol": [
+   "☀️"
+  ],
+  "chuva": [
+   "🌧️"
+  ],
+  "música": [
+   "🎵"
+  ],
+  "dinheiro": [
+   "💰"
+  ],
+  "beleza": [
+   "👍"
+  ],
+  "ok": [
+   "👌"
+  ],
+  "casa": [
+   "🏠"
+  ],
+  "trabalho": [
+   "💼"
+  ],
+  "carro": [
+   "🚗"
+  ],
+  "avião": [
+   "✈️"
+  ],
+  "praia": [
+   "🏖️"
+  ],
+  "sono": [
+   "😴"
+  ],
+  "dormir": [
+   "😴"
+  ],
+  "fome": [
+   "🍽️"
+  ],
+  "doente": [
+   "🤒"
+  ],
+  "nossa": [
+   "😮"
+  ],
+  "legal": [
+   "😎"
+  ],
+  "raiva": [
+   "😠"
+  ],
+  "medo": [
+   "😨"
+  ],
+  "flores": [
+   "💐"
+  ],
+  "presente": [
+   "🎁"
+  ],
+  "natal": [
+   "🎄"
+  ],
+  "futebol": [
+   "⚽"
+  ],
+  "saudade": [
+   "🥺"
+  ],
+  "saudades": [
+   "🥺"
+  ]
+ }
+}

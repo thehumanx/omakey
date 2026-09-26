@@ -50,7 +50,6 @@ import dev.omakey.app.keyboard.resolveEffectiveTheme
 import dev.omakey.core.theme.toComposeColor
 import dev.omakey.core.theme.toDp
 import dev.omakey.core.theme.gridCellBorder
-import dev.omakey.core.locale.KeyboardLocale
 import dev.omakey.core.gesture.KeyHitTester
 import dev.omakey.core.layout.KeyDefinition
 import dev.omakey.core.layout.KeyboardPlacement
@@ -176,12 +175,12 @@ fun KeyboardRoot(
     val placement = layoutSettings.placement
     val place = rememberPlacementState(viewModel, layoutSettings, screenWidthDp, screenHeightDp)
 
-    // Row height is derived from each layout's own BASE row count (always 4, for both letters and
-    // symbols — QwertyEnUS.rows.size), so keys are always the same size regardless of which
-    // layout is active. The *height* it divides is the current placement's own — a floating
+    // Row height is derived from the active language's letter-layout row count (4 for QWERTY),
+    // not from whichever layout is showing, so keys are always the same size across letters,
+    // symbols and shift layers. The *height* it divides is the current placement's own — a floating
     // keyboard has its own height, which is what makes "resize in the current mode" work without
     // any mode-specific code down here.
-    val rowHeightDp = place.keyboardHeightDp / KeyboardLocale.Default.letterLayout.rows.size
+    val rowHeightDp = place.keyboardHeightDp / uiState.baseRowCount
     val gridHeightDp = rowHeightDp * effectiveRows.size
 
     /** Zero unless floating, because only a floating keyboard carries a move handle. */
@@ -200,8 +199,8 @@ fun KeyboardRoot(
      * content that sits below the handle, not the keyboard as a whole.
      */
     val keyboardTotalHeightDp = handleHeightDp + SUGGESTION_STRIP_HEIGHT_DP + gridHeightDp
-    // The "home row" (asdfghjkl) is always the second row of the base QWERTY layout.
-    val homeRowIndex = if (uiState.layout.id == KeyboardLocale.Default.letterLayout.id) 1 else -1
+    // Declared by the layout itself (asdfghjkl on QWERTY); -1, i.e. none, on the symbols pages.
+    val homeRowIndex = uiState.layout.homeRow
 
     // Everything below sits inside a placement container. Docked, it is a plain wrapper and the
     // keyboard fills it exactly as before. Floating, it is a tall transparent area the keyboard is
@@ -341,6 +340,7 @@ fun KeyboardRoot(
             // Checked before the extension cases: the two share this slot and the view model
             // already clears one when the other opens, so this ordering only decides a race that
             // cannot happen — but it decides it the way the user's last tap intended.
+            uiState.languagePickerOpen -> "language-picker"
             uiState.quickAccessOpen -> "quick-access"
             uiState.activeExtensionId == EMOJI_EXTENSION_ID -> "emoji"
             uiState.activeExtensionId == CLIPBOARD_EXTENSION_ID -> "clipboard"
@@ -437,6 +437,20 @@ fun KeyboardRoot(
                         fontFamily = fontFamily,
                         feedback = feedback,
                         placement = placement,
+                        heightDp = gridHeightDp,
+                        languageCount = uiState.languages.size,
+                        incognito = uiState.incognito,
+                        layoutMode = uiState.layoutMode,
+                        onOpenSettings = onOpenSettings,
+                    )
+                    "language-picker" -> LanguagePickerPanel(
+                        viewModel = viewModel,
+                        languages = uiState.languages,
+                        activeLanguageId = uiState.activeLanguageId,
+                        activeLayoutId = uiState.activeLetterLayoutId,
+                        theme = theme,
+                        fontFamily = fontFamily,
+                        feedback = feedback,
                         heightDp = gridHeightDp,
                         onOpenSettings = onOpenSettings,
                     )
@@ -595,18 +609,20 @@ internal fun ExtensionPanelSlot(viewModel: KeyboardViewModel, heightDp: Int, sho
                                 .weight(1f)
                                 .clickable(
                                     interactionSource = interactionSource,
-                                    indication = if (isGridMode) null else androidx.compose.foundation.LocalIndication.current,
+                                    indication = null,
                                 ) { viewModel.selectExtension(ext.id) }
                                 .background(
                                     when {
-                                        isGridMode && (ext.id == activeId || isPressed) -> uiState.theme.keyBackgroundPressed.toComposeColor()
+                                        // Selected = accent, held = key tap colour: the same two
+                                        // rules every tappable surface on the keyboard follows.
+                                        ext.id == activeId -> uiState.theme.accent.toComposeColor()
+                                        isPressed -> uiState.theme.keyBackgroundPressed.toComposeColor()
                                         // Real bug, fixed: inactive tabs fell through to
                                         // Color.Transparent in Grid mode too, same as every other
                                         // unfilled grid-mode cell — showing the header row's own
                                         // (potentially very different, on a custom theme)
                                         // background through instead of keyboardBackground.
                                         isGridMode -> uiState.theme.keyboardBackground.toComposeColor()
-                                        ext.id == activeId -> uiState.theme.keySpecialBackground.toComposeColor()
                                         else -> Color.Transparent
                                     },
                                 )
@@ -626,20 +642,20 @@ internal fun ExtensionPanelSlot(viewModel: KeyboardViewModel, heightDp: Int, sho
                             .fillMaxHeight()
                             .clickable(
                                 interactionSource = closeInteractionSource,
-                                indication = if (isGridMode) null else androidx.compose.foundation.LocalIndication.current,
+                                indication = null,
                             ) { viewModel.extensionHost.close() }
                             .let { m ->
                                 if (isGridMode) {
                                     m.background(if (closeIsPressed) uiState.theme.keyBackgroundPressed.toComposeColor() else uiState.theme.keyboardBackground.toComposeColor())
                                         .gridCellBorder(gridBorderColor, uiState.theme.gridBorderWidth.toDp())
                                 } else {
-                                    m
+                                    m.background(if (closeIsPressed) uiState.theme.keyBackgroundPressed.toComposeColor() else Color.Transparent)
                                 }
                             }
                             .padding(horizontal = 14.dp),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Text(text = "⌨", color = uiState.theme.keyTextColor.toComposeColor(), fontSize = 18.sp)
+                        Text(text = "⌨", color = uiState.theme.labelOn(if (closeIsPressed) uiState.theme.keyBackgroundPressed else uiState.theme.keyboardBackground).toComposeColor(), fontSize = 18.sp)
                     }
                 }
             }

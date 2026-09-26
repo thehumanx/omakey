@@ -1,6 +1,7 @@
 package dev.omakey.app.keyboard.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -43,6 +44,7 @@ import dev.omakey.core.icons.PhosphorArrowLeft
 import dev.omakey.core.icons.PhosphorExpand
 import dev.omakey.core.icons.PhosphorFloating
 import dev.omakey.core.icons.PhosphorGear
+import dev.omakey.core.icons.PhosphorGlobe
 import dev.omakey.core.icons.PhosphorOneHanded
 import dev.omakey.core.icons.PhosphorPalette
 import dev.omakey.core.icons.PhosphorResize
@@ -52,6 +54,9 @@ import dev.omakey.core.layout.KeyboardPlacement
 import dev.omakey.core.layout.KeyboardPlacementGeometry
 import dev.omakey.core.layout.LayoutSettings
 import dev.omakey.core.theme.OmakeyTheme
+import dev.omakey.core.icons.PhosphorIncognito
+import dev.omakey.core.icons.PhosphorGrid
+import dev.omakey.core.icons.PhosphorKeyboard
 
 /*
  * Placement: the live drag state every mode shares, the quick-access panel, the one-handed gutter,
@@ -104,7 +109,13 @@ internal class PlacementState(
         private set
 
     /** Left edge, from the window's left. Only meaningful while floating. */
+    // Clamped to *this* screen, not taken as stored. The stored position was clamped against
+    // whatever screen it was dragged on, so a keyboard parked at the right of a landscape screen
+    // came back in portrait hundreds of dp past the right edge — invisible, with no way to reach it
+    // (real bug). The state is rebuilt on rotation (rememberPlacementState is keyed on the screen
+    // size), so this runs for every new screen size.
     var floatingXDpFloat by androidx.compose.runtime.mutableFloatStateOf(
+        KeyboardPlacementGeometry.clampFloatingX(
         (
             settings.floatingXDp.takeIf { it != LayoutSettings.UNSET_POSITION }
                 // Never positioned before — centre it rather than dropping it in a corner the user
@@ -114,6 +125,9 @@ internal class PlacementState(
                     screenWidthDp,
                 )
             ).toFloat(),
+            widthDp,
+            screenWidthDp,
+        ),
     )
         private set
 
@@ -129,7 +143,14 @@ internal class PlacementState(
         private set
 
     /** Bottom edge, measured *up* from the window's bottom. See clampFloatingY's doc for why up. */
-    var floatingBottomDpFloat by androidx.compose.runtime.mutableFloatStateOf(settings.floatingYDp.toFloat())
+    var floatingBottomDpFloat by androidx.compose.runtime.mutableFloatStateOf(
+        // Same as floatingXDpFloat: a landscape position can be above the top of a portrait screen.
+        KeyboardPlacementGeometry.clampFloatingY(
+            settings.floatingYDp.toFloat(),
+            keyboardHeightDpFloat + SUGGESTION_STRIP_HEIGHT_DP + FLOATING_HANDLE_HEIGHT_DP,
+            screenHeightDp,
+        ),
+    )
         private set
 
     val keyboardHeightDp: Int get() = keyboardHeightDpFloat.roundToInt()
@@ -248,10 +269,19 @@ internal fun QuickAccessPanel(
     feedback: KeyboardFeedback,
     placement: KeyboardPlacement,
     heightDp: Int,
+    /** Enabled languages; the Language tile only appears when there is a choice to make. */
+    languageCount: Int,
+    incognito: Boolean,
+    layoutMode: dev.omakey.core.theme.LayoutMode,
     onOpenSettings: () -> Unit,
 ) {
-    val isGridMode = dev.omakey.core.theme.LocalKeyboardLayoutMode.current == dev.omakey.core.theme.LayoutMode.GRID
+    val isGrid = layoutMode == dev.omakey.core.theme.LayoutMode.GRID
     val tiles = listOf(
+        // Here rather than in the text tools: it is a mode, like one-handed or floating, and the
+        // moment you want it is while typing — leaving the field to find it in Settings defeats it.
+        QuickTile(if (incognito) "Incognito on" else "Incognito", PhosphorIncognito, incognito) {
+            feedback.onKeyPress(); viewModel.toggleIncognito()
+        },
         QuickTile("One-handed", PhosphorOneHanded, placement.isOneHanded) {
             feedback.onKeyPress(); viewModel.toggleOneHanded()
         },
@@ -261,49 +291,111 @@ internal fun QuickAccessPanel(
         QuickTile("Size & position", PhosphorResize, false) {
             feedback.onKeyPress(); viewModel.setResizing(true)
         },
+        // Highlighted while Grid is on; tapping flips between the two layout styles.
+        QuickTile("Grid layout", PhosphorGrid, isGrid) {
+            feedback.onKeyPress(); viewModel.toggleLayoutMode()
+        },
         QuickTile("Theme", PhosphorPalette, false) {
             feedback.onKeyPress(); viewModel.cycleTheme()
         },
         QuickTile("Settings", PhosphorGear, false) {
             feedback.onKeyPress(); viewModel.closeQuickAccess(); onOpenSettings()
         },
-    )
+    ) + if (languageCount > 1) {
+        listOf(QuickTile("Language", PhosphorGlobe, false) { feedback.onKeyPress(); viewModel.openLanguagePicker(fromQuickAccess = true) })
+    } else {
+        emptyList()
+    }
 
+    TilePanel(
+        title = "Quick access",
+        closeDescription = "Close quick access",
+        onClose = { viewModel.closeQuickAccess() },
+        tiles = tiles,
+        theme = theme,
+        fontFamily = fontFamily,
+        feedback = feedback,
+        heightDp = heightDp,
+    )
+}
+
+/**
+ * The language picker: every enabled language as a tile, the active one highlighted, plus a way
+ * into Settings to add more. Opened by long-pressing the language key or from quick access, and
+ * shown in the key-grid slot for the same reason quick access is.
+ */
+@Composable
+internal fun LanguagePickerPanel(
+    viewModel: KeyboardViewModel,
+    languages: List<dev.omakey.app.keyboard.LanguageOption>,
+    activeLanguageId: String,
+    activeLayoutId: String,
+    theme: OmakeyTheme,
+    fontFamily: androidx.compose.ui.text.font.FontFamily?,
+    feedback: KeyboardFeedback,
+    heightDp: Int,
+    onOpenSettings: () -> Unit,
+) {
+    val languageTiles = languages.map { language ->
+        QuickTile(language.nativeName, PhosphorGlobe, language.id == activeLanguageId) {
+            feedback.onKeyPress(); viewModel.selectLanguage(language.id)
+        }
+    }
+    // The active language's layouts, when it has a choice — French AZERTY/QWERTY, Nepali
+    // Romanized/Devanagari — so switching layout doesn't mean a trip to Settings.
+    val layoutTiles = languages.firstOrNull { it.id == activeLanguageId }?.layouts.orEmpty().map { (id, name) ->
+        QuickTile(name, PhosphorKeyboard, id == activeLayoutId) {
+            feedback.onKeyPress(); viewModel.chooseLayout(id)
+        }
+    }
+    val tiles = languageTiles + layoutTiles + QuickTile("Languages…", PhosphorGear, false) {
+        feedback.onKeyPress(); viewModel.closeLanguagePicker(); onOpenSettings()
+    }
+    TilePanel(
+        title = "Language",
+        closeDescription = "Close language picker",
+        onClose = { viewModel.closeLanguagePicker() },
+        tiles = tiles,
+        theme = theme,
+        fontFamily = fontFamily,
+        feedback = feedback,
+        heightDp = heightDp,
+    )
+}
+
+/** A back arrow and title over a 4-column grid of [tiles] — quick access and the language picker. */
+@Composable
+private fun TilePanel(
+    title: String,
+    closeDescription: String,
+    onClose: () -> Unit,
+    tiles: List<QuickTile>,
+    theme: OmakeyTheme,
+    fontFamily: androidx.compose.ui.text.font.FontFamily?,
+    feedback: KeyboardFeedback,
+    heightDp: Int,
+) {
+    val isGridMode = dev.omakey.core.theme.LocalKeyboardLayoutMode.current == dev.omakey.core.theme.LayoutMode.GRID
     Column(
         Modifier
             .fillMaxWidth()
             .height(heightDp.dp)
-            .background(theme.keyboardBackground.toComposeColor()),
+            .background(theme.keyboardBackground.toComposeColor())
+            // Same outer border KeyGrid draws in Grid mode. The strip above leaves its bottom edge
+            // to whatever sits below it, so without this the seam under the strip went missing
+            // whenever a panel replaced the keys (real bug).
+            .let { m -> if (isGridMode) m.border(theme.gridBorderWidth.toDp(), theme.gridBorderColor.toComposeColor()) else m },
     ) {
         Row(
             Modifier.fillMaxWidth().height(32.dp).padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            val backInteraction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
-            Box(
-                Modifier
-                    .fillMaxHeight()
-                    .clickable(
-                        interactionSource = backInteraction,
-                        indication = if (isGridMode) null else androidx.compose.foundation.LocalIndication.current,
-                    ) { feedback.onKeyPress(); viewModel.closeQuickAccess() }
-                    .padding(horizontal = 6.dp)
-                    .semantics { contentDescription = "Close quick access" },
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = PhosphorArrowLeft,
-                    contentDescription = null,
-                    tint = theme.keyTextColor.toComposeColor(),
-                    modifier = Modifier.size(18.dp),
-                )
-            }
             Text(
-                text = "Quick access",
+                text = title,
                 color = theme.keyTextColor.toComposeColor().copy(alpha = 0.7f),
                 fontFamily = fontFamily,
                 fontSize = 12.sp,
-                modifier = Modifier.padding(start = 4.dp),
+                modifier = Modifier.padding(start = 6.dp),
             )
         }
         androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
@@ -313,11 +405,15 @@ internal fun QuickAccessPanel(
             gridItems(tiles) { tile ->
                 val interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
                 val isPressed by interactionSource.collectIsPressedAsState()
+                // Active tiles take the theme's accent and the rest its key colour, so the panel
+                // looks like part of the chosen theme rather than a stock grey sheet.
                 val background = when {
-                    tile.active -> theme.keyBackgroundPressed
+                    tile.active -> theme.accent
                     isPressed -> theme.keyBackgroundPressed
-                    else -> theme.keySpecialBackground
+                    isGridMode -> theme.keyboardBackground
+                    else -> theme.keyBackground
                 }
+                val foreground = if (tile.active) theme.onAccent else theme.labelOn(background)
                 Column(
                     modifier = Modifier
                         .padding(4.dp)
@@ -327,9 +423,12 @@ internal fun QuickAccessPanel(
                             background.toComposeColor(),
                             androidx.compose.foundation.shape.RoundedCornerShape(if (isGridMode) 0.dp else 10.dp),
                         )
+                        .let { m ->
+                            if (isGridMode) m.border(theme.gridBorderWidth.toDp(), theme.gridBorderColor.toComposeColor()) else m
+                        }
                         .clickable(
                             interactionSource = interactionSource,
-                            indication = if (isGridMode) null else androidx.compose.foundation.LocalIndication.current,
+                            indication = null,
                             onClick = tile.onClick,
                         )
                         .semantics { contentDescription = tile.label },
@@ -341,12 +440,12 @@ internal fun QuickAccessPanel(
                         contentDescription = null,
                         // Resolved against this tile's own fill, which for an active tile is the
                         // accent colour — see OmakeyTheme.labelOn.
-                        tint = theme.labelOn(background).toComposeColor(),
+                        tint = foreground.toComposeColor(),
                         modifier = Modifier.size(22.dp),
                     )
                     Text(
                         text = tile.label,
-                        color = theme.labelOn(background).toComposeColor(),
+                        color = foreground.toComposeColor(),
                         fontFamily = fontFamily,
                         fontSize = 10.sp,
                         modifier = Modifier.padding(top = 6.dp),
@@ -393,7 +492,7 @@ internal fun OneHandedGutter(
                     .padding(vertical = 6.dp)
                     .size(36.dp)
                     .background(
-                        if (isPressed) theme.keyBackgroundPressed.toComposeColor() else theme.keySpecialBackground.toComposeColor(),
+                        if (isPressed) theme.keyBackgroundPressed.toComposeColor() else theme.keyBackground.toComposeColor(),
                         androidx.compose.foundation.shape.RoundedCornerShape(10.dp),
                     )
                     .clickable(interactionSource = interactionSource, indication = null, onClick = action)
@@ -460,7 +559,12 @@ internal fun FloatingMoveHandle(theme: OmakeyTheme, place: PlacementState) {
         Modifier
             .fillMaxWidth()
             .height(FLOATING_HANDLE_HEIGHT_DP.dp)
-            .pointerInput(Unit) {
+            // Keyed on `place`, not Unit. Each drag ends in commit(), which writes the preferences,
+            // and PlacementState is rebuilt from them — so a handler keyed on Unit kept feeding the
+            // *first* instance. Every drag after the first moved an object nothing reads anymore:
+            // no live movement, then a jump on release (real bug: "only the first drag is smooth").
+            // The same applies to every drag handler in this file.
+            .pointerInput(place) {
                 detectDragGestures(onDragEnd = { place.commit() }) { change, dragAmount ->
                     change.consume()
                     with(density) { place.move(dragAmount.x.toDp().value, dragAmount.y.toDp().value) }
@@ -511,10 +615,10 @@ private fun androidx.compose.foundation.layout.BoxScope.RaiseHandle(
             .offset(y = 38.dp)
             .size(width = 64.dp, height = 32.dp)
             .background(
-                theme.keyBackgroundPressed.toComposeColor(),
+                theme.accent.toComposeColor(),
                 androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
             )
-            .pointerInput(Unit) {
+            .pointerInput(place) {
                 detectDragGestures(onDragEnd = { place.commit() }) { change, dragAmount ->
                     change.consume()
                     with(density) { place.raise(dragAmount.y.toDp().value) }
@@ -527,7 +631,7 @@ private fun androidx.compose.foundation.layout.BoxScope.RaiseHandle(
             Modifier
                 .size(width = 28.dp, height = 5.dp)
                 .background(
-                    theme.keyTextColor.toComposeColor().copy(alpha = 0.6f),
+                    theme.onAccent.toComposeColor().copy(alpha = 0.8f),
                     androidx.compose.foundation.shape.RoundedCornerShape(2.5.dp),
                 ),
         )
@@ -546,7 +650,7 @@ internal fun androidx.compose.foundation.layout.BoxScope.ResizeOverlay(
     edgePaddingDp: Int,
 ) {
     val density = androidx.compose.ui.platform.LocalDensity.current
-    val accent = theme.keyBackgroundPressed.toComposeColor()
+    val accent = theme.accent.toComposeColor()
     // Bracket arms, drawn at the four corners of the keyboard's own rectangle.
     val bracket = 18.dp
     val stroke = 3.dp
@@ -585,7 +689,7 @@ internal fun androidx.compose.foundation.layout.BoxScope.ResizeOverlay(
                 Modifier
                     .align(alignment)
                     .size(bracket * 2)
-                    .pointerInput(placement) {
+                    .pointerInput(place) {
                         detectDragGestures(
                             onDragEnd = { place.commit() },
                         ) { change, dragAmount ->
@@ -631,7 +735,7 @@ internal fun androidx.compose.foundation.layout.BoxScope.ResizeOverlay(
                     Modifier
                         .fillMaxSize()
                         .padding(bracket * 2)
-                        .pointerInput(placement) {
+                        .pointerInput(place) {
                             detectDragGestures(
                                 onDragEnd = { place.commit() },
                             ) { change, dragAmount ->
@@ -673,7 +777,7 @@ internal fun androidx.compose.foundation.layout.BoxScope.ResizeOverlay(
                 .padding(horizontal = 20.dp, vertical = 8.dp)
                 .semantics { contentDescription = "Done resizing" },
         ) {
-            Text(text = "Done", color = theme.labelOn(theme.keyBackgroundPressed).toComposeColor(), fontSize = 14.sp)
+            Text(text = "Done", color = theme.onAccent.toComposeColor(), fontSize = 14.sp)
         }
     }
 }

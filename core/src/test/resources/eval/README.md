@@ -34,3 +34,25 @@ VelociTap text-entry work evaluated against, so numbers here are comparable to p
 
 Used for next-word/completion recall and — reading the words as correctly typed — for the
 false-correction rate, the metric users feel most sharply.
+
+## `<locale>/sentences.txt` (e.g. `es_ES/sentences.txt`)
+
+Held-out evaluation sentences for a language pack, written by `scripts/build_lang_lm.py` when it
+builds that language's model: every 50th [Tatoeba](https://tatoeba.org) sentence by id, excluded
+from training, lowercased and tokenised exactly as training text is (NFC, clitics split for French),
+capped at 3,000. Split by sentence id so it is stable across rebuilds and Tatoeba export dates.
+
+Tatoeba sentences are licensed CC BY 2.0 FR; attribution: the Tatoeba project and its contributors.
+
+Used by `LanguagePackEvaluationTest` for accent restoration, simulated touch noise on the pack's own
+layout, and the false-correction rate.
+
+## `ne_NP/aksharantar_test.tsv`
+
+Romanized Nepali → Devanagari pairs, one per line (`latin<TAB>native`), 4,101 of them: the Nepali
+test split of [Aksharantar](https://huggingface.co/datasets/ai4bharat/Aksharantar) (AI4Bharat;
+manually collected parts CC BY, mined parts CC0). Used by `TransliterationEvaluationTest` to score
+Nepali transliteration top-1 / top-3.
+
+`ne_NP/sentences.txt` comes from Nepali Wikipedia (CC BY-SA 4.0) instead of Tatoeba, which has no
+Nepali export; same held-out rule, counted by sentence in dump order.

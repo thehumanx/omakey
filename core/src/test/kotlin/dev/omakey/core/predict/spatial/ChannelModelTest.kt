@@ -8,13 +8,13 @@ class KeyboardGeometryTest {
 
     @Test
     fun `keys on the same row are one width apart`() {
-        assertEquals(1.0f, KeyboardGeometry.squaredDistance('q', 'w'), 0.01f)
-        assertEquals(4.0f, KeyboardGeometry.squaredDistance('q', 'e'), 0.01f)
+        assertEquals(1.0f, KeyboardGeometry.QWERTY.squaredDistance('q', 'w'), 0.01f)
+        assertEquals(4.0f, KeyboardGeometry.QWERTY.squaredDistance('q', 'e'), 0.01f)
     }
 
     @Test
     fun `a key is zero distance from itself`() {
-        assertEquals(0f, KeyboardGeometry.squaredDistance('k', 'k'), 0f)
+        assertEquals(0f, KeyboardGeometry.QWERTY.squaredDistance('k', 'k'), 0f)
     }
 
     @Test
@@ -24,24 +24,24 @@ class KeyboardGeometryTest {
         // exactly the near-misses this table exists for.
         assertTrue(
             "'s' should be nearer 'w' than 'q' is to 'e'",
-            KeyboardGeometry.squaredDistance('s', 'w') < KeyboardGeometry.squaredDistance('q', 'e'),
+            KeyboardGeometry.QWERTY.squaredDistance('s', 'w') < KeyboardGeometry.QWERTY.squaredDistance('q', 'e'),
         )
-        assertTrue(KeyboardGeometry.areAdjacent('s', 'w'))
-        assertTrue(KeyboardGeometry.areAdjacent('s', 'e'))
+        assertTrue(KeyboardGeometry.QWERTY.areAdjacent('s', 'w'))
+        assertTrue(KeyboardGeometry.QWERTY.areAdjacent('s', 'e'))
     }
 
     @Test
     fun `opposite corners are far apart`() {
-        assertTrue(KeyboardGeometry.squaredDistance('q', 'm') > 40f)
-        assertTrue(!KeyboardGeometry.areAdjacent('q', 'm'))
+        assertTrue(KeyboardGeometry.QWERTY.squaredDistance('q', 'm') > 40f)
+        assertTrue(!KeyboardGeometry.QWERTY.areAdjacent('q', 'm'))
     }
 
     @Test
     fun `non-layout characters have no meaningful distance`() {
         // Digits, punctuation and accented characters from a long-press popup genuinely have no
         // position relative to a letter; inventing one would be inventing evidence.
-        assertEquals(KeyboardGeometry.UNRELATED, KeyboardGeometry.squaredDistance('a', '7'), 0f)
-        assertEquals(KeyboardGeometry.UNRELATED, KeyboardGeometry.squaredDistance('é', 'a'), 0f)
+        assertEquals(KeyboardGeometry.UNRELATED, KeyboardGeometry.QWERTY.squaredDistance('a', '7'), 0f)
+        assertEquals(KeyboardGeometry.UNRELATED, KeyboardGeometry.QWERTY.squaredDistance('é', 'a'), 0f)
     }
 }
 

@@ -33,10 +33,21 @@ enum class SuggestionKind { PLAIN, CORRECTION }
 
 data class KeyboardUiState(
     val layout: KeyboardLayout = KeyboardLocale.Default.letterLayout,
+    /** Row count of the active language's letter layout — the unit row height is divided by, so
+     * keys keep one size across letters, symbols and shift layers. Per language because not every
+     * alphabet fits in four rows. */
+    val baseRowCount: Int = KeyboardLocale.Default.letterLayout.rows.size,
+    /** Enabled languages, in switching order; the language key and picker only appear with 2+. */
+    val languages: List<LanguageOption> = emptyList(),
+    val activeLanguageId: String = KeyboardLocale.Default.id,
+    /** The active language's letter layout, for highlighting it in the language panel. */
+    val activeLetterLayoutId: String = KeyboardLocale.Default.letterLayout.id,
+    /** The language picker occupies the key-grid slot, like quick access. */
+    val languagePickerOpen: Boolean = false,
     val shiftOn: Boolean = false,
     /** True once shift has been long-pressed into caps-lock — every letter is capitalized until
      * shift is tapped again, unlike plain [shiftOn] which is a one-shot "capitalize just the next
-     * letter" that clears itself after a single character (see [commitTypedChar]). */
+     * letter" that clears itself after a single character (see [commitTypedText]). */
     val capsLockOn: Boolean = false,
     val suggestions: List<String> = emptyList(),
     /** Emoji matching the word currently being typed/just finished (see
@@ -87,4 +98,12 @@ data class KeyboardUiState(
      * it is legitimately empty during a cold start, and without this that is indistinguishable from
      * "there is nothing to suggest for this word". */
     val suggestionsLoading: Boolean = false,
+)
+
+/** One enabled language, as the picker lists it. */
+data class LanguageOption(
+    val id: String,
+    val nativeName: String,
+    /** The language's letter layouts as (id, short name), when it has more than one to choose. */
+    val layouts: List<Pair<String, String>> = emptyList(),
 )

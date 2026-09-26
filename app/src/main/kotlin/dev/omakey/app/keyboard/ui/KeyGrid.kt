@@ -52,6 +52,8 @@ import dev.omakey.core.icons.PhosphorBackspace
 import dev.omakey.core.icons.PhosphorCheck
 import dev.omakey.core.icons.PhosphorEnter
 import dev.omakey.core.icons.PhosphorGear
+import dev.omakey.core.icons.PhosphorGlobe
+import dev.omakey.core.icons.PhosphorSmiley
 import dev.omakey.core.icons.PhosphorSearch
 import dev.omakey.core.icons.PhosphorSend
 import dev.omakey.core.icons.PhosphorShift
@@ -342,7 +344,6 @@ internal fun KeyGrid(
                                         // key, exactly like a plain long-press-then-release with no
                                         // popup would type the base character.
                                         dragState.options.getOrNull(dragState.highlightedIndex)
-                                            ?.firstOrNull()
                                             ?.let { viewModel.onAccentSelected(it) }
                                         accentDragState = null
                                         machine.onTouch(TouchSample(change.position.x, change.position.y, now, TouchAction.UP))
@@ -457,8 +458,19 @@ internal fun KeyGrid(
             effectiveRows.forEachIndexed { rowIndex, row ->
                 val onBoundsMeasuredStable = remember(rowIndex) {
                     { measured: List<Triple<Int, KeyDefinition, Rect>> ->
-                        keyBoundsState.value = keyBoundsState.value + measured.associate { (keyIndex, key, rect) ->
-                            rowIndex * 1000 + keyIndex to (key to rect)
+                        // onGloballyPositioned fires whenever the row moves *on screen*, which for a
+                        // floating keyboard being dragged is every frame — yet bounds are stored
+                        // relative to the keys area, so they haven't changed. Writing anyway made
+                        // a new map and a state write per row per frame, recomposing the key grid
+                        // sixty times a second: the stutter in floating drags.
+                        val current = keyBoundsState.value
+                        val changed = measured.any { (keyIndex, key, rect) ->
+                            current[rowIndex * 1000 + keyIndex] != (key to rect)
+                        }
+                        if (changed) {
+                            keyBoundsState.value = current + measured.associate { (keyIndex, key, rect) ->
+                                rowIndex * 1000 + keyIndex to (key to rect)
+                            }
                         }
                     }
                 }
@@ -504,7 +516,8 @@ internal fun KeyGrid(
             } else {
                 androidx.compose.foundation.shape.RoundedCornerShape(8.dp)
             }
-            val bubbleBackground = if (isGridModeBubble) theme.keyBackgroundPressed.toComposeColor() else theme.keySpecialBackground.toComposeColor()
+            // The key tap colour in both modes: the bubble is the tapped key, enlarged.
+            val bubbleBackground = theme.keyBackgroundPressed.toComposeColor()
             Box(
                 modifier = Modifier
                     .offset { androidx.compose.ui.unit.IntOffset(x.toInt(), y.toInt()) }
@@ -521,7 +534,7 @@ internal fun KeyGrid(
             ) {
                 Text(
                     text = key.label.let { if (it.length == 1) it.uppercase() else it },
-                    color = theme.keyTextColor.toComposeColor(),
+                    color = theme.labelOn(theme.keyBackgroundPressed).toComposeColor(),
                     fontFamily = fontFamily,
                     fontSize = 26.sp,
                 )
@@ -618,10 +631,12 @@ private fun SymbolModeOverlay(
                             .let { m -> if (isGridModeOverlay) m else m.padding(3.dp) }
                             .alpha(optionAlpha)
                             .let {
+                                // The option the finger is on is "selected", so it takes the accent;
+                                // the rest sit on the theme's own key colour.
                                 if (isHighlighted) {
-                                    it.background(theme.keyBackgroundPressed.toComposeColor(), cellShape)
+                                    it.background(theme.accent.toComposeColor(), cellShape)
                                 } else {
-                                    it.background(theme.keySpecialBackground.toComposeColor(), cellShape)
+                                    it.background(theme.keyBackground.toComposeColor(), cellShape)
                                 }
                             }
                             .let { m ->
@@ -635,7 +650,7 @@ private fun SymbolModeOverlay(
                     ) {
                         Text(
                             text = option,
-                            color = theme.keyTextColor.toComposeColor(),
+                            color = (if (isHighlighted) theme.onAccent else theme.labelOn(theme.keyBackground)).toComposeColor(),
                             fontFamily = fontFamily,
                             fontSize = 20.sp,
                         )
@@ -658,6 +673,10 @@ private fun keyIcon(key: KeyDefinition, capsLockOn: Boolean, enterAction: Int): 
     SpecialKeyCode.BACKSPACE -> PhosphorBackspace
     SpecialKeyCode.ENTER -> enterIcon(enterAction)
     SpecialKeyCode.SETTINGS -> PhosphorGear
+    SpecialKeyCode.LANGUAGE -> PhosphorGlobe
+    // An icon, not the 😊 glyph the layouts carry as a label: a colour emoji ignores the theme's
+    // text colour, so it was the one control key that didn't match the others.
+    SpecialKeyCode.EXTENSIONS -> PhosphorSmiley
     else -> null
 }
 
@@ -685,12 +704,14 @@ private fun enterDescription(enterAction: Int): String = when (enterAction) {
 private fun describeKey(key: KeyDefinition, enterAction: Int = android.view.inputmethod.EditorInfo.IME_ACTION_NONE): String = when (key.code) {
     SpecialKeyCode.SHIFT -> "Shift"
     SpecialKeyCode.BACKSPACE -> "Backspace"
-    SpecialKeyCode.SPACE -> "Space"
     SpecialKeyCode.ENTER -> enterDescription(enterAction)
     SpecialKeyCode.SYMBOLS -> "Symbols"
     SpecialKeyCode.LETTERS -> "Letters"
     SpecialKeyCode.EXTENSIONS -> "Emoji and extensions"
     SpecialKeyCode.SETTINGS -> "Settings"
+    SpecialKeyCode.LANGUAGE -> "Switch language"
+    // The spacebar carries the language name while several are enabled; say both.
+    SpecialKeyCode.SPACE -> if (key.label.isBlank()) "Space" else "Space, ${key.label}"
     else -> key.label
 }
 
@@ -746,7 +767,7 @@ private fun handleGestureEvent(
         is GestureEvent.KeyLongPress -> {
             val key = keyLookupByCode(event.keyCode)
             when {
-                key?.code == SpecialKeyCode.EXTENSIONS -> onOpenSettings()
+                key?.code == SpecialKeyCode.LANGUAGE -> viewModel.openLanguagePicker()
                 // A key with popupChars is intercepted earlier, in KeyGrid's own long-press-timer
                 // handling, which enters accent-drag mode directly instead of ever emitting this
                 // KeyLongPress event for it — so by the time one reaches here, it's guaranteed to
@@ -839,13 +860,11 @@ internal fun KeyRowView(
                             // against an equally dark row background (real bug report). Lightened
                             // toward white on dark themes only, so the shimmer stays visible without
                             // touching the spacebar's own neutral-by-default look.
-                            val shimmerColor = theme.spacebarAccentColor.toComposeColor().let { base ->
-                                if (theme.isDark) {
-                                    androidx.compose.ui.graphics.lerp(base, Color.White, 0.55f)
-                                } else {
-                                    base
-                                }
-                            }
+                            // The theme's accent, like every other "something happened" cue. It used
+                            // to be the spacebar colour lightened toward white on dark themes — the
+                            // spacebar is neutral on most themes, so the sweep was a washed-out grey
+                            // that ignored the theme entirely.
+                            val shimmerColor = theme.accent.toComposeColor()
                             val brush = androidx.compose.ui.graphics.Brush.linearGradient(
                                 colorStops = arrayOf(
                                     (bandFraction - bandWidth).coerceIn(0f, 1f) to Color.Transparent,
@@ -902,7 +921,11 @@ internal fun KeyRowView(
                     if (it.length != 1) return@let it
                     if (alwaysShowUppercaseLetters || shiftOn || capsLockOn) it.uppercase() else it.lowercase()
                 }
-                val fontSize = if (key.label.length == 1) 24.sp else 15.sp
+                val fontSize = when {
+                    key.label.length == 1 -> 24.sp
+                    key.code == SpecialKeyCode.SPACE -> 12.sp
+                    else -> 15.sp
+                }
                 val isSpace = key.code == SpecialKeyCode.SPACE
                 val isCapsLockKey = key.code == SpecialKeyCode.SHIFT && capsLockOn
                 val isPressed = pressedKeyCode == key.code
@@ -915,7 +938,11 @@ internal fun KeyRowView(
                     // every other background rule here (including the spacebar's own accent color
                     // and the "borderless" showKeyBackgrounds toggle, which is a Normal-mode-only
                     // preference — a borderless grid isn't a grid).
-                    isGridMode && isPressed -> theme.keyBackgroundPressed
+                    // Every key fills with the theme's key tap colour while held, in both layout
+                    // modes and whether or not key backgrounds are shown — it used to happen in Grid
+                    // mode only, so the same theme looked different to tap depending on a layout
+                    // toggle, and "key tap colour" meant nothing in Normal mode.
+                    isPressed -> theme.keyBackgroundPressed
                     isSpace -> theme.spacebarAccentColor
                     // Caps lock gets its own persistent highlight, same visual language as a
                     // physical caps-lock LED — distinguishes "locked on" from a plain momentary
@@ -926,7 +953,7 @@ internal fun KeyRowView(
                     // small nudge off the base key color (see buildCustomTheme's smallNudge),
                     // which read as flat, barely-distinguishable "weird grey" instead of a clear
                     // locked-on indicator (real bug report).
-                    isCapsLockKey -> theme.keyBackgroundPressed
+                    isCapsLockKey -> theme.accent
                     !isGridMode && !showKeyBackgrounds -> null
                     // Grid mode deliberately has only 4 meaningfully distinct colors — background,
                     // border, spacebar accent, and the home-row tint below — not a separate "key
@@ -993,8 +1020,15 @@ internal fun KeyRowView(
                     // every preset this returns keyTextColor unchanged — see OmakeyTheme.labelOn.
                     val labelColor = theme.labelOn(keyBackgroundSpec ?: theme.keyboardBackground).toComposeColor()
                     val tint = when {
-                        isActiveShift -> theme.keyBackgroundPressed.toComposeColor()
+                        // Caps lock sits on the accent fill, so its icon takes the on-accent colour.
+                        // Checked before active shift, which is also true while caps lock is on:
+                        // the old order drew the icon in the same colour as its own background.
+                        isCapsLockKey -> theme.onAccent.toComposeColor()
+                        isActiveShift -> theme.accent.toComposeColor()
                         isDimmable && !isPressed -> labelColor.copy(alpha = 0.5f)
+                        // The language name on the spacebar is a quiet reminder, not a label to
+                        // read on every keystroke — faded so it doesn't compete with the letters.
+                        isSpace -> labelColor.copy(alpha = SPACEBAR_LABEL_ALPHA)
                         else -> labelColor
                     }
                     val icon = keyIcon(key, capsLockOn, enterAction)
@@ -1013,3 +1047,6 @@ internal fun KeyRowView(
         }
     }
 }
+
+/** How faded the language name on the spacebar is — see KeyRowView's tint. */
+private const val SPACEBAR_LABEL_ALPHA = 0.4f

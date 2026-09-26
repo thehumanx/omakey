@@ -229,7 +229,7 @@ private fun ClipboardListRow(
                 modifier = Modifier
                     .weight(1f)
                     .height(80.dp)
-                    .background(Color.Black.copy(alpha = 0.1f), RoundedCornerShape(8.dp)),
+                    .background(textColor.copy(alpha = 0.08f), RoundedCornerShape(8.dp)),
             )
         } else {
             Text(text = item.content, color = textColor, modifier = Modifier.weight(1f), maxLines = 2)

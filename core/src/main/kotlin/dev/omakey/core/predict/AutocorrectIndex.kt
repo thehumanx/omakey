@@ -1,5 +1,7 @@
 package dev.omakey.core.predict
 
+import dev.omakey.core.locale.LanguageProfile
+import dev.omakey.core.locale.toLookupForm
 import dev.omakey.core.predict.lm.LanguageModel
 import dev.omakey.core.predict.spatial.ChannelModel
 import dev.omakey.core.predict.spatial.KeyboardGeometry
@@ -31,7 +33,9 @@ import kotlin.math.abs
  * is a contiguous id range, and probability is a `getShort`.
  */
 class AutocorrectIndex(
-    private val channel: ChannelModel = ChannelModel(),
+    /** Tuned costs and the default (QWERTY, no equivalent letters) keyboard; [load] derives the
+     * per-language [channel] from it. */
+    private val baseChannel: ChannelModel = ChannelModel(),
     /** Rank in the frequency ordering a word must reach to be a correction target. Constructor
      * parameters so the tuning sweep can search over them; see the companion for the defaults and
      * why these are ranks rather than percentiles. */
@@ -43,8 +47,44 @@ class AutocorrectIndex(
 
     @Volatile private var model: LanguageModel? = null
     @Volatile private var personal: PersonalLanguageModel = PersonalLanguageModel()
+    @Volatile private var profile: LanguageProfile = LanguageProfile.English
     @Volatile private var correctionFloor: Float = Float.NEGATIVE_INFINITY
     @Volatile private var strictFloor: Float = Float.NEGATIVE_INFINITY
+
+    /**
+     * The letters a word can start with, and which of them sit next to each other on the keyboard —
+     * what [forEachCandidate]'s first-letter routes iterate over.
+     *
+     * Built at [load] from the model's own alphabet, keeping only characters the language counts as
+     * word characters, so English gets exactly `a`–`z` (its alphabet also holds the apostrophe) in
+     * the same order the old hardcoded 26-letter table used, and another language gets its own.
+     * Adjacency comes from the channel's [KeyboardGeometry] rather than being written out by hand,
+     * so it stays true to whichever layout that geometry was derived from.
+     */
+    private class FirstLetters(
+        val letters: CharArray,
+        /** Single-character prefixes, held rather than built per lookup — [forEachCandidate] runs
+         * on the typing hot path and asks for several of these per keystroke. */
+        val prefixes: Array<String>,
+        /** For each letter, the indices of letters whose keys physically touch it, ascending. */
+        val neighbours: Array<IntArray>,
+        /** For each letter, the indices of its equivalent letters (u → ú, ü), from the language's
+         * [LanguageProfile.equivalentLetters]. Needed as first-letter routes of their own: an
+         * accented letter is a long-press option, not a key, so it neighbours nothing — and without
+         * this "ultimos" could never reach "últimos". Empty for English. */
+        val equivalents: Array<IntArray> = Array(letters.size) { IntArray(0) },
+    ) {
+        fun indexOf(character: Char): Int = letters.binarySearch(character.lowercaseChar()).let { if (it >= 0) it else -1 }
+
+        companion object {
+            val EMPTY = FirstLetters(CharArray(0), emptyArray(), emptyArray())
+        }
+    }
+
+    @Volatile private var firstLetters: FirstLetters = FirstLetters.EMPTY
+
+    /** [baseChannel] for the loaded language's keyboard and equivalent letters. */
+    @Volatile private var channel: ChannelModel = baseChannel
 
     /** Reused across the thousands of distance computations one correction performs, instead of
      * allocating a matrix per candidate. Thread-local because corrections run on whatever
@@ -52,23 +92,80 @@ class AutocorrectIndex(
     private val editScratch = ThreadLocal.withInitial { Array(MAX_LENGTH + 2) { IntArray(MAX_LENGTH + 2) } }
     private val costScratch = ThreadLocal.withInitial { Array(MAX_LENGTH + 2) { FloatArray(MAX_LENGTH + 2) } }
 
+    /** The word being corrected, as a `CharArray`, for the two DP loops. Indexing a `String` there
+     * costs a compact-strings encoding check per cell, and on HotSpot the JIT can only drop that
+     * check while no non-Latin-1 string has ever been read — one "⇧" or "😊" key label anywhere in
+     * the process and `correct()` got 25% slower (measured, AGENTS.md §66 Phase 2). Every
+     * Devanagari or accented word is such a string, so the check has to go rather than be avoided. */
+    private val charScratch = ThreadLocal.withInitial { CharArray(MAX_LENGTH + 2) }
+
+    /** The candidate word, decoded once per DP rather than read cell by cell through
+     * [LanguageModel.charAt] — see [LanguageModel.copyWord]. */
+    private val candidateScratch = ThreadLocal.withInitial { CharArray(MAX_LENGTH + 2) }
+
+    /** [text]'s characters in the thread's scratch buffer; valid up to `text.length`. */
+    private fun charsOf(text: String): CharArray {
+        val chars = charScratch.get()
+        text.toCharArray(chars, 0, 0, minOf(text.length, chars.size))
+        return chars
+    }
+
     /** Left context for scoring, as word ids. Two words, because the language model's trigram tier
      * is where most of its discriminating power is. */
     data class Context(val previousId: Int = LanguageModel.NO_WORD, val beforePreviousId: Int = LanguageModel.NO_WORD) {
         companion object { val NONE = Context() }
     }
 
+    /** Context for the word after [clitic]: the clitic is its previous word, and what came
+     * before the clitic moves back one place. */
+    private fun cliticContext(clitic: String, context: Context): Context {
+        val languageModel = model ?: return context
+        return Context(previousId = languageModel.indexOf(clitic.toLookupForm()), beforePreviousId = context.previousId)
+    }
+
     fun contextOf(previousWord: String?, beforePreviousWord: String?): Context {
         val languageModel = model ?: return Context.NONE
+        // "l'homme" as the previous word is two tokens to the model: "homme", preceded by "l'".
+        profile.splitClitic(previousWord.orEmpty())?.let { (clitic, rest) -> return contextOf(rest, clitic) }
         return Context(
-            previousId = previousWord?.lowercase()?.let { languageModel.indexOf(it) } ?: LanguageModel.NO_WORD,
-            beforePreviousId = beforePreviousWord?.lowercase()?.let { languageModel.indexOf(it) } ?: LanguageModel.NO_WORD,
+            previousId = previousWord?.toLookupForm()?.let { languageModel.indexOf(it) } ?: LanguageModel.NO_WORD,
+            beforePreviousId = beforePreviousWord?.toLookupForm()?.let { languageModel.indexOf(it) } ?: LanguageModel.NO_WORD,
         )
     }
 
-    fun load(languageModel: LanguageModel, personalModel: PersonalLanguageModel) {
+    fun load(
+        languageModel: LanguageModel,
+        personalModel: PersonalLanguageModel,
+        languageProfile: LanguageProfile = LanguageProfile.English,
+        geometry: KeyboardGeometry = baseChannel.geometry,
+    ) {
+        // Withdrawn first and published last: every public entry point returns early while
+        // [model] is null, so a correction running on another thread during a language switch
+        // sees either the old language or the new one, never the new model with the old tables.
+        // Also fixes the first load, which used to publish the model before the floors below were
+        // computed and so briefly let any candidate through.
+        model = null
+        profile = languageProfile
         personal = personalModel
-        model = languageModel
+        channel = if (languageProfile.equivalentLetters.isEmpty() && geometry === baseChannel.geometry) {
+            baseChannel
+        } else {
+            baseChannel.forLanguage(geometry, languageProfile.equivalentLetters)
+        }
+        val letters = CharArray(languageModel.alphabetSize) { languageModel.alphabetChar(it) }
+            .filter { it.isLetter() && languageProfile.isWordChar(it) }
+            .toCharArray()
+        firstLetters = FirstLetters(
+            letters = letters,
+            prefixes = Array(letters.size) { letters[it].toString() },
+            neighbours = Array(letters.size) { index ->
+                letters.indices.filter { it != index && channel.geometry.areAdjacent(letters[index], letters[it]) }.toIntArray()
+            },
+            equivalents = Array(letters.size) { index ->
+                val group = languageProfile.equivalentLetters.firstOrNull { letters[index] in it }.orEmpty()
+                letters.indices.filter { it != index && letters[it] in group }.toIntArray()
+            },
+        )
 
         // Only correct *into* reasonably common words — otherwise a typed non-word that happens to
         // sit close to an obscure entry gets "corrected" into something the user has never heard
@@ -86,12 +183,14 @@ class AutocorrectIndex(
             sorted.getOrElse(sorted.size - 1 - rank) { sorted.firstOrNull() ?: Float.NEGATIVE_INFINITY }
         correctionFloor = floorAtRank(correctionRank)
         strictFloor = floorAtRank(strictRank)
+        model = languageModel
     }
 
     /** Marks a word as known (e.g. explicitly saved via swipe-up) so it's never "corrected" away
      * in the future, even if it's a name/slang/word absent from the bundled vocabulary. */
     fun learn(word: String) {
-        val lower = word.lowercase()
+        profile.splitClitic(word)?.let { return learn(it.second) }
+        val lower = word.toLookupForm()
         if (lower.isEmpty() || isKnown(lower)) return
         personal.record(lower, explicit = true)
     }
@@ -101,14 +200,16 @@ class AutocorrectIndex(
      * vocabulary word can never be unlearned this way, so "unlearn" can't silently turn autocorrect
      * against an ordinary word like "cat". */
     fun unlearn(word: String) {
-        val lower = word.lowercase()
+        profile.splitClitic(word)?.let { return unlearn(it.second) }
+        val lower = word.toLookupForm()
         if (!personal.isExplicit(lower)) return
         personal.forget(lower)
     }
 
     /** Whether [word] is a real/known word — bundled vocabulary or the user's own. */
     fun isKnown(word: String): Boolean {
-        val lower = word.lowercase()
+        profile.splitClitic(word)?.let { return isKnown(it.second) }
+        val lower = word.toLookupForm()
         // isTrusted, not contains: a word picked up from casual typing must not gain immunity from
         // correction just by having been typed once. See PersonalLanguageModel's class doc.
         if (personal.isTrusted(lower)) return true
@@ -118,7 +219,8 @@ class AutocorrectIndex(
 
     /** Whether [word] came from the user's own swipe-up save rather than the bundled vocabulary —
      * exactly what determines whether a second swipe-up can [unlearn] it. */
-    fun isUserAdded(word: String): Boolean = personal.isExplicit(word.lowercase())
+    fun isUserAdded(word: String): Boolean =
+        personal.isExplicit((profile.splitClitic(word)?.second ?: word).toLookupForm())
 
     /**
      * Curated apostrophe-insertion fixes ("im" -> "I'm", "weve" -> "we've").
@@ -136,11 +238,11 @@ class AutocorrectIndex(
      * unrelated short words far too readily.
      */
     fun contractionFor(typed: String): String? {
-        val lower = typed.lowercase()
-        CONTRACTIONS[lower]?.let { return it }
+        val lower = typed.toLookupForm()
+        profile.contractions[lower]?.let { return it }
         var best: String? = null
         var bestDistance = 2
-        for ((key, expansion) in CONTRACTIONS) {
+        for ((key, expansion) in profile.contractions) {
             if (key.length < MIN_FUZZY_CONTRACTION_LENGTH) continue
             val distance = editDistance(lower, key, 1) ?: continue
             if (distance < bestDistance) {
@@ -171,9 +273,13 @@ class AutocorrectIndex(
         taps: TouchTrace.Taps? = null,
     ): List<String> {
         val languageModel = model ?: return emptyList()
-        val lower = word.lowercase()
+        profile.splitClitic(word)?.let { (clitic, rest) ->
+            // Taps are dropped: they index the whole typed word, not the part after the clitic.
+            return alternatives(rest, limit, cliticContext(clitic, context), null).map { clitic + it }
+        }
+        val lower = word.toLookupForm()
         if (limit <= 0 || lower.isEmpty()) return emptyList()
-        if (!lower.all { it.isLetter() }) return emptyList()
+        if (!profile.isWord(lower)) return emptyList()
 
         val results = LinkedHashSet<String>()
         // Checked before the length gate below — several contraction keys ("im", "id") are shorter
@@ -205,9 +311,12 @@ class AutocorrectIndex(
      */
     fun correct(typed: String, context: Context = Context.NONE, taps: TouchTrace.Taps? = null): String? {
         model ?: return null
-        val lower = typed.lowercase()
+        profile.splitClitic(typed)?.let { (clitic, rest) ->
+            return correct(rest, cliticContext(clitic, context), null)?.let { clitic + it }
+        }
+        val lower = typed.toLookupForm()
         if (lower.length < MIN_LENGTH || lower.length > MAX_LENGTH) return null
-        if (!lower.all { it.isLetter() }) return null
+        if (!profile.isWord(lower)) return null
         if (isKnown(lower)) return null // never "correct" an already-real word
 
         val scored = ArrayList<Scored>(SCORED_CAPACITY)
@@ -222,12 +331,13 @@ class AutocorrectIndex(
      * Deliberately does *not* filter by frequency — ranking is the caller's job. */
     fun realWordNeighbors(word: String): Set<String> {
         val languageModel = model ?: return emptySet()
-        val lower = word.lowercase()
+        profile.splitClitic(word)?.let { (clitic, rest) -> return realWordNeighbors(rest).mapTo(LinkedHashSet()) { clitic + it } }
+        val lower = word.toLookupForm()
         if (lower.length < MIN_LENGTH || lower.length > MAX_LENGTH) return emptySet()
-        if (!lower.all { it.isLetter() }) return emptySet()
+        if (!profile.isWord(lower)) return emptySet()
         val neighbours = mutableSetOf<String>()
-        forEachCandidate(lower) { id, _ ->
-            val distance = editDistance(lower, id, 1)
+        forEachCandidate(languageModel, lower) { id, _ ->
+            val distance = editDistance(languageModel, lower, id, 1)
             if (distance != null && distance > 0) neighbours += languageModel.wordAt(id)
         }
         return neighbours
@@ -258,12 +368,12 @@ class AutocorrectIndex(
         // stricter bar the distance-2 fallback uses. Same tiering idea, same reason: a less
         // certain route into the vocabulary needs a more certain destination.
         val offFirstLetterFloor = maxOf(floor, strictFloor)
-        forEachCandidate(typed) { id, offFirstLetter ->
+        forEachCandidate(languageModel, typed) { id, offFirstLetter ->
             val prior = languageModel.unigramLogProbability(id)
             if (prior < (if (offFirstLetter) offFirstLetterFloor else floor)) return@forEachCandidate
-            val distance = editDistance(typed, id, editBound) ?: return@forEachCandidate
+            val distance = editDistance(languageModel, typed, id, editBound) ?: return@forEachCandidate
             if (distance == 0) return@forEachCandidate
-            val cost = channelCost(typed, id, taps)
+            val cost = channelCost(languageModel, typed, id, taps)
             val languageScore = personal.adjustById(
                 id,
                 languageModel.logProbability(id, context.previousId, context.beforePreviousId),
@@ -362,50 +472,55 @@ class AutocorrectIndex(
      * That is ~8 ranges instead of 1 or 26, and the extra ones are pre-filtered by a float compare
      * before any distance matrix is built.
      */
-    private inline fun forEachCandidate(typed: String, action: (id: Int, offFirstLetter: Boolean) -> Unit) {
-        val languageModel = model ?: return
+    private inline fun forEachCandidate(
+        languageModel: LanguageModel,
+        typed: String,
+        action: (id: Int, offFirstLetter: Boolean) -> Unit,
+    ) {
         if (typed.isEmpty()) return
 
         for (id in languageModel.prefixRange(typed.substring(0, 1))) action(id, false)
 
-        val typedFirst = letterIndex(typed[0])
-        var alternates = alternateFirstLetters(typed)
-        var remaining = alternates
-        while (remaining != 0) {
-            val letter = Integer.numberOfTrailingZeros(remaining)
-            remaining = remaining and (remaining - 1)
-            for (id in languageModel.prefixRange(FIRST_LETTERS[letter])) action(id, true)
+        val alphabet = firstLetters
+        val typedFirst = alphabet.indexOf(typed[0])
+        val alternates = alternateFirstLetters(typed, alphabet)
+        for (letter in alternates.indices) {
+            if (alternates[letter]) for (id in languageModel.prefixRange(alphabet.prefixes[letter])) action(id, true)
         }
 
         // Deletion at position 0. Skips letters whose whole range was just scanned, so the same id
         // is never handed to `action` twice.
         if (typed.length in (MIN_LENGTH - 1) until MAX_LENGTH) {
-            if (typedFirst >= 0) alternates = alternates or (1 shl typedFirst)
+            if (typedFirst >= 0) alternates[typedFirst] = true
             val prepended = StringBuilder(typed.length + 1).append(' ').append(typed)
-            for (letter in 0 until ALPHABET_SIZE) {
-                if ((alternates shr letter) and 1 == 1) continue
-                prepended.setCharAt(0, 'a' + letter)
+            for (letter in alternates.indices) {
+                if (alternates[letter]) continue
+                prepended.setCharAt(0, alphabet.letters[letter])
                 val id = languageModel.indexOf(prepended)
                 if (id != LanguageModel.NO_WORD) action(id, true)
             }
         }
     }
 
-    /** Bitmask of first letters, other than [typed]'s own, that a correction of [typed] may start
-     * with — see [forEachCandidate] for what each one represents. */
-    private fun alternateFirstLetters(typed: String): Int {
-        var mask = 0
-        val first = letterIndex(typed[0])
-        if (first >= 0) mask = mask or ADJACENT_MASK[first]
-        if (typed.length > 1) {
-            val second = letterIndex(typed[1])
-            if (second >= 0) mask = mask or (1 shl second)
+    /** First letters, other than [typed]'s own, that a correction of [typed] may start with, as a
+     * flag per letter of [alphabet] — see [forEachCandidate] for what each one represents. Iterated
+     * in alphabet order, which for English is the a–z order the previous bitmask produced. */
+    private fun alternateFirstLetters(typed: String, alphabet: FirstLetters): BooleanArray {
+        val alternates = BooleanArray(alphabet.letters.size)
+        val first = alphabet.indexOf(typed[0])
+        if (first >= 0) {
+            for (neighbour in alphabet.neighbours[first]) alternates[neighbour] = true
+            for (equivalent in alphabet.equivalents[first]) alternates[equivalent] = true
         }
-        // The typed letter's own range is always scanned separately, and `a` counts itself as
+        if (typed.length > 1) {
+            val second = alphabet.indexOf(typed[1])
+            if (second >= 0) alternates[second] = true
+        }
+        // The typed letter's own range is always scanned separately, and a letter counts itself as
         // adjacent to nothing, but clear it explicitly: typed[1] == typed[0] ("aardvark") would
         // otherwise put it back.
-        if (first >= 0) mask = mask and (1 shl first).inv()
-        return mask
+        if (first >= 0) alternates[first] = false
+        return alternates
     }
 
     // --- distance and cost ----------------------------------------------------------------------
@@ -413,34 +528,38 @@ class AutocorrectIndex(
     /** Plain Damerau-Levenshtein against the vocabulary word [id], used only to bound the candidate
      * set. Reads characters straight out of the mapped blob so scanning thousands of candidates
      * allocates nothing. Null once the true distance is known to exceed [maxDistance]. */
-    private fun editDistance(a: String, id: Int, maxDistance: Int): Int? {
-        val languageModel = model ?: return null
+    private fun editDistance(languageModel: LanguageModel, a: String, id: Int, maxDistance: Int): Int? {
         val length = languageModel.wordLength(id)
         if (abs(a.length - length) > maxDistance) return null
         if (a.length > MAX_LENGTH || length > MAX_LENGTH) return null
-        return editDistance(a, null, id, length, maxDistance)
+        return editDistance(languageModel, a, null, id, length, maxDistance)
     }
 
     private fun editDistance(a: String, b: String, maxDistance: Int): Int? {
         if (abs(a.length - b.length) > maxDistance) return null
         if (a.length > MAX_LENGTH || b.length > MAX_LENGTH) return null
-        return editDistance(a, b, -1, b.length, maxDistance)
+        return editDistance(null, a, b, -1, b.length, maxDistance)
     }
 
-    private fun editDistance(a: String, b: String?, id: Int, bLength: Int, maxDistance: Int): Int? {
-        val languageModel = model
+    // [languageModel] is passed down from the caller that produced [id] rather than re-read from
+    // the field: a language switch between the two reads would look [id] up in a different model.
+    private fun editDistance(languageModel: LanguageModel?, text: String, b: String?, id: Int, bLength: Int, maxDistance: Int): Int? {
         val d = editScratch.get()
-        for (i in 0..a.length) d[i][0] = i
+        val a = charsOf(text)
+        val aLength = text.length
+        val candidate = candidateScratch.get()
+        if (b == null) languageModel!!.copyWord(id, candidate) else b.toCharArray(candidate, 0, 0, minOf(b.length, candidate.size))
+        for (i in 0..aLength) d[i][0] = i
         for (j in 0..bLength) d[0][j] = j
-        for (i in 1..a.length) {
+        for (i in 1..aLength) {
             var rowBest = Int.MAX_VALUE
             val aChar = a[i - 1]
             for (j in 1..bLength) {
-                val bChar = b?.get(j - 1) ?: languageModel!!.charAt(id, j - 1)
+                val bChar = candidate[j - 1]
                 val cost = if (aChar == bChar) 0 else 1
                 var value = minOf(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost)
                 if (i > 1 && j > 1) {
-                    val bPrevious = b?.get(j - 2) ?: languageModel!!.charAt(id, j - 2)
+                    val bPrevious = candidate[j - 2]
                     if (aChar == bPrevious && a[i - 2] == bChar) value = minOf(value, d[i - 2][j - 2] + cost)
                 }
                 d[i][j] = value
@@ -449,29 +568,36 @@ class AutocorrectIndex(
             // A whole row above the bound means no completion can come back under it.
             if (rowBest > maxDistance) return null
         }
-        val result = d[a.length][bLength]
+        val result = d[aLength][bLength]
         return if (result <= maxDistance) result else null
     }
 
     /** `-log P(typed | candidate)` under [ChannelModel] — the same Damerau recurrence, but with
      * real per-edit costs instead of 1 apiece, so which keys were involved actually matters. */
-    private fun channelCost(typed: String, id: Int, taps: TouchTrace.Taps?): Float {
-        val languageModel = model ?: return Float.MAX_VALUE
+    private fun channelCost(languageModel: LanguageModel, typedText: String, id: Int, taps: TouchTrace.Taps?): Float {
         val length = languageModel.wordLength(id)
         val d = costScratch.get()
-        for (i in 0..typed.length) d[i][0] = i * channel.insertion()
-        for (j in 0..length) d[0][j] = j * channel.deletion()
-        for (i in 1..typed.length) {
+        val typed = charsOf(typedText)
+        val typedLength = typedText.length
+        val intended = candidateScratch.get()
+        languageModel.copyWord(id, intended)
+        val channel = channel
+        val insertion = channel.insertion()
+        val deletion = channel.deletion()
+        for (i in 0..typedLength) d[i][0] = i * insertion
+        for (j in 0..length) d[0][j] = j * deletion
+        for (i in 1..typedLength) {
             val typedChar = typed[i - 1]
             for (j in 1..length) {
-                val intendedChar = languageModel.charAt(id, j - 1)
+                val intendedChar = intended[j - 1]
+                val substitution = channel.substitutionAt(typedChar, intendedChar, taps, i - 1)
                 var value = minOf(
-                    d[i - 1][j] + channel.insertion(),
-                    d[i][j - 1] + channel.deletion(),
-                    d[i - 1][j - 1] + channel.substitutionAt(typedChar, intendedChar, taps, i - 1),
+                    d[i - 1][j] + insertion,
+                    d[i][j - 1] + deletion,
+                    d[i - 1][j - 1] + substitution,
                 )
                 if (i > 1 && j > 1) {
-                    val intendedPrevious = languageModel.charAt(id, j - 2)
+                    val intendedPrevious = intended[j - 2]
                     if (typedChar == intendedPrevious && typed[i - 2] == intendedChar) {
                         value = minOf(value, d[i - 2][j - 2] + channel.transposition())
                     }
@@ -479,34 +605,10 @@ class AutocorrectIndex(
                 d[i][j] = value
             }
         }
-        return d[typed.length][length]
+        return d[typedLength][length]
     }
 
     private companion object {
-        const val ALPHABET_SIZE = 26
-
-        /** Single-character prefixes, held rather than built per lookup — [forEachCandidate] runs
-         * on the typing hot path and asks for several of these per keystroke. */
-        val FIRST_LETTERS: Array<String> = Array(ALPHABET_SIZE) { ('a' + it).toString() }
-
-        /** For each letter, the bitmask of letters whose keys physically touch it. Derived from
-         * [KeyboardGeometry] rather than written out by hand, so it stays true to the row stagger
-         * the geometry already models instead of drifting from it. */
-        val ADJACENT_MASK: IntArray = IntArray(ALPHABET_SIZE) { index ->
-            var mask = 0
-            for (other in 0 until ALPHABET_SIZE) {
-                if (other != index && KeyboardGeometry.areAdjacent('a' + index, 'a' + other)) {
-                    mask = mask or (1 shl other)
-                }
-            }
-            mask
-        }
-
-        fun letterIndex(character: Char): Int {
-            val lower = character.lowercaseChar()
-            return if (lower in 'a'..'z') lower - 'a' else -1
-        }
-
         const val MIN_LENGTH = 3
         const val MAX_LENGTH = 24
         const val MIN_SPLIT_WORD_LENGTH = 2
@@ -546,42 +648,5 @@ class AutocorrectIndex(
         /** Fuzzy contraction matching only applies to keys at least this long — a 2-3 letter key
          * fuzzy-matched against arbitrary text collides with unrelated short words too readily. */
         const val MIN_FUZZY_CONTRACTION_LENGTH = 5
-
-        // Comprehensive coverage of standard English contractions whose apostrophe-less spelling
-        // is itself a real word, or which are ambiguous enough that auto-applying would be wrong.
-        val CONTRACTIONS: Map<String, String> = mapOf(
-            // I
-            "im" to "I'm", "ive" to "I've", "id" to "I'd", "ill" to "I'll",
-            // you
-            "youre" to "you're", "youve" to "you've", "youd" to "you'd", "youll" to "you'll",
-            // he / she / it
-            "hes" to "he's", "hed" to "he'd", "hell" to "he'll",
-            "shes" to "she's", "shed" to "she'd", "shell" to "she'll",
-            "its" to "it's", "itd" to "it'd", "itll" to "it'll",
-            // we
-            "were" to "we're", "weve" to "we've", "wed" to "we'd", "well" to "we'll",
-            // they
-            "theyre" to "they're", "theyve" to "they've", "theyd" to "they'd", "theyll" to "they'll",
-            // that / who / what / there / here / where / when / why / how
-            "thats" to "that's", "thatd" to "that'd", "thatll" to "that'll",
-            "whos" to "who's", "whod" to "who'd", "wholl" to "who'll",
-            "whats" to "what's", "whatd" to "what'd", "whatll" to "what'll",
-            "theres" to "there's", "thered" to "there'd", "therell" to "there'll",
-            "heres" to "here's", "wheres" to "where's", "whens" to "when's",
-            "whys" to "why's", "hows" to "how's",
-            // negatives
-            "isnt" to "isn't", "arent" to "aren't", "wasnt" to "wasn't", "werent" to "weren't",
-            "havent" to "haven't", "hasnt" to "hasn't", "hadnt" to "hadn't",
-            "dont" to "don't", "doesnt" to "doesn't", "didnt" to "didn't",
-            "wont" to "won't", "cant" to "can't",
-            "couldnt" to "couldn't", "shouldnt" to "shouldn't", "wouldnt" to "wouldn't",
-            "mightnt" to "mightn't", "mustnt" to "mustn't", "neednt" to "needn't",
-            "shant" to "shan't", "oughtnt" to "oughtn't",
-            // modal + have — routinely typed without the apostrophe and mistyped on top of that
-            "couldve" to "could've", "shouldve" to "should've", "wouldve" to "would've",
-            "mightve" to "might've", "mustve" to "must've",
-            // let's, y'all, ain't, o'clock
-            "lets" to "let's", "yall" to "y'all", "aint" to "ain't", "oclock" to "o'clock",
-        )
     }
 }

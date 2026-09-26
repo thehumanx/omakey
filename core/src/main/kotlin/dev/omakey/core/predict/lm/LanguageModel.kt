@@ -1,7 +1,9 @@
 package dev.omakey.core.predict.lm
 
 import android.content.Context
+import java.io.File
 import java.io.FileInputStream
+import java.io.RandomAccessFile
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.channels.FileChannel
@@ -35,6 +37,13 @@ import java.nio.channels.FileChannel
  * a sort at query time.
  */
 class LanguageModel private constructor(
+    /** Every character the vocabulary uses, sorted by code point. Words are stored as 1-byte
+     * indices into this (format 2, AGENTS.md §66 Phase 3), so character access stays O(1) and
+     * allocation-free for any script, where raw UTF-8 made it ASCII-only. Sorted, so index order
+     * is code-point order and the binary searches below compare real characters. */
+    private val alphabet: CharArray,
+    /** The model's provenance (locale, sources, build date) as JSON, for a licences screen. */
+    val metadataJson: String,
     private val blob: ByteBuffer,
     private val wordOffset: ByteBuffer,
     private val unigramLogP: ByteBuffer,
@@ -56,10 +65,10 @@ class LanguageModel private constructor(
 
     /** Word id for [word], or [NO_WORD] if it isn't in the vocabulary.
      *
-     * Compares UTF-8 bytes directly against the blob rather than decoding candidates into
+     * Compares directly against the stored alphabet indices rather than decoding candidates into
      * `String`s — this runs several times per keystroke, and allocating ~17 throwaway strings per
-     * binary search is exactly the kind of steady garbage an IME cannot afford. Safe because the
-     * vocabulary is ASCII (`a`–`z` plus apostrophe), where byte order and code-point order agree.
+     * binary search is exactly the kind of steady garbage an IME cannot afford. Correct for any
+     * script because the stored order is code-point order (see [alphabet]).
      */
     fun indexOf(word: CharSequence): Int {
         var low = 0
@@ -79,18 +88,39 @@ class LanguageModel private constructor(
     fun wordAt(id: Int): String {
         val start = wordOffset.getInt(id * 4)
         val end = wordOffset.getInt((id + 1) * 4)
-        val bytes = ByteArray(end - start)
-        for (i in bytes.indices) bytes[i] = blob.get(start + i)
-        return String(bytes, Charsets.UTF_8)
+        val chars = CharArray(end - start)
+        for (i in chars.indices) chars[i] = alphabet[blob.get(start + i).toInt() and 0xFF]
+        return String(chars)
     }
 
     fun wordLength(id: Int): Int = wordOffset.getInt((id + 1) * 4) - wordOffset.getInt(id * 4)
 
     /** Character [index] of word [id] without materialising the word. The edit-distance search
      * touches thousands of candidates per keystroke; going through [wordAt] there would allocate a
-     * `String` and a `ByteArray` for every one of them. ASCII-only by construction. */
+     * `String` for every one of them. */
     fun charAt(id: Int, index: Int): Char =
-        (blob.get(wordOffset.getInt(id * 4) + index).toInt() and 0xFF).toChar()
+        alphabet[blob.get(wordOffset.getInt(id * 4) + index).toInt() and 0xFF]
+
+    /** Decodes word [id] into [destination] (from index 0) and returns its length; nothing is
+     * written past the returned length. For the correction DP, which reads each candidate
+     * character several times: one offset lookup per word instead of one per [charAt]. */
+    fun copyWord(id: Int, destination: CharArray): Int {
+        val start = wordOffset.getInt(id * 4)
+        val length = minOf(wordOffset.getInt((id + 1) * 4) - start, destination.size)
+        for (i in 0 until length) destination[i] = alphabet[blob.get(start + i).toInt() and 0xFF]
+        return length
+    }
+
+    // --- alphabet -----------------------------------------------------------------------------
+
+    /** Number of distinct characters in the vocabulary. */
+    val alphabetSize: Int get() = alphabet.size
+
+    /** The [index]th vocabulary character, in code-point order. */
+    fun alphabetChar(index: Int): Char = alphabet[index]
+
+    /** Position of [c] in the alphabet, or -1 if no vocabulary word contains it. */
+    fun alphabetIndexOf(c: Char): Int = alphabet.binarySearch(c).let { if (it >= 0) it else -1 }
 
     /** The contiguous id range whose words begin with [prefix] — empty if none do. The vocabulary
      * being lexicographically sorted is precisely what makes prefix completion two binary searches
@@ -112,7 +142,7 @@ class LanguageModel private constructor(
         val start = wordOffset.getInt(id * 4)
         if (wordLength(id) < prefix.length) return false
         for (i in prefix.indices) {
-            if ((blob.get(start + i).toInt() and 0xFF) != prefix[i].code) return false
+            if (alphabet[blob.get(start + i).toInt() and 0xFF] != prefix[i]) return false
         }
         return true
     }
@@ -120,7 +150,12 @@ class LanguageModel private constructor(
     // --- probabilities ------------------------------------------------------------------------
 
     fun unigramLogProbability(id: Int): Float =
-        if (id == NO_WORD) UNKNOWN_LOG_PROBABILITY else unigramLogP.getShort(id * 2) / LOGP_SCALE
+        if (!isValid(id)) UNKNOWN_LOG_PROBABILITY else unigramLogP.getShort(id * 2) / LOGP_SCALE
+
+    /** Whether [id] is a word of *this* model. Word ids are computed in one call and used in the
+     * next (context ids especially), and a language switch in between would otherwise hand another
+     * model's ids to this one and read out of bounds. Treated as unknown instead. */
+    private fun isValid(id: Int): Boolean = id in 0 until vocabularySize
 
     /**
      * `log P(word | beforePrevious, previous)` under stupid backoff: use the trigram if the
@@ -133,7 +168,7 @@ class LanguageModel private constructor(
      * treated as one.
      */
     fun logProbability(id: Int, previousId: Int = NO_WORD, beforePreviousId: Int = NO_WORD): Float {
-        if (id == NO_WORD) return UNKNOWN_LOG_PROBABILITY
+        if (!isValid(id)) return UNKNOWN_LOG_PROBABILITY
 
         if (previousId != NO_WORD && beforePreviousId != NO_WORD) {
             val row = trigramRow(beforePreviousId, previousId)
@@ -157,7 +192,7 @@ class LanguageModel private constructor(
     /** Indices into [bigramWordId]/[bigramLogProbability] for continuations of [previousId], in
      * descending probability order. */
     fun bigramRow(previousId: Int): IntRange {
-        if (previousId == NO_WORD) return IntRange.EMPTY
+        if (!isValid(previousId)) return IntRange.EMPTY
         return bigramStart.getInt(previousId * 4) until bigramStart.getInt((previousId + 1) * 4)
     }
 
@@ -168,7 +203,7 @@ class LanguageModel private constructor(
     /** Indices into [trigramWordId]/[trigramLogProbability] for continuations of the context
      * `(firstId, secondId)`, in descending probability order; empty when the context is unseen. */
     fun trigramRow(firstId: Int, secondId: Int): IntRange {
-        if (firstId == NO_WORD || secondId == NO_WORD) return IntRange.EMPTY
+        if (!isValid(firstId) || !isValid(secondId)) return IntRange.EMPTY
         var low = 0
         var high = trigramContextCount - 1
         while (low <= high) {
@@ -206,7 +241,7 @@ class LanguageModel private constructor(
         val length = wordOffset.getInt((id + 1) * 4) - start
         val shared = minOf(word.length, length)
         for (i in 0 until shared) {
-            val difference = word[i].code - (blob.get(start + i).toInt() and 0xFF)
+            val difference = word[i].code - alphabet[blob.get(start + i).toInt() and 0xFF].code
             if (difference != 0) return difference
         }
         return word.length - length
@@ -236,10 +271,17 @@ class LanguageModel private constructor(
         private const val LOGP_SCALE = 1000f
         private const val HEADER_BYTES = 64
         private val MAGIC = byteArrayOf('O'.code.toByte(), 'M'.code.toByte(), 'L'.code.toByte(), 'M'.code.toByte())
-        private const val FORMAT_VERSION = 1
+        private const val FORMAT_VERSION = 2
 
         fun load(context: Context, assetName: String = "lm_en_us.bin"): LanguageModel =
             from(mapAsset(context, assetName))
+
+        /** Maps a model stored as a plain file — a downloaded language pack (AGENTS.md §66 Phase 7).
+         * Same zero-copy mapping as the asset path, without the compression caveat. */
+        fun load(file: File): LanguageModel =
+            RandomAccessFile(file, "r").use { raf ->
+                from(raf.channel.map(FileChannel.MapMode.READ_ONLY, 0, raf.length()))
+            }
 
         /**
          * Maps the asset without copying it onto the heap. Requires the asset to be stored
@@ -276,6 +318,8 @@ class LanguageModel private constructor(
             val trigramContextCount = buffer.getInt(20)
             val trigramCount = buffer.getInt(24)
             val topUnigramCount = buffer.getInt(28)
+            val alphabetSize = buffer.getInt(32)
+            val metadataBytes = buffer.getInt(36)
 
             var offset = HEADER_BYTES
             fun section(bytes: Int): ByteBuffer {
@@ -287,7 +331,13 @@ class LanguageModel private constructor(
                 return slice.slice().order(ByteOrder.LITTLE_ENDIAN)
             }
 
+            val alphabetSection = section(alphabetSize * 2)
+            val alphabet = CharArray(alphabetSize) { alphabetSection.getChar(it * 2) }
+            val metadataSection = section(metadataBytes)
+            val metadata = ByteArray(metadataBytes).also { metadataSection.get(it) }
             return LanguageModel(
+                alphabet = alphabet,
+                metadataJson = String(metadata, Charsets.UTF_8),
                 blob = section(blobBytes),
                 wordOffset = section((vocabularySize + 1) * 4),
                 unigramLogP = section(vocabularySize * 2),

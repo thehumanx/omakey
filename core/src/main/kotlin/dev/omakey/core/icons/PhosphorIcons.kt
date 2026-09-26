@@ -12,14 +12,18 @@ import androidx.compose.ui.unit.dp
  * project only needs a handful. [Icon]'s `tint` fully recolors these via `ColorFilter` regardless
  * of the placeholder fill color baked into the path data below, so the actual color doesn't
  * matter — it exists only so the path renders as solid/opaque geometry. */
-private fun pathIcon(pathData: String): ImageVector {
+private fun pathIcon(pathData: String, evenOdd: Boolean = false): ImageVector {
     val nodes = PathParser().parsePathString(pathData).toNodes()
     return ImageVector.Builder(
         defaultWidth = 24.dp,
         defaultHeight = 24.dp,
         viewportWidth = 256f,
         viewportHeight = 256f,
-    ).addPath(pathData = nodes, fill = SolidColor(androidx.compose.ui.graphics.Color.Black)).build()
+    ).addPath(
+        pathData = nodes,
+        fill = SolidColor(androidx.compose.ui.graphics.Color.Black),
+        pathFillType = if (evenOdd) androidx.compose.ui.graphics.PathFillType.EvenOdd else androidx.compose.ui.graphics.PathFillType.NonZero,
+    ).build()
 }
 
 /** `arrow-fat-up-fill` — one-shot shift (capitalizes just the next letter). */
@@ -48,6 +52,13 @@ val PhosphorBackspace: ImageVector by lazy {
 val PhosphorEnter: ImageVector by lazy {
     pathIcon(
         "M216,40H40A16,16,0,0,0,24,56V200a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A16,16,0,0,0,216,40Zm-32,96a8,8,0,0,1-8,8H99.31l10.35,10.34a8,8,0,0,1-11.32,11.32l-24-24a8,8,0,0,1,0-11.32l24-24a8,8,0,0,1,11.32,11.32L99.31,128H168V104a8,8,0,0,1,16,0Z",
+    )
+}
+
+/** `globe-simple-fill` — the language key and the language picker's tiles. */
+val PhosphorGlobe: ImageVector by lazy {
+    pathIcon(
+        "M128,24h0A104,104,0,1,0,232,128,104.12,104.12,0,0,0,128,24Zm87.62,96H175.79C174,83.49,159.94,57.67,148.41,42.4A88.19,88.19,0,0,1,215.63,120ZM96.23,136h63.54c-2.31,41.61-22.23,67.11-31.77,77C118.45,203.1,98.54,177.6,96.23,136Zm0-16C98.54,78.39,118.46,52.89,128,43c9.55,9.93,29.46,35.43,31.77,77Zm52.18,93.6c11.53-15.27,25.56-41.09,27.38-77.6h39.84A88.19,88.19,0,0,1,148.41,213.6Z",
     )
 }
 
@@ -203,5 +214,39 @@ val PhosphorPalette: ImageVector by lazy {
 val PhosphorSwitchSide: ImageVector by lazy {
     pathIcon(
         "M48,40V216a8,8,0,0,1-16,0V40a8,8,0,0,1,16,0Zm176,80H152V56a8,8,0,0,0-13.66-5.66l-72,72a8,8,0,0,0,0,11.32l72,72A8,8,0,0,0,152,200V136h72a8,8,0,0,0,0-16Z",
+    )
+}
+
+/* The three below are drawn by hand in the same 256-unit grid and fill style, not taken from
+ * Phosphor: shapes simple enough that authoring them was quicker than sourcing path data. Even-odd
+ * fill, so the inner shapes (eyes, keys) are cut out of the outer one. */
+
+/** Four squares — quick-access "Grid layout". */
+val PhosphorGrid: ImageVector by lazy {
+    pathIcon(
+        "M40,40h72v72h-72z M144,40h72v72h-72z M40,144h72v72h-72z M144,144h72v72h-72z",
+    )
+}
+
+/** A keyboard — the language panel's layout tiles. */
+val PhosphorKeyboard: ImageVector by lazy {
+    pathIcon(
+        "M40,56H216a16,16,0,0,1,16,16V184a16,16,0,0,1-16,16H40a16,16,0,0,1-16-16V72A16,16,0,0,1,40,56Z" +
+            " M56,84h24v24h-24z M96,84h24v24h-24z M136,84h24v24h-24z M176,84h24v24h-24z" +
+            " M56,120h24v24h-24z M96,120h24v24h-24z M136,120h24v24h-24z M176,120h24v24h-24z" +
+            " M80,158h96v18h-96z",
+        evenOdd = true,
+    )
+}
+
+/** A smiling face — the emoji key and emoji button, drawn as an icon so it takes the key colour
+ * like every other control key instead of rendering as a full-colour emoji glyph. */
+val PhosphorSmiley: ImageVector by lazy {
+    pathIcon(
+        "M24,128A104,104,0,0,1,232,128A104,104,0,0,1,24,128Z" +
+            " M80,108a12,12,0,0,0,24,0a12,12,0,0,0,-24,0Z" +
+            " M152,108a12,12,0,0,0,24,0a12,12,0,0,0,-24,0Z" +
+            " M76,148A56,56,0,0,0,180,148H164A40,40,0,0,1,92,148Z",
+        evenOdd = true,
     )
 }

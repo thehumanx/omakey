@@ -314,6 +314,18 @@ internal fun TapPreviewToggle(settings: LayoutSettings, layoutPreferences: Layou
  * reason — on a phone with no side bezel the outer keys sit where the glass curves away, which is
  * exactly where a thumb slides off. */
 @Composable
+internal fun SwapEmojiLanguageToggle(settings: LayoutSettings, layoutPreferences: LayoutPreferences) {
+    SettingToggle(
+        title = "Swap emoji and language buttons",
+        description = "Normally the language button sits at the right of the suggestion bar and " +
+            "the emoji key next to the spacebar. Turn on to put the emoji button up top and the " +
+            "language key by the spacebar. Only applies with two or more languages.",
+        checked = settings.swapEmojiAndLanguage,
+        onCheckedChange = layoutPreferences::setSwapEmojiAndLanguage,
+    )
+}
+
+@Composable
 internal fun EdgePaddingToggle(settings: LayoutSettings, layoutPreferences: LayoutPreferences) {
     SettingToggle(
         title = "Add padding",

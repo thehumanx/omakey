@@ -181,7 +181,7 @@ internal fun KeyboardSizePositionOverlay(
                                 theme = theme,
                                 accessibleMode = false,
                                 showKeyBackgrounds = settings.showKeyBackgrounds,
-                                isHomeRow = settings.showMiddleRowStripe && index == 1,
+                                isHomeRow = settings.showMiddleRowStripe && index == KeyboardLocale.Default.letterLayout.homeRow,
                                 onKeyTap = {},
                                 ancestorCoordinates = noOpAncestor,
                                 onBoundsMeasured = {},
@@ -452,18 +452,28 @@ internal fun LearnedWordsOverlay(wordDao: WordDao, onClose: () -> Unit) {
                 modifier = Modifier.fillMaxWidth().weight(1f),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                items(words, key = { it.word }) { entry ->
+                // Keyed by language *and* word: the same spelling can be learned in two languages,
+                // and a duplicate LazyColumn key throws.
+                val showLanguage = words.distinctBy { it.locale }.size > 1
+                items(words, key = { "${it.locale}/${it.word}" }) { entry ->
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
                         Text(text = entry.word, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                        if (showLanguage) {
+                            Text(
+                                text = entry.locale.substringBefore('_'),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                         TextButton(onClick = { wordBeingEdited = entry }) { Text(text = "Edit") }
                         TextButton(
                             onClick = {
                                 scope.launch {
-                                    wordDao.delete(entry.word)
+                                    wordDao.delete(entry.locale, entry.word)
                                     reload()
                                 }
                             },
@@ -515,7 +525,7 @@ internal fun LearnedWordsOverlay(wordDao: WordDao, onClose: () -> Unit) {
                         wordBeingEdited = null
                         if (newWord.isNotEmpty() && newWord != entry.word) {
                             scope.launch {
-                                wordDao.rename(entry.word, newWord)
+                                wordDao.rename(entry.locale, entry.word, newWord)
                                 reload()
                             }
                         }
