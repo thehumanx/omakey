@@ -10,6 +10,12 @@ Fast. Gesture-driven. Fully offline. Nothing you type ever leaves your phone.
 
 [![Latest release](https://img.shields.io/github/v/release/thehumanx/omakey?label=latest%20release)](https://github.com/thehumanx/omakey/releases/latest)
 [![Download APK](https://img.shields.io/badge/download-latest%20APK-blue)](https://github.com/thehumanx/omakey/releases/latest)
+[![Total downloads](https://img.shields.io/github/downloads/thehumanx/omakey/total?label=downloads)](https://github.com/thehumanx/omakey/releases)
+
+[![GitHub stars](https://img.shields.io/github/stars/thehumanx/omakey?style=flat&label=stars)](https://github.com/thehumanx/omakey/stargazers)
+[![Last commit](https://img.shields.io/github/last-commit/thehumanx/omakey?label=last%20commit)](https://github.com/thehumanx/omakey/commits/main)
+[![Android 8.0+](https://img.shields.io/badge/Android-8.0%2B-3DDC84?logo=android&logoColor=white)](#getting-started)
+[![License: GPL-3.0](https://img.shields.io/github/license/thehumanx/omakey?label=license)](LICENSE)
 
 </div>
 
