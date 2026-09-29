@@ -10,6 +10,14 @@ Fast. Gesture-driven. Fully offline. Nothing you type ever leaves your phone.
 
 [![Latest release](https://img.shields.io/github/v/release/thehumanx/omakey?label=latest%20release)](https://github.com/thehumanx/omakey/releases/latest)
 [![Download APK](https://img.shields.io/badge/download-latest%20APK-blue)](https://github.com/thehumanx/omakey/releases/latest)
+[![Total downloads](https://img.shields.io/github/downloads/thehumanx/omakey/total?label=downloads)](https://github.com/thehumanx/omakey/releases)
+
+[![GitHub stars](https://img.shields.io/github/stars/thehumanx/omakey?style=flat&label=stars)](https://github.com/thehumanx/omakey/stargazers)
+[![Last commit](https://img.shields.io/github/last-commit/thehumanx/omakey?label=last%20commit)](https://github.com/thehumanx/omakey/commits/main)
+[![Android 8.0+](https://img.shields.io/badge/Android-8.0%2B-3DDC84?logo=android&logoColor=white)](#getting-started)
+[![Languages: EN, ES, FR, PT-BR, NE](https://img.shields.io/badge/languages-EN%20%C2%B7%20ES%20%C2%B7%20FR%20%C2%B7%20PT--BR%20%C2%B7%20NE-informational)](#more-than-one-language)
+[![APK size: 15 MB](https://img.shields.io/badge/APK%20size-15%20MB-lightgrey)](https://github.com/thehumanx/omakey/releases/latest)
+[![License: GPL-3.0](https://img.shields.io/github/license/thehumanx/omakey?label=license)](LICENSE)
 
 </div>
 
