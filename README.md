@@ -6,7 +6,7 @@
 
 **The keyboard for people who type like they mean it.**
 
-Fast. Gesture-driven. Fully offline. Nothing you type ever leaves your phone.
+Fast. Gesture-driven. Nothing you type ever leaves your phone.
 
 [![Latest release](https://img.shields.io/github/v/release/thehumanx/omakey?label=latest%20release)](https://github.com/thehumanx/omakey/releases/latest)
 [![Download APK](https://img.shields.io/badge/download-latest%20APK-blue)](https://github.com/thehumanx/omakey/releases/latest)
