@@ -15,7 +15,7 @@ Fast. Gesture-driven. Nothing you type ever leaves your phone.
 [![GitHub stars](https://img.shields.io/github/stars/thehumanx/omakey?style=flat&label=stars)](https://github.com/thehumanx/omakey/stargazers)
 [![Last commit](https://img.shields.io/github/last-commit/thehumanx/omakey?label=last%20commit)](https://github.com/thehumanx/omakey/commits/main)
 [![Android 8.0+](https://img.shields.io/badge/Android-8.0%2B-3DDC84?logo=android&logoColor=white)](#getting-started)
-[![Languages: EN, ES, FR, PT-BR, NE](https://img.shields.io/badge/languages-EN%20%C2%B7%20ES%20%C2%B7%20FR%20%C2%B7%20PT--BR%20%C2%B7%20NE-informational)](#more-than-one-language)
+[![Languages: EN, ES, FR, PT-BR, IT, RU, NE](https://img.shields.io/badge/languages-EN%20%C2%B7%20ES%20%C2%B7%20FR%20%C2%B7%20PT--BR%20%C2%B7%20IT%20%C2%B7%20RU%20%C2%B7%20NE-informational)](#more-than-one-language)
 [![APK size: 15 MB](https://img.shields.io/badge/APK%20size-15%20MB-lightgrey)](https://github.com/thehumanx/omakey/releases/latest)
 [![License: GPL-3.0](https://img.shields.io/github/license/thehumanx/omakey?label=license)](LICENSE)
 
