@@ -1,5 +1,6 @@
 package dev.omakey.core.input
 
+
 /**
  * One word being typed in Latin letters and shown in another script (AGENTS.md §66 Phase 9).
  *
@@ -26,9 +27,10 @@ class TransliterationSession(private val editor: TextEditor) {
 
     val isComposing: Boolean get() = latin.isNotEmpty()
 
-    /** What the strip offers: candidates, then the Latin as typed if it isn't one of them. */
+    /** What the strip offers: candidates in the typing's case ("Privet" → "Привет"; a no-op for a
+     * caseless script), then the Latin as typed if it isn't one of them. */
     val strip: List<String>
-        get() = if (latin.isEmpty()) emptyList() else (candidates + typed).distinct()
+        get() = if (latin.isEmpty()) emptyList() else (candidates.map(::inTypedCase) + typed).distinct()
 
     /** Appends [letters] and recomputes candidates with [candidatesFor]. */
     fun type(letters: String, candidatesFor: (String) -> List<String>) {
@@ -88,8 +90,19 @@ class TransliterationSession(private val editor: TextEditor) {
         selected = 0
     }
 
+    /** [candidate] capitalised like the typing. One capital letter is a capitalised word, not an
+     * all-caps one: it is what a word's first keystroke after Shift looks like. */
+    private fun inTypedCase(candidate: String): String {
+        val typed = latin
+        return when {
+            typed.length > 1 && typed.all { it.isUpperCase() } -> candidate.uppercase()
+            typed.isNotEmpty() && typed[0].isUpperCase() -> candidate.replaceFirstChar { it.uppercaseChar() }
+            else -> candidate
+        }
+    }
+
     private fun refresh(candidatesFor: (String) -> List<String>) {
-        candidates = candidatesFor(typed)
+        candidates = candidatesFor(typed.lowercase())
         selected = 0
         strip.firstOrNull()?.let(editor::setComposing)
     }

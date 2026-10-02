@@ -56,6 +56,14 @@ class Lang:
     sources: list[dict]
     #: Whether words may contain an internal apostrophe ("aujourd'hui").
     apostrophes: bool = False
+    #: Whether a word may also *end* in one — Italian truncation ("po'", "va'"). Needs [apostrophes].
+    trailing_apostrophe: bool = False
+    #: Combining marks treated as accents by the accent-typo rule in `build` (None = all of them).
+    #: Russian narrows this to the diaeresis: ё/е is the optional-accent pair, but й is a letter of
+    #: its own, not и with a breve, and "мой"/"мои" are different words.
+    accent_marks: frozenset[str] | None = None
+    #: Elided forms to record in `tokenizer_cases.txt` for `CliticTokenizerTest`.
+    clitic_cases: tuple[str, ...] = ()
     #: Elided forms split off as their own token ("l'homme" → "l'", "homme"), identically to the
     #: keyboard's runtime tokeniser (see `LanguageProfile` / the French pack's profile).
     clitics: tuple[str, ...] = ()
@@ -68,7 +76,8 @@ class Lang:
 
     def __post_init__(self):
         body = f"[{re.escape(self.letters)}]+"
-        self.word_re = re.compile(f"^{body}(?:'{body})*$" if self.apostrophes else f"^{body}$")
+        tail = "'?" if self.trailing_apostrophe else ""
+        self.word_re = re.compile(f"^{body}(?:'{body})*{tail}$" if self.apostrophes else f"^{body}$")
 
     def accept(self, word: str) -> bool:
         return bool(word) and len(word) <= build_lm.MAX_WORD_LEN and (word in self.clitics or bool(self.word_re.match(word)))
@@ -88,9 +97,12 @@ class Lang:
         return out
 
 
-def strip_accents(word: str) -> str:
-    """[word] with combining marks removed ("también" → "tambien", "niño" → "nino")."""
-    return "".join(c for c in unicodedata.normalize("NFD", word) if not unicodedata.combining(c))
+def strip_accents(word: str, marks: frozenset[str] | None = None) -> str:
+    """[word] with combining marks removed ("también" → "tambien", "niño" → "nino"), NFC again
+    afterwards; with [marks], only those marks."""
+    kept = (c for c in unicodedata.normalize("NFD", word)
+            if not (unicodedata.combining(c) and (marks is None or c in marks)))
+    return unicodedata.normalize("NFC", "".join(kept))
 
 
 def read_frequency_list(path: Path, lang: Lang, verbose: bool) -> Counter:
@@ -222,8 +234,13 @@ def build(lang: Lang, cache: Path, verbose: bool):
     # construction — and admitting it would make exactly that typo uncorrectable, since autocorrect
     # never touches a word it believes is real. Legitimate pairs ("esta"/"está") survive, because
     # both halves are in the dictionary.
-    stripped_dictionary = {strip_accents(w) for w in dictionary if strip_accents(w) != w}
-    accent_typos = {w for w in attested - dictionary if w in stripped_dictionary}
+    # Generalised for Italian (2026-10-02): a wrong accent ("perchè" for "perché") is the same typo
+    # as a missing one, so the test is "same letters as a dictionary word once accents are
+    # removed", not just "is the accentless form".
+    def strip(w: str) -> str:
+        return strip_accents(w, lang.accent_marks)
+    stripped_dictionary = {strip(w) for w in dictionary}
+    accent_typos = {w for w in attested - dictionary if strip(w) in stripped_dictionary}
     attested -= accent_typos
     # Same reasoning for a missing space ("porfavor"): the two halves are dictionary words that the
     # same corpus writes apart far more often than together.
@@ -356,6 +373,36 @@ def portuguese_probes(model: dict) -> None:
         raise ValidationError("unigram probabilities are not frequency-ordered")
 
 
+def italian_probes(model: dict) -> None:
+    common_checks(
+        model,
+        contexts=["di", "che", "non", "il", "la"],
+        required=["che", "di", "non", "è", "perché", "più", "già", "città", "può", "anche", "ciao", "grazie",
+                  "sono", "l'", "un'", "c'", "dell'", "all'", "po'", "così", "università"],
+        # Accentless and wrong-accent forms people type — must be absent, or restoration can't fire.
+        # Not "cosi": it is a real word (plural of "coso"), so "così" can only be offered.
+        misspellings=["perche", "perchè", "piu", "gia", "citta", "puo", "universita"],
+    )
+    expect_top(model, "c'", "è", 3)
+    expect_top(model, "per", "favore", 5)
+    if model["unigram"]["di"] <= model["unigram"]["università"]:
+        raise ValidationError("unigram probabilities are not frequency-ordered")
+
+
+def russian_probes(model: dict) -> None:
+    common_checks(
+        model,
+        contexts=["я", "не", "что", "это", "в"],
+        required=["я", "ты", "он", "не", "что", "это", "привет", "спасибо", "пожалуйста", "хорошо",
+                  "здравствуйте", "сегодня", "ещё", "еще", "всё", "все", "мой", "мои", "надо"],
+        misspellings=["превет", "спосибо", "харашо", "пожалуйсто", "здраствуйте", "севодня"],
+    )
+    expect_top(model, "доброе", "утро", 3)
+    expect_top(model, "добрый", "день", 5)
+    if model["unigram"]["не"] <= model["unigram"]["здравствуйте"]:
+        raise ValidationError("unigram probabilities are not frequency-ordered")
+
+
 #: Every Devanagari letter, vowel sign, virama and nasal sign Nepali uses (U+0900–0963, U+0971–097F),
 #: plus ZWNJ/ZWJ, which control conjunct rendering inside a word. Not digits, not the danda.
 DEVANAGARI = "".join(chr(c) for c in list(range(0x0900, 0x0964)) + list(range(0x0971, 0x0980))) + "‌‍"
@@ -428,6 +475,8 @@ LANGS = {
         letters="abcdefghijklmnopqrstuvwxyzàâæçéèêëîïôœùûüÿ",
         apostrophes=True,
         clitics=("jusqu'", "lorsqu'", "puisqu'", "quoiqu'", "qu'", "l'", "d'", "j'", "n'", "s'", "c'", "m'", "t'"),
+        clitic_cases=("l'homme", "L'Homme", "qu'il", "jusqu'à", "lorsqu'on", "c'est", "j'ai", "d'accord",
+                      "aujourd'hui", "presqu'île", "l’amour", "s'il", "n'est", "m'appelle", "t'aime", "l'", "maison"),
         tatoeba="https://downloads.tatoeba.org/exports/per_language/fra/fra_sentences.tsv.bz2",
         hunspell=(
             "https://raw.githubusercontent.com/wooorm/dictionaries/main/dictionaries/fr/index.dic",
@@ -440,6 +489,54 @@ LANGS = {
             {"name": "Grammalecte French dictionary (via wooorm/dictionaries)", "url": "https://grammalecte.net",
              "license": "MPL-2.0"},
             {"name": "FrequencyWords fr (OpenSubtitles 2018)", "url": "https://github.com/hermitdave/FrequencyWords",
+             "license": "CC BY-SA 3.0"},
+        ],
+    ),
+    "it_IT": Lang(
+        code="it_IT",
+        name="Italian",
+        letters="abcdefghijklmnopqrstuvwxyzàèéìíîòóùú",
+        apostrophes=True,
+        trailing_apostrophe=True,
+        # Longest first, as the keyboard's runtime split does (`LanguageProfile.splitClitic`).
+        clitics=("quell'", "quest'", "nessun'", "dell'", "dall'", "nell'", "sull'", "coll'", "anch'", "tutt'",
+                 "all'", "dov'", "com'", "cos'", "un'", "l'", "d'", "c'", "m'", "t'", "s'", "v'"),
+        clitic_cases=("l'uomo", "L'Uomo", "c'è", "dell'anno", "all'improvviso", "un'altra", "dov'è",
+                      "anch'io", "quell'anno", "l’amica", "d'accordo", "po'", "l'", "casa"),
+        tatoeba="https://downloads.tatoeba.org/exports/per_language/ita/ita_sentences.tsv.bz2",
+        hunspell=(
+            "https://raw.githubusercontent.com/wooorm/dictionaries/main/dictionaries/it/index.dic",
+            "https://raw.githubusercontent.com/wooorm/dictionaries/main/dictionaries/it/index.aff",
+        ),
+        frequency_list="https://raw.githubusercontent.com/hermitdave/FrequencyWords/master/content/2018/it/it_full.txt",
+        probes=italian_probes,
+        sources=[
+            {"name": "Tatoeba Italian sentences", "url": "https://tatoeba.org", "license": "CC BY 2.0 FR"},
+            {"name": "Italian Writing Aids dictionary (LibreOffice, via wooorm/dictionaries)",
+             "url": "https://github.com/wooorm/dictionaries", "license": "GPL-3.0"},
+            {"name": "FrequencyWords it (OpenSubtitles 2018)", "url": "https://github.com/hermitdave/FrequencyWords",
+             "license": "CC BY-SA 3.0"},
+        ],
+    ),
+    "ru_RU": Lang(
+        code="ru_RU",
+        name="Russian",
+        letters="абвгдеёжзийклмнопрстуфхцчшщъыьэюя",
+        accent_marks=frozenset("\u0308"),
+        # Russian inflects heavily: a 150k list leaves out forms people type every day.
+        vocab=200_000,
+        tatoeba="https://downloads.tatoeba.org/exports/per_language/rus/rus_sentences.tsv.bz2",
+        hunspell=(
+            "https://raw.githubusercontent.com/wooorm/dictionaries/main/dictionaries/ru/index.dic",
+            "https://raw.githubusercontent.com/wooorm/dictionaries/main/dictionaries/ru/index.aff",
+        ),
+        frequency_list="https://raw.githubusercontent.com/hermitdave/FrequencyWords/master/content/2018/ru/ru_full.txt",
+        probes=russian_probes,
+        sources=[
+            {"name": "Tatoeba Russian sentences", "url": "https://tatoeba.org", "license": "CC BY 2.0 FR"},
+            {"name": "Russian spelling dictionary, Alexander I. Lebedev (via wooorm/dictionaries)",
+             "url": "https://github.com/wooorm/dictionaries", "license": "BSD-style (see source)"},
+            {"name": "FrequencyWords ru (OpenSubtitles 2018)", "url": "https://github.com/hermitdave/FrequencyWords",
              "license": "CC BY-SA 3.0"},
         ],
     ),
@@ -476,8 +573,7 @@ def main() -> int:
     if lang.clitics:
         # How this builder tokenises elided forms, for CliticTokenizerTest to hold the keyboard's
         # runtime split to. One case per line: the raw word, a tab, its tokens space-separated.
-        cases = ["l'homme", "L'Homme", "qu'il", "jusqu'à", "lorsqu'on", "c'est", "j'ai", "d'accord",
-                 "aujourd'hui", "presqu'île", "l’amour", "s'il", "n'est", "m'appelle", "t'aime", "l'", "maison"]
+        cases = lang.clitic_cases
         (eval_dir / "tokenizer_cases.txt").write_text(
             "\n".join(f"{case}\t{' '.join(lang.tokens(case))}" for case in cases) + "\n", encoding="utf-8")
     print(f"wrote {args.out} ({len(payload) / 1e6:.1f} MB, {len(model['vocabulary']):,} words) and {eval_dir}/sentences.txt")

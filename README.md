@@ -39,7 +39,7 @@ ever leaves your phone.
 
 ## App Updates / Plans and PSA
 - I've publicly shared this keyboard only on Reddit threads (besides my website) and few kind volunteers have tried and provided feedback on fixes/improvements and features. 
-- Languages beyond English arrived in 5.0.0: Spanish, French, Brazilian Portuguese and Nepali, each a small optional download. More to follow.
+- Languages beyond English arrived in 5.0.0: Spanish, French, Brazilian Portuguese and Nepali, each a small optional download. 5.1.0 adds Italian and Russian. More to come.
 - I am prioritizing more on optimizing the UX and autocorrection/prediction engine as its being written from the scratch.
 - The keyboard is optimized for battery usage as well. Fleksy used to take around 5-10%, while this takes just around 1%.
 - Note: Not tested for old hardwares, if you do, please test and lmk feedback.
@@ -63,7 +63,7 @@ ever leaves your phone.
 - Gestures like on Fleksy — swipe left deletes a whole word (Swipe left and hold keeps deleting the words), swipe up saves it to your dictionary, swipe up/down to switch between the suggestions/corrections, hold and drag the spacebar to move the cursor, swipe right for space (off by default).
 - An editable "Learned words" list — view, search, edit, or delete anything individually, not
   just wipe the whole dictionary (Note: the app is set to suggest your autolearned word after 3 enters).
-- A theme editor with a live full-size preview and a proper HSV/hex color picker.
+- A theme editor that builds a whole matching, readable theme from one background colour, with a live, tappable preview and a proper HSV/hex color picker.
 - Adjustable height and position for your keyboard (the position caps to center of the screen).
 
 
@@ -78,7 +78,7 @@ ever leaves your phone.
 - **Not a glide/swipe-to-type keyboard.** The gestures here are shortcuts for actions — delete a
   word, insert a space, cycle a suggestion — not tracing letters across the layout. You still tap
   out each word. Every gesture omakey has is documented below.
-- **Not every language.** English is built in; Spanish, French, Brazilian Portuguese and Nepali are optional downloads.
+- **Not every language.** English is built in; Spanish, French, Brazilian Portuguese, Italian, Russian and Nepali are optional downloads.
   More will follow, one at a time, each tested before it ships.
 - **Not on the Play Store yet.** Sideload it or build it from source — see [Getting
   started](#getting-started) below.
@@ -161,6 +161,11 @@ only carry the ones you use. Settings → Languages → "Get more languages" lis
   Devanagari appears as you go; tap a different choice in the strip if the first isn't right, or
   keep the English spelling for English words. There's also a proper Devanagari keyboard if you'd
   rather type the script directly.
+- **Italian** — accents put back for you ("perche" becomes "perché", and the wrong-way "perchè"
+  too), with an apostrophe key for "l'", "c'è" and "un'altra", which are understood as two words.
+- **Russian** — three keyboards: the standard ЙЦУКЕН, a phonetic one with each letter where the
+  English letter that sounds like it sits (я on Q, в on W), and a translit one: type "privet" in
+  English letters and get "привет", whichever way you spell it ("horosho" or "khorosho").
 
 With more than one language turned on, a globe button appears at the right of the suggestion bar:
 tap it to step through every language and layout, hold it to pick one. The spacebar quietly shows
@@ -238,14 +243,17 @@ Swipe to the Tools tab for:
 - One colour rule everywhere: whatever you're pressing fills with the theme's tap colour, and
   whatever is switched on — caps lock, Shift, an open panel, the selected tile — takes its accent.
 - A live keyboard preview in Settings that reflects your theme, layout style, font, key
-  backgrounds, home-row highlight and capitalization as you change them.
+  backgrounds, home-row highlight and capitalization as you change them — and responds to touch,
+  so you can see the tap colour, and the accent on Shift and caps lock.
 - **Grid layout mode**, independent of whichever color theme you're on — bordered, edge-to-edge
   cells with no gaps, a pressed key filling solid instead of just dimming. Border color and
   thickness (Small/Medium/Large) are both yours to set.
-- A full custom theme builder — background, key, tap, accent, spacebar, home-row and grid border
-  colours, with an HSV picker, a hex field you can type into or copy from, and a
-  live, full-size keyboard preview the whole time you're editing. Custom themes remember which
-  layout they were built for, so you're only ever shown ones that actually fit.
+- A full custom theme builder. Pick a background and the rest — keys, tap, accent, spacebar,
+  home-row and grid border — is chosen to match it, light or dark, and kept readable. Change any of
+  them on top, or reset one back to automatic. An HSV picker, a hex field you can type into or copy
+  from, and a live, full-size keyboard preview the whole time you're editing; leaving with unsaved
+  changes asks first. Custom themes remember which layout they were built for, so you're only ever
+  shown ones that actually fit.
 - Adjustable key font — System, Poppins, Figtree, Solway or Aleo.
 - A home-row highlight, so you can find your place by feel without looking down.
 - A consistent icon set for Shift, Backspace, and every Enter state.
@@ -293,11 +301,11 @@ Neither sends anything you type, or any other data about you.
 
 ## Status
 
-omakey is on release 5.0.0, the languages release: Spanish, French, Brazilian Portuguese and
-Nepali as optional downloads, with a globe button to switch between them and their layouts. It also
-reorganises the strip above the keys, splits Settings into pages, gives every theme a proper accent
-colour, and makes the floating keyboard follow your finger. 4.1.0 before it fixed floating mode and
-stopped clipboard history from saving passwords.
+omakey is on release 5.1.0, which adds Italian and Russian (with ЙЦУКЕН, phonetic and translit
+keyboards) and a theme builder that works out a whole matching theme from one background colour.
+5.0.0 before it was the languages release: Spanish, French, Brazilian Portuguese and Nepali as
+optional downloads, with a globe button to switch between them and their layouts, a reorganised
+strip above the keys, Settings split into pages, and a floating keyboard that follows your finger.
 
 Typing, gestures, autocorrect, prediction, both layout styles, the clipboard manager, and the emoji
 panel are all working today and getting updated regularly — see [CHANGELOG.md](CHANGELOG.md) for the

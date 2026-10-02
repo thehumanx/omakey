@@ -6,7 +6,10 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -27,6 +30,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -68,6 +72,7 @@ import dev.omakey.core.theme.CustomThemePreferences
 import dev.omakey.core.theme.OmakeyTheme
 import dev.omakey.core.theme.Presets
 import dev.omakey.core.theme.ThemeRepository
+import dev.omakey.core.theme.ThemeDerivation
 import androidx.compose.ui.unit.IntOffset
 import kotlin.math.roundToInt
 
@@ -300,95 +305,90 @@ internal fun ThemeEditorOverlay(
     onSave: (OmakeyTheme) -> Unit,
     onClose: () -> Unit,
 ) {
-    BackHandler(onBack = onClose)
     // "Key color" (below) only has anything to actually paint in Normal mode if key backgrounds
     // are turned on at all — LayoutSettings.showKeyBackgrounds, the same "Key backgrounds"
     // Appearance toggle, is what gates Color.Transparent vs. theme.keyBackground in KeyRowView.
-    // Real user feedback/bug report: picking a Key color here appeared to do nothing at all,
-    // because that toggle lives in a separate Appearance section the user had no reason to
-    // associate with the color picker they were looking at — and the preview below used to
-    // hardcode showKeyBackgrounds = false regardless, so it never would have shown the color even
-    // if the toggle *was* already on elsewhere. Surfacing the toggle right next to the color it
-    // controls (Normal-mode-only, same as "Key color" itself) fixes both: the setting is
-    // discoverable from the one place it actually matters, and the live preview reflects it.
+    // Surfaced right next to the colour it controls, and the preview reflects it.
     val layoutSettings by layoutPreferences.settings.collectAsState()
-    // Name is entered at save time now (see the "Save theme" button's onClick and the dialog
-    // below), not as an always-visible field here — real user feedback: the name doesn't affect
-    // anything about the preview above it, so it was just taking up space in a screen that's
-    // otherwise entirely about color, for a field most people would leave on its default anyway.
-    // Still tracked here (not purely local to the dialog) so re-opening the editor for an existing
-    // custom theme pre-fills the dialog with its current name rather than "My theme" every time.
+    // Name is entered at save time (the "Save theme" dialog below), not as an always-visible field.
     var name by remember { mutableStateOf(initialTheme?.name ?: "My theme") }
     var showSaveNamePrompt by remember { mutableStateOf(false) }
-    var background by remember { mutableStateOf(initialTheme?.keyboardBackground?.toComposeColor() ?: Color(0xFF1E1E1E)) }
-    var keyColor by remember { mutableStateOf(initialTheme?.keyBackground?.toComposeColor() ?: Color(0xFF2C2C2C)) }
-    var stripeColor by remember { mutableStateOf(initialTheme?.middleRowStripeColor?.toComposeColor() ?: Color(0xFF3A3A3A)) }
-    var spacebarColor by remember { mutableStateOf(initialTheme?.spacebarAccentColor?.toComposeColor() ?: Color(0xFF4A90D9)) }
-    // The fill behind any key (or button) while it is held. Null until the user picks one, so a new
-    // theme keeps deriving it from the key colour — changing the key colour then still gives a
-    // matching tap colour instead of a stale one.
-    var keyTapColor by remember { mutableStateOf(initialTheme?.keyBackgroundPressed?.toComposeColor()) }
-    // Caps lock, active shift, open panel buttons, selected tiles. A theme saved before this existed
-    // starts from its spacebar colour, which is the closest thing it had to an accent.
-    var accentColor by remember {
-        mutableStateOf(initialTheme?.accentColor?.toComposeColor() ?: initialTheme?.spacebarAccentColor?.toComposeColor() ?: Color(0xFF4A90D9))
+    var showDiscardPrompt by remember { mutableStateOf(false) }
+    val themeId = remember { initialTheme?.id ?: (CustomThemePreferences.ID_PREFIX + java.util.UUID.randomUUID().toString()) }
+
+    // Everything follows the background (AGENTS.md §71): picking six related colours by hand is
+    // hard to get right, so each one starts derived — readable, light or dark to match — and the
+    // user overrides only what they want. Null means "automatic"; an automatic colour keeps
+    // following the background as it changes. A new theme starts from the system's light or dark.
+    val systemDark = androidx.compose.foundation.isSystemInDarkTheme()
+    val initialBackground = initialTheme?.keyboardBackground ?: ColorSpec(if (systemDark) 0xFF1E1E1E else 0xFFF2F2F2)
+    var background by remember { mutableStateOf(initialBackground.toComposeColor()) }
+    // An existing theme's colour counts as automatic if it is exactly what derivation would give
+    // for its background, so re-opening it keeps the auto behaviour instead of freezing everything.
+    val initialDerived = remember { ThemeDerivation.fromBackground(initialBackground, initialTheme?.keyBackground) }
+    fun stored(value: ColorSpec?, derived: ColorSpec): Color? = value?.takeIf { it != derived }?.toComposeColor()
+    var keyColor by remember {
+        mutableStateOf(initialTheme?.keyBackground?.takeIf { it != ThemeDerivation.fromBackground(initialBackground).key }?.toComposeColor())
     }
-    // Grid mode's own border color — independent of the auto-derived isDark default (see
-    // OmakeyTheme.gridBorderColor's doc) once the user has actually edited it here.
-    var gridBorderColor by remember {
-        mutableStateOf(
-            initialTheme?.gridBorderColor?.toComposeColor()
-                ?: (if (relativeLuminance(keyColor) < 0.5f) Color(0xFFE0E0E0) else Color(0xFF2A2A2A)),
-        )
-    }
+    var stripeColor by remember { mutableStateOf(stored(initialTheme?.middleRowStripeColor, initialDerived.homeRowStripe)) }
+    var spacebarColor by remember { mutableStateOf(stored(initialTheme?.spacebarAccentColor, initialDerived.spacebar)) }
+    var keyTapColor by remember { mutableStateOf(stored(initialTheme?.keyBackgroundPressed, initialDerived.keyTap)) }
+    var accentColor by remember { mutableStateOf(stored(initialTheme?.accentColor, initialDerived.accent)) }
+    var gridBorderColor by remember { mutableStateOf(stored(initialTheme?.gridBorderColor, initialDerived.gridBorder)) }
     var gridBorderWidth by remember {
         mutableStateOf(initialTheme?.gridBorderWidth ?: dev.omakey.core.theme.GridBorderWidth.MD)
     }
 
-    val previewTheme = remember(name, background, keyColor, keyTapColor, stripeColor, spacebarColor, accentColor, gridBorderColor, gridBorderWidth) {
+    val derived = remember(background, keyColor) {
+        ThemeDerivation.fromBackground(background.toColorSpec(), keyColor?.toColorSpec())
+    }
+
+    val previewTheme = remember(name, background, derived, keyTapColor, stripeColor, spacebarColor, accentColor, gridBorderColor, gridBorderWidth) {
         buildCustomTheme(
-            id = initialTheme?.id ?: (CustomThemePreferences.ID_PREFIX + java.util.UUID.randomUUID().toString()),
+            id = themeId,
             name = name.ifBlank { "My theme" },
             backgroundColor = background,
-            keyColor = keyColor,
-            keyTapColor = keyTapColor,
-            stripeColor = stripeColor,
-            spacebarColor = spacebarColor,
-            accentColor = accentColor,
-            gridBorderColor = gridBorderColor,
+            keyColor = derived.key.toComposeColor(),
+            keyTapColor = keyTapColor ?: derived.keyTap.toComposeColor(),
+            stripeColor = stripeColor ?: derived.homeRowStripe.toComposeColor(),
+            spacebarColor = spacebarColor ?: derived.spacebar.toComposeColor(),
+            accentColor = accentColor ?: derived.accent.toComposeColor(),
+            gridBorderColor = gridBorderColor ?: derived.gridBorder.toComposeColor(),
             gridBorderWidth = gridBorderWidth,
-            // Tagged with whichever mode is actually being previewed/edited right now — not
-            // preserved from initialTheme, since re-saving a theme while looking at a *different*
-            // mode than it was originally made for should re-tag it to the mode actually being
-            // edited (that's the whole point: the fields being edited right now are for this mode).
+            // Tagged with whichever mode is being edited right now: the fields being edited are
+            // for this mode.
             designedForLayoutMode = layoutMode,
         )
     }
+    // What "no changes" looks like, for the discard prompt. Captured once, so it is the theme as
+    // it was opened rather than as it is now.
+    val openedAs = remember { previewTheme }
+    val dirty = previewTheme != openedAs
+    val close = { if (dirty) showDiscardPrompt = true else onClose() }
+    BackHandler(onBack = close)
 
-    // The 5 edit fields, one page each — see [ThemeEditCarousel]'s own doc for why this replaced
-    // the old vertically-stacked list of always-expanded pickers.
-    // "Key color" only visually matters in Normal mode — every Grid-mode cell fills with
-    // Background instead (see KeyRowView's own doc on why: one less setting doing the same
-    // visual job as Background, since every cell is "boxed" by its border regardless of key type
-    // there). Hidden from the carousel while editing with Grid mode active, rather than shown but
-    // silently doing nothing — the underlying `keyColor` state (and the theme's derived
-    // `keyTextColor`/`keyBackgroundPressed`/etc, still computed from it) is untouched, so
-    // switching back to Normal mode later still has whatever was last set.
+    val isGrid = layoutMode == dev.omakey.core.theme.LayoutMode.GRID
+    // Order follows how a theme is usually built: the surface first, then its structure (keys or
+    // the grid's lines), then the details. "Key color" is Normal-only — every Grid cell fills with
+    // Background — and "Grid border" with its thickness is Grid-only.
     val editPages = buildList {
-        add(ThemeEditField("Background", background) { background = it })
-        if (layoutMode != dev.omakey.core.theme.LayoutMode.GRID) {
-            add(ThemeEditField("Key color", keyColor) { keyColor = it })
+        add(ThemeEditField("Background", background, isAuto = null) { background = it })
+        if (!isGrid) {
+            add(ThemeEditField("Key color", derived.key.toComposeColor(), isAuto = keyColor == null, onReset = { keyColor = null }) { keyColor = it })
         }
-        add(ThemeEditField("Key tap color", keyTapColor ?: previewTheme.keyBackgroundPressed.toComposeColor()) { keyTapColor = it })
-        add(ThemeEditField("Home-row stripe", stripeColor) { stripeColor = it })
-        add(ThemeEditField("Spacebar", spacebarColor) { spacebarColor = it })
-        add(ThemeEditField("Accent (caps lock, active buttons)", accentColor) { accentColor = it })
-        // Grid-mode-only, same reasoning as hiding "Key color" above (just the reverse) — this
-        // field has no visible effect while editing/previewing Normal mode, so showing it there
-        // read as a control that silently does nothing (real user feedback).
-        if (layoutMode == dev.omakey.core.theme.LayoutMode.GRID) {
-            add(ThemeEditField("Grid border", gridBorderColor) { gridBorderColor = it })
+        if (isGrid) {
+            add(
+                ThemeEditField(
+                    "Grid border", gridBorderColor ?: derived.gridBorder.toComposeColor(),
+                    isAuto = gridBorderColor == null, onReset = { gridBorderColor = null },
+                    extra = { GridBorderWidthPicker(gridBorderWidth) { gridBorderWidth = it } },
+                ) { gridBorderColor = it },
+            )
         }
+        add(ThemeEditField("Home-row stripe", stripeColor ?: derived.homeRowStripe.toComposeColor(), isAuto = stripeColor == null, onReset = { stripeColor = null }) { stripeColor = it })
+        add(ThemeEditField("Spacebar", spacebarColor ?: derived.spacebar.toComposeColor(), isAuto = spacebarColor == null, onReset = { spacebarColor = null }) { spacebarColor = it })
+        add(ThemeEditField("Key tap color", keyTapColor ?: derived.keyTap.toComposeColor(), isAuto = keyTapColor == null, onReset = { keyTapColor = null }) { keyTapColor = it })
+        add(ThemeEditField("Accent (caps lock, active buttons)", accentColor ?: derived.accent.toComposeColor(), isAuto = accentColor == null, onReset = { accentColor = null }) { accentColor = it })
     }
 
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -409,7 +409,7 @@ internal fun ThemeEditorOverlay(
                     text = if (initialTheme == null) "Create theme" else "Edit theme",
                     style = MaterialTheme.typography.titleMedium,
                 )
-                TextButton(onClick = onClose) { Text(text = "Cancel") }
+                TextButton(onClick = close) { Text(text = "Cancel") }
             }
 
             // Sticky, full-keyboard preview — deliberately outside any scroll container so it
@@ -427,7 +427,7 @@ internal fun ThemeEditorOverlay(
                 // Real bug, fixed: this preview used to hardcode showKeyBackgrounds = false
                 // regardless of the actual setting, so editing "Key color" for a Normal-mode theme
                 // never showed any visible change here even once the toggle below was turned on.
-                ThemePreviewMock(previewTheme, showKeyBackgrounds = layoutSettings.showKeyBackgrounds)
+                ThemePreviewMock(previewTheme, showKeyBackgrounds = layoutSettings.showKeyBackgrounds, interactive = true)
             }
 
             // "Key color" (below) is otherwise invisible in Normal mode — KeyRowView renders keys
@@ -450,30 +450,6 @@ internal fun ThemeEditorOverlay(
                 }
             }
 
-            // Border thickness — a 3-step preset, not a color, so it doesn't fit ThemeEditField's
-            // color-carousel model. Grid-mode-only, same reasoning as hiding "Key color" above.
-            if (layoutMode == dev.omakey.core.theme.LayoutMode.GRID) {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(text = "Border thickness", style = MaterialTheme.typography.bodyLarge)
-                    val widthOptions = listOf(
-                        dev.omakey.core.theme.GridBorderWidth.SM to "SM",
-                        dev.omakey.core.theme.GridBorderWidth.MD to "MD",
-                        dev.omakey.core.theme.GridBorderWidth.LG to "LG",
-                    )
-                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                        widthOptions.forEachIndexed { index, (width, label) ->
-                            SegmentedButton(
-                                selected = width == gridBorderWidth,
-                                onClick = { gridBorderWidth = width },
-                                shape = SegmentedButtonDefaults.itemShape(index = index, count = widthOptions.size),
-                                icon = {},
-                                label = { Text(label) },
-                            )
-                        }
-                    }
-                }
-            }
-
             ThemeEditCarousel(
                 pages = editPages,
                 modifier = Modifier.weight(1f),
@@ -485,6 +461,16 @@ internal fun ThemeEditorOverlay(
         }
     }
 
+    if (showDiscardPrompt) {
+        AlertDialog(
+            onDismissRequest = { showDiscardPrompt = false },
+            title = { Text(text = "Discard changes?") },
+            text = { Text(text = "Your changes to this theme haven't been saved.") },
+            confirmButton = { TextButton(onClick = onClose) { Text(text = "Discard") } },
+            dismissButton = { TextButton(onClick = { showDiscardPrompt = false }) { Text(text = "Keep editing") } },
+        )
+    }
+
     if (showSaveNamePrompt) {
         ThemeSaveNamePrompt(
             initialName = name,
@@ -494,6 +480,33 @@ internal fun ThemeEditorOverlay(
             },
             onDismiss = { showSaveNamePrompt = false },
         )
+    }
+}
+
+/** Border thickness, shown on the "Grid border" page — the only place it means anything. */
+@Composable
+private fun GridBorderWidthPicker(
+    selected: dev.omakey.core.theme.GridBorderWidth,
+    onSelect: (dev.omakey.core.theme.GridBorderWidth) -> Unit,
+) {
+    val widthOptions = listOf(
+        dev.omakey.core.theme.GridBorderWidth.SM to "SM",
+        dev.omakey.core.theme.GridBorderWidth.MD to "MD",
+        dev.omakey.core.theme.GridBorderWidth.LG to "LG",
+    )
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(text = "Thickness", style = MaterialTheme.typography.bodyMedium)
+        SingleChoiceSegmentedButtonRow(modifier = Modifier.width(240.dp)) {
+            widthOptions.forEachIndexed { index, (width, label) ->
+                SegmentedButton(
+                    selected = width == selected,
+                    onClick = { onSelect(width) },
+                    shape = SegmentedButtonDefaults.itemShape(index = index, count = widthOptions.size),
+                    icon = {},
+                    label = { Text(label) },
+                )
+            }
+        }
     }
 }
 
@@ -546,8 +559,17 @@ internal fun ThemePreviewMock(
     homeRowTinted: Boolean = true,
     alwaysShowUppercaseLetters: Boolean = true,
     edgePadding: Boolean = false,
+    // Keys respond to touch: a held key fills with the key tap colour, and Shift steps through
+    // off → shift → caps lock, which is where the accent shows. Nothing is typed.
+    interactive: Boolean = false,
 ) {
     val noOpAncestor: () -> androidx.compose.ui.layout.LayoutCoordinates? = remember { { null } }
+    var rowsCoordinates by remember { mutableStateOf<androidx.compose.ui.layout.LayoutCoordinates?>(null) }
+    val ancestor: () -> androidx.compose.ui.layout.LayoutCoordinates? = remember { { rowsCoordinates } }
+    val keyBounds = remember { HashMap<Int, androidx.compose.ui.geometry.Rect>() }
+    var pressedCode by remember { mutableStateOf<Int?>(null) }
+    var shiftOn by remember { mutableStateOf(false) }
+    var capsLockOn by remember { mutableStateOf(false) }
     val rowHeightDp = 44
     Column(
         Modifier
@@ -603,24 +625,46 @@ internal fun ThemePreviewMock(
                     } else {
                         m
                     }
+                }
+                .let { m ->
+                    if (!interactive) return@let m
+                    m.onGloballyPositioned { rowsCoordinates = it }
+                        .pointerInput(Unit) {
+                            awaitEachGesture {
+                                val down = awaitFirstDown()
+                                val code = keyBounds.entries.firstOrNull { it.value.contains(down.position) }?.key
+                                pressedCode = code
+                                val up = waitForUpOrCancellation()
+                                pressedCode = null
+                                if (up != null && code == dev.omakey.core.layout.SpecialKeyCode.SHIFT) {
+                                    when {
+                                        capsLockOn -> { capsLockOn = false; shiftOn = false }
+                                        shiftOn -> capsLockOn = true
+                                        else -> shiftOn = true
+                                    }
+                                }
+                            }
+                        }
                 },
         ) {
         KeyboardLocale.Default.letterLayout.rows.forEachIndexed { rowIndex, row ->
             dev.omakey.app.keyboard.ui.KeyRowView(
                 rowKeys = row.keys,
                 rowHeightDp = rowHeightDp,
-                shiftOn = false,
+                shiftOn = shiftOn,
                 theme = theme,
                 accessibleMode = false,
                 showKeyBackgrounds = showKeyBackgrounds,
+                pressedKeyCode = pressedCode,
+                capsLockOn = capsLockOn,
                 // Matches KeyGrid's own homeRowIndex for QwertyEnUS (see KeyboardRoot.kt) — the
                 // ASDFGHJKL row (index 1), not the ZXCVBNM/shift row (real bug, fixed: this
                 // preview had it one row too low).
                 isHomeRow = rowIndex == KeyboardLocale.Default.letterLayout.homeRow,
                 homeRowTinted = homeRowTinted,
                 onKeyTap = {},
-                ancestorCoordinates = noOpAncestor,
-                onBoundsMeasured = {},
+                ancestorCoordinates = if (interactive) ancestor else noOpAncestor,
+                onBoundsMeasured = { measured -> measured.forEach { (code, _, rect) -> keyBounds[code] = rect } },
                 fontFamily = fontFamily,
                 alwaysShowUppercaseLetters = alwaysShowUppercaseLetters,
             )
@@ -630,7 +674,17 @@ internal fun ThemePreviewMock(
 }
 
 /** One page of [ThemeEditCarousel] — a single color field being edited. */
-private data class ThemeEditField(val label: String, val color: Color, val onColorChange: (Color) -> Unit)
+/** One carousel page. [isAuto] null means the field has no automatic value (the background);
+ * otherwise false shows a "Reset to automatic" button calling [onReset]. [extra] sits under the
+ * picker (the grid border's thickness). */
+private class ThemeEditField(
+    val label: String,
+    val color: Color,
+    val isAuto: Boolean? = null,
+    val onReset: () -> Unit = {},
+    val extra: (@Composable () -> Unit)? = null,
+    val onColorChange: (Color) -> Unit,
+)
 
 /** Swipeable, one-field-at-a-time carousel for the theme editor's 4 color pickers (real user
  * feedback: the old always-expanded vertical stack of 4 pickers competed for space and pushed the
@@ -669,8 +723,18 @@ private fun ThemeEditCarousel(pages: List<ThemeEditField>, modifier: Modifier = 
                             .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(6.dp)),
                     )
                     Text(text = field.label, style = MaterialTheme.typography.titleSmall)
+                    when (field.isAuto) {
+                        true -> Text(
+                            text = "Automatic",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        false -> TextButton(onClick = field.onReset) { Text(text = "Reset to automatic") }
+                        null -> Unit
+                    }
                 }
                 HsvColorPicker(color = field.color, onColorChange = field.onColorChange)
+                field.extra?.invoke()
             }
         }
 
@@ -714,6 +778,19 @@ private fun HsvColorPicker(color: Color, onColorChange: (Color) -> Unit) {
     // parsed) — user keystrokes that don't yet form a valid 6-digit hex just sit here untouched,
     // not reverted or rejected, until they either complete a valid color or navigate away.
     var hexText by remember { mutableStateOf(colorToHexString(color)) }
+
+    // An automatic colour changes from outside as the background does (or on "Reset to
+    // automatic"); follow it. A change this picker made itself already matches, so dragging is
+    // never fought.
+    androidx.compose.runtime.LaunchedEffect(color) {
+        val current = Color(android.graphics.Color.HSVToColor(floatArrayOf(hue, saturation, value)))
+        if (current.toArgb() != color.toArgb()) {
+            val out = FloatArray(3)
+            android.graphics.Color.colorToHSV(color.toArgb(), out)
+            hue = out[0]; saturation = out[1]; value = out[2]
+            hexText = colorToHexString(color)
+        }
+    }
 
     fun emit() {
         val newColor = Color(android.graphics.Color.HSVToColor(floatArrayOf(hue, saturation, value)))
@@ -857,8 +934,11 @@ internal fun buildCustomTheme(
     gridBorderWidth: dev.omakey.core.theme.GridBorderWidth,
     designedForLayoutMode: dev.omakey.core.theme.LayoutMode,
 ): OmakeyTheme {
-    val isDark = relativeLuminance(keyColor) < 0.5f
-    val textColor = if (isDark) Color(0xFFF2F2F2) else Color(0xFF1A1A1A)
+    // Label colour by WCAG contrast against the keys, not by a brightness cut-off: mid-tone keys
+    // are exactly where a cut-off picks the less readable one.
+    val textSpec = ThemeDerivation.textOn(keyColor.toColorSpec())
+    val isDark = textSpec == ThemeDerivation.LIGHT_TEXT
+    val textColor = textSpec.toComposeColor()
     val nudge = if (isDark) 0.15f else -0.15f
     val smallNudge = if (isDark) 0.08f else -0.08f
     return OmakeyTheme(
@@ -880,7 +960,6 @@ internal fun buildCustomTheme(
     )
 }
 
-private fun relativeLuminance(color: Color): Float = 0.299f * color.red + 0.587f * color.green + 0.114f * color.blue
 
 private fun nudgeColor(color: Color, amount: Float): Color = Color(
     red = (color.red + amount).coerceIn(0f, 1f),

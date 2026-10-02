@@ -17,6 +17,7 @@ import dev.omakey.core.predict.PersonalLanguageModel
 import dev.omakey.core.predict.lm.LanguageModel
 import dev.omakey.core.predict.spatial.KeyboardGeometry
 import dev.omakey.core.translit.TransliterationIndex
+import dev.omakey.core.translit.TransliterationScheme
 import dev.omakey.core.translit.Transliterator
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -139,13 +140,15 @@ class LocaleManager(
             predictionEngine.delegate = NgramPredictionEngine(model, wordDao, personal, locale.id, locale.profile)
             val source = locale.languageModel
             val transliterates = (listOf(locale.letterLayout) + locale.letterLayoutChoices).any { it.transliteration }
-            if (transliterates && source is ModelSource.File) {
+            val scheme = TransliterationScheme.forLanguage(locale.language)
+            if (transliterates && scheme == null) Log.w(TAG, "${locale.id} has a transliteration layout but no scheme")
+            if (transliterates && scheme != null && source is ModelSource.File) {
                 // Built once per install, next to the model, then memory-mapped (see
                 // TransliterationIndex for why it's built here and not shipped in the pack).
                 val index = withContext(Dispatchers.IO) {
-                    TransliterationIndex.openOrBuild(File(File(source.path).parentFile, "translit.idx"), model)
+                    TransliterationIndex.openOrBuild(File(File(source.path).parentFile, "translit.idx"), model, scheme)
                 }
-                _transliterator.value = Transliterator(model, index)
+                _transliterator.value = Transliterator(model, index, scheme)
             }
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e

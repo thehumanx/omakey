@@ -1,0 +1,281 @@
+{
+ "id": "phonetic_ru",
+ "displayName": "Phonetic",
+ "homeRow": 1,
+ "rows": [
+  {
+   "keys": [
+    {
+     "label": "я",
+     "code": 1103,
+     "popupChars": [
+      "1"
+     ]
+    },
+    {
+     "label": "в",
+     "code": 1074,
+     "popupChars": [
+      "2"
+     ]
+    },
+    {
+     "label": "е",
+     "code": 1077,
+     "popupChars": [
+      "ё",
+      "э",
+      "3"
+     ]
+    },
+    {
+     "label": "р",
+     "code": 1088,
+     "popupChars": [
+      "4"
+     ]
+    },
+    {
+     "label": "т",
+     "code": 1090,
+     "popupChars": [
+      "5"
+     ]
+    },
+    {
+     "label": "ы",
+     "code": 1099,
+     "popupChars": [
+      "6"
+     ]
+    },
+    {
+     "label": "у",
+     "code": 1091,
+     "popupChars": [
+      "7"
+     ]
+    },
+    {
+     "label": "и",
+     "code": 1080,
+     "popupChars": [
+      "8"
+     ]
+    },
+    {
+     "label": "о",
+     "code": 1086,
+     "popupChars": [
+      "9"
+     ]
+    },
+    {
+     "label": "п",
+     "code": 1087,
+     "popupChars": [
+      "0"
+     ]
+    },
+    {
+     "label": "ш",
+     "code": 1096,
+     "popupChars": [
+      "щ"
+     ]
+    }
+   ]
+  },
+  {
+   "keys": [
+    {
+     "label": "а",
+     "code": 1072,
+     "popupChars": [
+      "@"
+     ]
+    },
+    {
+     "label": "с",
+     "code": 1089,
+     "popupChars": [
+      "#"
+     ]
+    },
+    {
+     "label": "д",
+     "code": 1076,
+     "popupChars": [
+      "$"
+     ]
+    },
+    {
+     "label": "ф",
+     "code": 1092,
+     "popupChars": [
+      "_"
+     ]
+    },
+    {
+     "label": "г",
+     "code": 1075,
+     "popupChars": [
+      "&"
+     ]
+    },
+    {
+     "label": "ч",
+     "code": 1095,
+     "popupChars": [
+      "-"
+     ]
+    },
+    {
+     "label": "й",
+     "code": 1081,
+     "popupChars": [
+      "+"
+     ]
+    },
+    {
+     "label": "к",
+     "code": 1082,
+     "popupChars": [
+      "("
+     ]
+    },
+    {
+     "label": "л",
+     "code": 1083,
+     "popupChars": [
+      ")"
+     ]
+    },
+    {
+     "label": "ь",
+     "code": 1100,
+     "popupChars": [
+      "ъ"
+     ]
+    },
+    {
+     "label": "ю",
+     "code": 1102
+    }
+   ]
+  },
+  {
+   "keys": [
+    {
+     "label": "⇧",
+     "code": -1,
+     "widthWeight": 1.5,
+     "keyType": "SPECIAL"
+    },
+    {
+     "label": "з",
+     "code": 1079,
+     "popupChars": [
+      "*"
+     ]
+    },
+    {
+     "label": "х",
+     "code": 1093,
+     "popupChars": [
+      "\""
+     ]
+    },
+    {
+     "label": "ц",
+     "code": 1094,
+     "popupChars": [
+      "'"
+     ]
+    },
+    {
+     "label": "ж",
+     "code": 1078,
+     "popupChars": [
+      ":"
+     ]
+    },
+    {
+     "label": "б",
+     "code": 1073,
+     "popupChars": [
+      ";"
+     ]
+    },
+    {
+     "label": "н",
+     "code": 1085,
+     "popupChars": [
+      "!"
+     ]
+    },
+    {
+     "label": "м",
+     "code": 1084,
+     "popupChars": [
+      "?"
+     ]
+    },
+    {
+     "label": "э",
+     "code": 1101
+    },
+    {
+     "label": "⌫",
+     "code": -2,
+     "widthWeight": 1.5,
+     "keyType": "SPECIAL"
+    }
+   ]
+  },
+  {
+   "keys": [
+    {
+     "label": "?123",
+     "code": -5,
+     "widthWeight": 1.5,
+     "keyType": "SPECIAL"
+    },
+    {
+     "label": "😊",
+     "code": -7,
+     "widthWeight": 1.0,
+     "keyType": "SPECIAL"
+    },
+    {
+     "label": " ",
+     "code": -3,
+     "widthWeight": 4.0,
+     "keyType": "SPECIAL"
+    },
+    {
+     "label": ".",
+     "code": 46,
+     "popupChars": [
+      ",",
+      "!",
+      "?",
+      ";",
+      ":",
+      "«",
+      "»",
+      "-",
+      "—",
+      "…"
+     ]
+    },
+    {
+     "label": "⏎",
+     "code": -4,
+     "widthWeight": 1.5,
+     "keyType": "SPECIAL"
+    }
+   ]
+  }
+ ]
+}

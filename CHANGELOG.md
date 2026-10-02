@@ -3,6 +3,33 @@
 All notable changes to omakey are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [5.1.0] — 2026-10-02
+
+Italian and Russian, and a theme builder that does the hard part for you.
+
+### Added
+- **Italian.** Accents restored as you type ("perche" → "perché", and "perchè" → "perché"), an
+  apostrophe key, and "l'", "c'", "un'", "dell'" and friends handled as their own words.
+- **Russian**, with three keyboards to choose from in Settings → Languages or with the globe button:
+  - ЙЦУКЕН, the standard Russian layout (ё on е, ъ on ь and х).
+  - Phonetic (ЯВЕРТЫ): each Cyrillic letter on the English key that sounds like it.
+  - Translit: type Russian in English letters and get Cyrillic as you go ("privet" → "привет"),
+    whichever common spelling you use — "h", "kh" or "x" for х, "ya" or "ja" for я. The English
+    spelling stays one tap away, and Shift capitalises ("Privet" → "Привет").
+  Russian needs this version of the app; earlier versions list it but won't install it.
+
+### Changed
+- **Custom themes start from one colour.** Pick a background and every other colour (keys, key
+  tap, home-row stripe, spacebar, accent, grid border) is chosen for you to match it, light or dark,
+  and readable. Change any of them on top; "Reset to automatic" puts one back. New themes start
+  light or dark to match your phone.
+- Theme editor pages are now in the order background, border, home row, spacebar, key tap, accent,
+  and border thickness sits on the grid border page.
+- Leaving the theme editor with unsaved changes asks before discarding them.
+- The keyboard previews in Settings respond to touch: hold a key to see the tap colour, tap Shift
+  for shift and again for caps lock to see the accent.
+- Sound & haptics moved to the Typing group in Settings.
+
 ## [5.0.0] — 2026-09-26
 
 The languages release. Spanish, French, Brazilian Portuguese and Nepali arrive as small optional

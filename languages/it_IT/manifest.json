@@ -1,0 +1,14 @@
+{
+ "id": "it_IT",
+ "displayName": "Italian",
+ "nativeName": "Italiano",
+ "packVersion": "1.0.0",
+ "packFormat": 1,
+ "letterLayout": "qwerty_it",
+ "layouts": [
+  "layouts/qwerty_it.json"
+ ],
+ "model": "lm.bin",
+ "profile": "profile.json",
+ "license": "CC BY-SA 3.0 (derived in part from FrequencyWords); see sources"
+}
