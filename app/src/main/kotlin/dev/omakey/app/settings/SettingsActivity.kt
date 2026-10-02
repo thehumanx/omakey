@@ -327,6 +327,7 @@ private fun SettingsScreen(
                             homeRowTinted = layoutSettings.showMiddleRowStripe,
                             alwaysShowUppercaseLetters = layoutSettings.alwaysShowUppercaseLetters,
                             edgePadding = layoutSettings.edgePadding,
+                            interactive = true,
                         )
                     }
                 }
@@ -609,8 +610,8 @@ private fun SettingsHome(
         }
         val groups = listOf(
             "Look & feel" to listOf(SettingsPage.APPEARANCE, SettingsPage.KEYBOARD),
-            "Typing" to listOf(SettingsPage.LANGUAGES, SettingsPage.TYPING, SettingsPage.GESTURES),
-            "More" to listOf(SettingsPage.PRIVACY, SettingsPage.SOUND, SettingsPage.ACCESSIBILITY, SettingsPage.ABOUT),
+            "Typing" to listOf(SettingsPage.LANGUAGES, SettingsPage.TYPING, SettingsPage.GESTURES, SettingsPage.SOUND),
+            "More" to listOf(SettingsPage.PRIVACY, SettingsPage.ACCESSIBILITY, SettingsPage.ABOUT),
         )
         groups.forEach { (title, pages) ->
             item {

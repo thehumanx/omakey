@@ -1,0 +1,22 @@
+{
+ "id": "ru_RU",
+ "displayName": "Russian",
+ "nativeName": "Русский",
+ "packVersion": "1.0.0",
+ "packFormat": 1,
+ "minAppVersionCode": 29,
+ "letterLayout": "jcuken_ru",
+ "letterLayoutChoices": [
+  "jcuken_ru",
+  "phonetic_ru",
+  "translit_ru"
+ ],
+ "layouts": [
+  "layouts/jcuken_ru.json",
+  "layouts/phonetic_ru.json",
+  "layouts/translit_ru.json"
+ ],
+ "model": "lm.bin",
+ "profile": "profile.json",
+ "license": "CC BY-SA 3.0 (derived in part from FrequencyWords); see sources"
+}

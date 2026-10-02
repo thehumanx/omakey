@@ -3,7 +3,7 @@ package dev.omakey.core.locale
 import dev.omakey.core.emoji.WordEmojiSuggestions
 
 /** Writing system of a language, where it changes behaviour rather than just which glyphs appear. */
-enum class Script { LATIN, DEVANAGARI }
+enum class Script { LATIN, DEVANAGARI, CYRILLIC }
 
 /**
  * The text rules that differ between languages: what counts as part of a word, how sentences end,

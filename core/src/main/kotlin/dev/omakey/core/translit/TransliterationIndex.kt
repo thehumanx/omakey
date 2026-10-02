@@ -8,11 +8,11 @@ import java.nio.ByteOrder
 import java.nio.channels.FileChannel
 
 /**
- * Every vocabulary word, keyed by the [Romanization.skeleton] of its romanization and sorted by that
+ * Every vocabulary word, keyed by the [TransliterationScheme.skeleton] of its romanization and sorted by that
  * key, so the words a Latin spelling could mean are one binary search away (AGENTS.md §66 Phase 9).
  *
  * Built on the phone from the installed model, not shipped in the pack: all romanization logic then
- * lives in one place (Kotlin), where the ranking also uses it — a builder-side copy in Python would
+ * lives in one place (Kotlin, the [TransliterationScheme]), where the ranking also uses it — a builder-side copy in Python would
  * be a second implementation to keep in step. Building takes a second or two, once, on first use;
  * the result is written next to the model and memory-mapped from then on, like the model itself.
  *
@@ -78,11 +78,11 @@ class TransliterationIndex private constructor(
         private const val VERSION = 1
 
         /** Opens [file], building it from [model] first if it is missing or out of date. */
-        fun openOrBuild(file: File, model: LanguageModel): TransliterationIndex {
+        fun openOrBuild(file: File, model: LanguageModel, scheme: TransliterationScheme): TransliterationIndex {
             val existing = runCatching { open(file) }.getOrNull()
             if (existing != null && existing.size == model.vocabularySize) return existing
             val temp = File(file.parentFile, file.name + ".tmp")
-            temp.writeBytes(build(model))
+            temp.writeBytes(build(model, scheme))
             if (!temp.renameTo(file)) {
                 file.delete()
                 temp.renameTo(file)
@@ -94,10 +94,10 @@ class TransliterationIndex private constructor(
             RandomAccessFile(file, "r").use { from(it.channel.map(FileChannel.MapMode.READ_ONLY, 0, it.length())) }
 
         /** Builds the index in memory; [openOrBuild] writes it to disk. */
-        fun build(model: LanguageModel): ByteArray {
+        fun build(model: LanguageModel, scheme: TransliterationScheme): ByteArray {
             val count = model.vocabularySize
             val keys = arrayOfNulls<String>(count)
-            for (id in 0 until count) keys[id] = Romanization.skeleton(Romanization.romanize(model.wordAt(id)))
+            for (id in 0 until count) keys[id] = scheme.skeleton(scheme.romanize(model.wordAt(id)))
             val order = (0 until count).sortedWith(
                 compareBy<Int> { keys[it] }.thenByDescending { model.unigramLogProbability(it) },
             )

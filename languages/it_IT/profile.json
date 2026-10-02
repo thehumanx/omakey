@@ -1,0 +1,195 @@
+{
+ "script": "LATIN",
+ "hasCase": true,
+ "extraWordChars": "'’",
+ "capitalizeAfter": ".!?",
+ "doubleSpaceInserts": ".",
+ "punctuationCycle": ".,!?;:'\"«»",
+ "equivalentLetters": [
+  "aàáâ",
+  "eèéê",
+  "iìíî",
+  "oòóô",
+  "uùúû"
+ ],
+ "clitics": [
+  "quell'",
+  "quest'",
+  "nessun'",
+  "dell'",
+  "dall'",
+  "nell'",
+  "sull'",
+  "coll'",
+  "anch'",
+  "tutt'",
+  "all'",
+  "dov'",
+  "com'",
+  "cos'",
+  "un'",
+  "l'",
+  "d'",
+  "c'",
+  "m'",
+  "t'",
+  "s'",
+  "v'"
+ ],
+ "contractions": {
+  "lho": "l'ho",
+  "lha": "l'ha",
+  "dovè": "dov'è",
+  "comè": "com'è",
+  "cosè": "cos'è",
+  "unaltra": "un'altra",
+  "po": "po'",
+  "cè": "c'è",
+  "daccordo": "d'accordo"
+ },
+ "emojiWords": {
+  "ciao": [
+   "👋"
+  ],
+  "grazie": [
+   "🙏"
+  ],
+  "amore": [
+   "❤️"
+  ],
+  "cuore": [
+   "❤️"
+  ],
+  "felice": [
+   "😊"
+  ],
+  "triste": [
+   "😢"
+  ],
+  "piangere": [
+   "😭"
+  ],
+  "haha": [
+   "😂"
+  ],
+  "ahah": [
+   "😂"
+  ],
+  "ahahah": [
+   "😂"
+  ],
+  "bacio": [
+   "😘"
+  ],
+  "baci": [
+   "😘"
+  ],
+  "festa": [
+   "🎉"
+  ],
+  "compleanno": [
+   "🎂",
+   "🎉"
+  ],
+  "auguri": [
+   "🎉",
+   "🎂"
+  ],
+  "caffè": [
+   "☕"
+  ],
+  "birra": [
+   "🍺"
+  ],
+  "vino": [
+   "🍷"
+  ],
+  "pizza": [
+   "🍕"
+  ],
+  "pasta": [
+   "🍝"
+  ],
+  "gelato": [
+   "🍨"
+  ],
+  "cane": [
+   "🐶"
+  ],
+  "gatto": [
+   "🐱"
+  ],
+  "fuoco": [
+   "🔥"
+  ],
+  "sole": [
+   "☀️"
+  ],
+  "pioggia": [
+   "🌧️"
+  ],
+  "musica": [
+   "🎵"
+  ],
+  "soldi": [
+   "💰"
+  ],
+  "ok": [
+   "👌"
+  ],
+  "casa": [
+   "🏠"
+  ],
+  "lavoro": [
+   "💼"
+  ],
+  "macchina": [
+   "🚗"
+  ],
+  "aereo": [
+   "✈️"
+  ],
+  "mare": [
+   "🏖️"
+  ],
+  "sonno": [
+   "😴"
+  ],
+  "dormire": [
+   "😴"
+  ],
+  "fame": [
+   "🍽️"
+  ],
+  "malato": [
+   "🤒"
+  ],
+  "arrabbiato": [
+   "😠"
+  ],
+  "paura": [
+   "😨"
+  ],
+  "fiori": [
+   "💐"
+  ],
+  "regalo": [
+   "🎁"
+  ],
+  "natale": [
+   "🎄"
+  ],
+  "calcio": [
+   "⚽"
+  ],
+  "bravo": [
+   "👏"
+  ],
+  "brava": [
+   "👏"
+  ],
+  "perfetto": [
+   "👌"
+  ]
+ }
+}

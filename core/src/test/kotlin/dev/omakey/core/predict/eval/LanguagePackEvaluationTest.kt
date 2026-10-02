@@ -53,6 +53,21 @@ import kotlin.random.Random
  * The lower "offered" figure is largely "e"/"é" and "a"/"à": roughly two in five of these pairs, and
  * alternatives() never considers them because it skips words under three letters.
  *
+ * Italian, 2026-10-02 (pack 1.0.0, 150,000 words, 6.0 MB):
+ *   accent restoration, non-words    fixed 95.2 %   wrong 4.8 %
+ *   touch noise 0.35                 fixed 62.3 %   wrong 7.0 %
+ *   correct words damaged            0.16 %
+ *
+ * Russian, same date (pack 1.0.0, 200,000 words, 7.3 MB):
+ *   touch noise 0.35, ЙЦУКЕН         fixed 60.3 %   wrong 7.9 %
+ *   touch noise 0.35, phonetic       fixed 60.0 %   wrong 7.9 %
+ *   correct words damaged            0.35 %
+ *   translit, words as romanized     top-1 98.2 %   top-3 99.7 %
+ *   translit, casual spellings       top-3 94.8 % (х as "h", щ "sch", ц "c", й "j", ё "e", ы "i")
+ * The translit figures are optimistic: the typing is generated from the same romanization the
+ * index is keyed on, so they measure the folding and ranking, not how varied real typing is.
+ * Remaining misses are mostly "-tsya" verb endings and words outside the vocabulary.
+ *
  * For comparison, English on its own tap-noise simulation is 66 % / 13 % with 0.73 % damage (§51.1).
  * The remaining accent misses are mostly vocabulary coverage (rare verb forms, proper names).
  * Floors below sit just under these.
@@ -98,7 +113,12 @@ class LanguagePackEvaluationTest {
         override fun toString() = "n=$total fixed %.1f %% wrong %.1f %%".format(fixedRate, wrongRate)
     }
 
-    private fun measure(engine: Engine, sentences: List<List<String>>, corrupt: (String) -> String?): Score {
+    private fun measure(
+        engine: Engine,
+        sentences: List<List<String>>,
+        index: AutocorrectIndex = engine.index,
+        corrupt: (String) -> String?,
+    ): Score {
         var total = 0; var fixed = 0; var wrong = 0
         for (sentence in sentences) {
             for (i in sentence.indices) {
@@ -106,8 +126,8 @@ class LanguagePackEvaluationTest {
                 val typed = corrupt(word) ?: continue
                 if (typed == word) continue
                 total++
-                val context = engine.index.contextOf(sentence.getOrNull(i - 1), sentence.getOrNull(i - 2))
-                when (engine.index.correct(typed, context) ?: typed) {
+                val context = index.contextOf(sentence.getOrNull(i - 1), sentence.getOrNull(i - 2))
+                when (index.correct(typed, context) ?: typed) {
                     word -> fixed++
                     typed -> Unit
                     else -> wrong++
@@ -294,8 +314,8 @@ class LanguagePackEvaluationTest {
 
         // The transliteration index builds inside the installed pack, as the keyboard builds it.
         val packDir = File((locale.languageModel as ModelSource.File).path).parentFile
-        val index = dev.omakey.core.translit.TransliterationIndex.openOrBuild(File(packDir, "translit.idx"), engine.model)
-        val transliterator = dev.omakey.core.translit.Transliterator(engine.model, index)
+        val index = dev.omakey.core.translit.TransliterationIndex.openOrBuild(File(packDir, "translit.idx"), engine.model, dev.omakey.core.translit.NepaliScheme)
+        val transliterator = dev.omakey.core.translit.Transliterator(engine.model, index, dev.omakey.core.translit.NepaliScheme)
         assertTrue("नमस्ते" in transliterator.candidates("namaste", limit = 3))
         assertTrue(File(packDir, "translit.idx").isFile)
 
@@ -305,6 +325,127 @@ class LanguagePackEvaluationTest {
         assertTrue(index2.isKnown("किताब"))
         assertTrue(index2.alternatives("किताव", 3).contains("किताब"))
         assertTrue(index2.alternatives("तिमि", 3).contains("तिमी"))
+    }
+
+    @Test
+    fun italian() {
+        val engine = install("it_IT")
+        val sentences = sentences("it_IT")
+        assumeTrue("no held-out Italian sentences", sentences.isNotEmpty())
+        val index = engine.index
+
+        assertEquals("perché", index.correct("perche"))
+        assertEquals("più", index.correct("piu"))
+        assertEquals("città", index.correct("citta"))
+        assertEquals("perché", index.correct("perchè")) // the wrong accent, not just a missing one
+        assertEquals("l'uomo", index.correct("l'uomi")) // elided article kept, the rest corrected
+        assertEquals(null, index.correct("e")) // "e" and "è" are both words: never forced
+        kotlinx.coroutines.runBlocking {
+            assertTrue(engine.prediction.suggestNext(null, "c'", "", 3).contains("è"))
+        }
+
+        val accents = measure(engine, sentences) { w -> stripAccents(w).takeIf { it != w && !index.isKnown(it) } }
+        val random = Random(66)
+        val noise = measure(engine, sentences.take(1500)) { w -> typeWithNoise(engine.geometry, w, 0.35f, random) }
+        val damage = damage(engine, sentences)
+        println("it_IT accent restoration: $accents")
+        println("it_IT touch noise 0.35:  $noise")
+        println("it_IT correct words damaged: %.2f %%".format(damage))
+
+        assertTrue("accent restoration regressed: $accents", accents.fixedRate >= IT_ACCENT_FIXED && accents.wrongRate <= IT_ACCENT_WRONG)
+        assertTrue("touch-noise correction regressed: $noise", noise.fixedRate >= IT_NOISE_FIXED && noise.wrongRate <= IT_NOISE_WRONG)
+        assertTrue("damage to correct words regressed: $damage", damage <= IT_DAMAGE)
+    }
+
+    @Test
+    fun russian() {
+        val engine = install("ru_RU")
+        val sentences = sentences("ru_RU")
+        assumeTrue("no held-out Russian sentences", sentences.isNotEmpty())
+        val locale = engine.locale
+        assertEquals("jcuken_ru", locale.letterLayout.id)
+        assertEquals(listOf("jcuken_ru", "phonetic_ru", "translit_ru"), locale.letterLayoutChoices.map { it.id })
+        assertTrue(locale.withLetterLayout("translit_ru").letterLayout.transliteration)
+        assertEquals(dev.omakey.core.locale.Script.CYRILLIC, locale.profile.script)
+        val index = engine.index
+
+        assertEquals("привет", index.correct("привер")) // т/р are neighbours on ЙЦУКЕН
+        assertEquals("спасибо", index.correct("спасиьо")) // б/ь are neighbours too; the view model restores case
+        assertTrue(index.isKnown("ещё") && index.isKnown("еще"))
+        assertEquals(null, index.correct("еще")) // ё is optional in Russian: never forced
+        kotlinx.coroutines.runBlocking {
+            assertTrue(engine.prediction.suggestNext(null, "доброе", "", 3).contains("утро"))
+        }
+
+        val random = Random(66)
+        val noise = measure(engine, sentences.take(1500)) { w -> typeWithNoise(engine.geometry, w, 0.35f, random) }
+        val phonetic = locale.withLetterLayout("phonetic_ru").letterLayout
+        val phoneticGeometry = KeyboardGeometry.from(phonetic, locale.profile::isWordChar)
+        val phoneticEngine = AutocorrectIndex().apply { load(engine.model, PersonalLanguageModel(), locale.profile, phoneticGeometry) }
+        val phoneticNoise = measure(engine, sentences.take(1500), phoneticEngine) { w -> typeWithNoise(phoneticGeometry, w, 0.35f, random) }
+        val damage = damage(engine, sentences)
+        println("ru_RU touch noise 0.35 (ЙЦУКЕН):  $noise")
+        println("ru_RU touch noise 0.35 (phonetic): $phoneticNoise")
+        println("ru_RU correct words damaged: %.2f %%".format(damage))
+
+        // Transliteration, built inside the installed pack as the keyboard builds it.
+        val packDir = File((locale.languageModel as ModelSource.File).path).parentFile
+        val scheme = dev.omakey.core.translit.RussianScheme
+        val translitIndex = dev.omakey.core.translit.TransliterationIndex.openOrBuild(File(packDir, "translit.idx"), engine.model, scheme)
+        val transliterator = dev.omakey.core.translit.Transliterator(engine.model, translitIndex, scheme)
+        var top1 = 0; var top3 = 0; var total = 0
+        val misses = ArrayList<String>()
+        for (sentence in sentences.take(400)) for (i in sentence.indices) {
+            val word = sentence[i]
+            val typed = scheme.romanize(word)
+            if (typed.isEmpty()) continue
+            total++
+            val context = transliterator.contextOf(sentence.getOrNull(i - 1), sentence.getOrNull(i - 2))
+            val candidates = transliterator.candidates(typed, context, 3)
+            if (candidates.firstOrNull() == word) top1++
+            if (word in candidates) top3++ else if (misses.size < 30) misses += "$typed→$word $candidates"
+        }
+        val top1Rate = 100.0 * top1 / total
+        val top3Rate = 100.0 * top3 / total
+        println("ru_RU translit (romanized held-out words): top-1 %.1f %%, top-3 %.1f %% of %d".format(top1Rate, top3Rate, total))
+        println("ru_RU translit misses: $misses")
+        // The same words in the looser spellings people actually use: х as "h", щ as "sch", ц as
+        // "c", й as "j", ё as plain "e" — the variations the scheme's folding exists for.
+        val casual = mapOf('х' to "h", 'щ' to "sch", 'ц' to "c", 'й' to "j", 'ё' to "e", 'ы' to "i")
+        var casualTop3 = 0; var casualTotal = 0
+        for (sentence in sentences.take(400)) for (i in sentence.indices) {
+            val word = sentence[i]
+            if (word.none { it in casual }) continue
+            val typed = word.map { casual[it] ?: scheme.romanize(it.toString()) }.joinToString("")
+            casualTotal++
+            val context = transliterator.contextOf(sentence.getOrNull(i - 1), sentence.getOrNull(i - 2))
+            if (word in transliterator.candidates(typed, context, 3)) casualTop3++
+        }
+        val casualRate = 100.0 * casualTop3 / casualTotal
+        println("ru_RU translit, casual spellings: top-3 %.1f %% of %d".format(casualRate, casualTotal))
+        for ((latin, cyrillic) in listOf("privet" to "привет", "spasibo" to "спасибо", "horosho" to "хорошо",
+                "kak dela" to "как", "pozhaluysta" to "пожалуйста", "segodnya" to "сегодня", "eto" to "это")) {
+            assertTrue("$latin → $cyrillic", cyrillic in transliterator.candidates(latin.substringBefore(' '), limit = 3))
+        }
+
+        assertTrue("touch-noise correction regressed: $noise", noise.fixedRate >= RU_NOISE_FIXED && noise.wrongRate <= RU_NOISE_WRONG)
+        assertTrue("phonetic touch-noise correction regressed: $phoneticNoise", phoneticNoise.fixedRate >= RU_NOISE_FIXED && phoneticNoise.wrongRate <= RU_NOISE_WRONG)
+        assertTrue("damage to correct words regressed: $damage", damage <= RU_DAMAGE)
+        assertTrue("transliteration regressed: top-1 $top1Rate top-3 $top3Rate", top1Rate >= RU_TRANSLIT_TOP1 && top3Rate >= RU_TRANSLIT_TOP3)
+        assertTrue("casual-spelling transliteration regressed: $casualRate", casualRate >= RU_TRANSLIT_CASUAL_TOP3)
+    }
+
+    /** Percentage of correctly typed words of three letters or more that correction changes. */
+    private fun damage(engine: Engine, sentences: List<List<String>>): Double {
+        var clean = 0; var damaged = 0
+        for (sentence in sentences) for (i in sentence.indices) {
+            val word = sentence[i]
+            if (word.length < 3) continue
+            clean++
+            val result = engine.index.correct(word, engine.index.contextOf(sentence.getOrNull(i - 1), sentence.getOrNull(i - 2)))
+            if (result != null && result != word) damaged++
+        }
+        return 100.0 * damaged / clean
     }
 
     /** [word] typed with Gaussian tap noise on [geometry], resolved to the nearest key; null if the
@@ -335,3 +476,16 @@ private const val PT_OFFERED = 48.0
 private const val PT_NOISE_FIXED = 61.0
 private const val PT_NOISE_WRONG = 9.0
 private const val PT_DAMAGE = 0.5
+
+// Italian and Russian floors, set just under the measured values in the class doc.
+private const val IT_ACCENT_FIXED = 93.0
+private const val IT_ACCENT_WRONG = 6.5
+private const val IT_NOISE_FIXED = 60.0
+private const val IT_NOISE_WRONG = 9.0
+private const val IT_DAMAGE = 0.3
+private const val RU_NOISE_FIXED = 58.0
+private const val RU_NOISE_WRONG = 9.5
+private const val RU_DAMAGE = 0.5
+private const val RU_TRANSLIT_TOP1 = 96.0
+private const val RU_TRANSLIT_TOP3 = 99.0
+private const val RU_TRANSLIT_CASUAL_TOP3 = 92.0

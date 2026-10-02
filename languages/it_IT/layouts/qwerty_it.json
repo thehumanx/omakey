@@ -1,0 +1,289 @@
+{
+ "id": "qwerty_it",
+ "displayName": "QWERTY",
+ "homeRow": 1,
+ "rows": [
+  {
+   "keys": [
+    {
+     "label": "q",
+     "code": 113,
+     "popupChars": [
+      "1"
+     ]
+    },
+    {
+     "label": "w",
+     "code": 119,
+     "popupChars": [
+      "2"
+     ]
+    },
+    {
+     "label": "e",
+     "code": 101,
+     "popupChars": [
+      "è",
+      "é",
+      "ê",
+      "ë",
+      "3"
+     ]
+    },
+    {
+     "label": "r",
+     "code": 114,
+     "popupChars": [
+      "4"
+     ]
+    },
+    {
+     "label": "t",
+     "code": 116,
+     "popupChars": [
+      "5"
+     ]
+    },
+    {
+     "label": "y",
+     "code": 121,
+     "popupChars": [
+      "6"
+     ]
+    },
+    {
+     "label": "u",
+     "code": 117,
+     "popupChars": [
+      "ù",
+      "ú",
+      "û",
+      "ü",
+      "7"
+     ]
+    },
+    {
+     "label": "i",
+     "code": 105,
+     "popupChars": [
+      "ì",
+      "í",
+      "î",
+      "ï",
+      "8"
+     ]
+    },
+    {
+     "label": "o",
+     "code": 111,
+     "popupChars": [
+      "ò",
+      "ó",
+      "ô",
+      "ö",
+      "9"
+     ]
+    },
+    {
+     "label": "p",
+     "code": 112,
+     "popupChars": [
+      "0"
+     ]
+    }
+   ]
+  },
+  {
+   "keys": [
+    {
+     "label": "a",
+     "code": 97,
+     "popupChars": [
+      "à",
+      "á",
+      "â",
+      "ä",
+      "@"
+     ]
+    },
+    {
+     "label": "s",
+     "code": 115,
+     "popupChars": [
+      "#"
+     ]
+    },
+    {
+     "label": "d",
+     "code": 100,
+     "popupChars": [
+      "$"
+     ]
+    },
+    {
+     "label": "f",
+     "code": 102,
+     "popupChars": [
+      "_"
+     ]
+    },
+    {
+     "label": "g",
+     "code": 103,
+     "popupChars": [
+      "&"
+     ]
+    },
+    {
+     "label": "h",
+     "code": 104,
+     "popupChars": [
+      "-"
+     ]
+    },
+    {
+     "label": "j",
+     "code": 106,
+     "popupChars": [
+      "+"
+     ]
+    },
+    {
+     "label": "k",
+     "code": 107,
+     "popupChars": [
+      "("
+     ]
+    },
+    {
+     "label": "l",
+     "code": 108,
+     "popupChars": [
+      ")"
+     ]
+    },
+    {
+     "label": "'",
+     "code": 39,
+     "popupChars": [
+      "’",
+      "\"",
+      "«",
+      "»"
+     ]
+    }
+   ]
+  },
+  {
+   "keys": [
+    {
+     "label": "⇧",
+     "code": -1,
+     "widthWeight": 1.5,
+     "keyType": "SPECIAL"
+    },
+    {
+     "label": "z",
+     "code": 122,
+     "popupChars": [
+      "*"
+     ]
+    },
+    {
+     "label": "x",
+     "code": 120,
+     "popupChars": [
+      "\""
+     ]
+    },
+    {
+     "label": "c",
+     "code": 99,
+     "popupChars": [
+      "ç",
+      "'"
+     ]
+    },
+    {
+     "label": "v",
+     "code": 118,
+     "popupChars": [
+      ":"
+     ]
+    },
+    {
+     "label": "b",
+     "code": 98,
+     "popupChars": [
+      ";"
+     ]
+    },
+    {
+     "label": "n",
+     "code": 110,
+     "popupChars": [
+      "ñ",
+      "!"
+     ]
+    },
+    {
+     "label": "m",
+     "code": 109,
+     "popupChars": [
+      "?"
+     ]
+    },
+    {
+     "label": "⌫",
+     "code": -2,
+     "widthWeight": 1.5,
+     "keyType": "SPECIAL"
+    }
+   ]
+  },
+  {
+   "keys": [
+    {
+     "label": "?123",
+     "code": -5,
+     "widthWeight": 1.5,
+     "keyType": "SPECIAL"
+    },
+    {
+     "label": "😊",
+     "code": -7,
+     "widthWeight": 1.0,
+     "keyType": "SPECIAL"
+    },
+    {
+     "label": " ",
+     "code": -3,
+     "widthWeight": 4.0,
+     "keyType": "SPECIAL"
+    },
+    {
+     "label": ".",
+     "code": 46,
+     "popupChars": [
+      ",",
+      "'",
+      "!",
+      "?",
+      ";",
+      ":",
+      "«",
+      "»",
+      "-",
+      "…"
+     ]
+    },
+    {
+     "label": "⏎",
+     "code": -4,
+     "widthWeight": 1.5,
+     "keyType": "SPECIAL"
+    }
+   ]
+  }
+ ]
+}

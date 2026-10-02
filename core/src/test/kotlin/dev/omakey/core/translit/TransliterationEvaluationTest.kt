@@ -38,9 +38,9 @@ class TransliterationEvaluationTest {
     fun nepali() {
         val model = model()
         val started = System.nanoTime()
-        val index = TransliterationIndex.openOrBuild(File(temp.root, "translit.idx"), model)
+        val index = TransliterationIndex.openOrBuild(File(temp.root, "translit.idx"), model, NepaliScheme)
         val buildMs = (System.nanoTime() - started) / 1_000_000
-        val transliterator = Transliterator(model, index)
+        val transliterator = Transliterator(model, index, NepaliScheme)
 
         fun top(latin: String, n: Int) = transliterator.candidates(latin, limit = n)
         assertTrue(top("namaste", 3).toString(), "नमस्ते" in top("namaste", 3))

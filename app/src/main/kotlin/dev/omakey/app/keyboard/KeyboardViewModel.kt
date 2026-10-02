@@ -968,8 +968,13 @@ class KeyboardViewModel(
         if (transliterating()) {
             if (rawText.all { it in 'a'..'z' || it in 'A'..'Z' }) {
                 suggestionCycleIndex = -1
-                translit.type(rawText.lowercase(), ::translitCandidates)
+                // Shift capitalises the Latin, and the session carries that case onto the
+                // candidates ("Privet" → "Привет"); a caseless script ignores it.
+                val state = _uiState.value
+                val shifted = state.shiftOn && profile.hasCase
+                translit.type(if (shifted) rawText.uppercase() else rawText.lowercase(), ::translitCandidates)
                 showTranslitStrip()
+                if (state.shiftOn && !state.capsLockOn) releaseShift()
                 return
             }
             // Anything else ends the word before it is typed, as punctuation does in English.
