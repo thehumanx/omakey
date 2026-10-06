@@ -327,6 +327,7 @@ private fun SettingsScreen(
                             homeRowTinted = layoutSettings.showMiddleRowStripe,
                             alwaysShowUppercaseLetters = layoutSettings.alwaysShowUppercaseLetters,
                             edgePadding = layoutSettings.edgePadding,
+                            showSecondarySymbols = layoutSettings.showSecondarySymbols,
                             interactive = true,
                         )
                     }
@@ -360,6 +361,7 @@ private fun SettingsScreen(
                 item {
                     SettingsSection(title = "Keys") {
                         AppearanceLayoutToggles(layoutSettings, layoutPreferences)
+                        SecondarySymbolsToggle(layoutSettings, layoutPreferences)
                         CapitalizationToggleSection(layoutSettings, layoutPreferences)
                     }
                 }

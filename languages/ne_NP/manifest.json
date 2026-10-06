@@ -2,7 +2,7 @@
  "id": "ne_NP",
  "displayName": "Nepali",
  "nativeName": "नेपाली",
- "packVersion": "1.0.0",
+ "packVersion": "1.0.1",
  "packFormat": 1,
  "letterLayout": "qwerty_ne",
  "letterLayoutChoices": [

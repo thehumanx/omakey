@@ -1,6 +1,7 @@
 package dev.omakey.core.layout
 
 import androidx.compose.runtime.Immutable
+import dev.omakey.core.locale.LanguageProfile
 import kotlinx.serialization.Serializable
 
 enum class KeyType { CHARACTER, SPECIAL, SPACER }
@@ -46,7 +47,26 @@ data class KeyDefinition(
 ) {
     /** The string a tap on this key commits. */
     val committedText: String get() = text ?: String(Character.toChars(code))
+
+    /**
+     * The character drawn small in the key's corner when "Show secondary symbols" is on, and what
+     * a plain long-press types while it is: the first digit or symbol among [popupChars] ("1" on
+     * й, "@" on ф, "3" on e — not "é"), or the first popup entry when every one of them is a
+     * letter (ъ on х; a Devanagari key's shifted letter). Null for keys with nothing to show.
+     *
+     * Entries made only of invisible format characters (the ZWNJ/ZWJ on the Devanagari halant
+     * key) are skipped: a hint you cannot see is not a hint.
+     */
+    val secondarySymbol: String?
+        get() {
+            if (keyType != KeyType.CHARACTER) return null
+            val visible = popupChars.filter { option -> option.any { !it.isFormatChar() && !it.isWhitespace() } }
+            return visible.firstOrNull { option -> option.none { it.isLetter() || LanguageProfile.isCombiningMark(it) } }
+                ?: visible.firstOrNull()
+        }
 }
+
+private fun Char.isFormatChar(): Boolean = Character.getType(this).toByte() == Character.FORMAT
 
 @Immutable
 @Serializable

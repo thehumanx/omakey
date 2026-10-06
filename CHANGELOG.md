@@ -3,6 +3,30 @@
 All notable changes to omakey are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [5.2.0] — 2026-10-06
+
+A round of fixes from a Russian user's report, secondary symbols on keys, and Nepali digits.
+
+### Added
+- **Secondary symbols on keys** (Settings → Appearance → Keys, off by default): each key shows the
+  digit or symbol it types when held, small above its letter. With it on, holding a key and letting
+  go types that symbol.
+- **Nepali digits.** The number row and the ?123 page type १२३ in Nepali, with 123 on long-press.
+  The Devanagari keyboard's top row has both on long-press too (needs the updated Nepali language).
+  The calculator answers in the digits you typed: "१२+७=" offers "१९".
+
+### Fixed
+- After a comma, the next word was sometimes capitalised. Changing "." to "," with a swipe, or
+  deleting the ".", now takes back the capital the "." turned on.
+- After autocorrect changed a word, there was no way to swipe back to what you typed. Swiping down
+  now goes through other readings of what you typed, swiping up restores it (and saves it), and the
+  word you typed is shown in the suggestions.
+- Swiping up on a word now always does something you can see: it saves the word, removes a word you
+  taught the keyboard (including one it learned because you typed it often), or says the word is
+  already in the dictionary.
+- Long-press options (like ё on е) are picked by sliding onto the one you see, and show as capitals
+  when Shift is on.
+
 ## [5.1.0] — 2026-10-02
 
 Italian and Russian, and a theme builder that does the hard part for you.

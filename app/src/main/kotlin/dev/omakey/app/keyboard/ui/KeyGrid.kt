@@ -95,6 +95,12 @@ internal val EXTENDED_POPUP_SYMBOLS = listOf(
     "@", "#", "$", "_", "&", "-", "+", "(", ")", "/", "*", "\"", ":", ";", "!", "?",
 )
 
+/** The long-press popup's cell sizes and side padding. One set of numbers for the overlay that
+ * draws the cells and the gesture loop that picks one — see [dev.omakey.core.layout.PopupStripGeometry]. */
+private val POPUP_PADDING = 8.dp
+private val POPUP_MIN_CELL = 36.dp
+private val POPUP_MAX_CELL = 56.dp
+
 @Composable
 internal fun KeyGrid(
     viewModel: KeyboardViewModel,
@@ -190,7 +196,7 @@ internal fun KeyGrid(
                     // sensitivity/showKeyPopup are keys here (not just captured) so a change made
                     // in Settings while the keyboard is open takes effect on the very next gesture,
                     // not only after the layout itself changes.
-                    base.pointerInput(uiState.layout.id, touchSlopPx, gestureSettings.swipeSensitivity, gestureSettings.showKeyPopup) {
+                    base.pointerInput(uiState.layout.id, touchSlopPx, gestureSettings.swipeSensitivity, gestureSettings.showKeyPopup, layoutSettings.showSecondarySymbols) {
                         val thresholds = GestureThresholds(
                             // Was previously hardcoded to 12f — smaller than the system's real
                             // touch slop, which meant ordinary finger movement during normal
@@ -227,6 +233,11 @@ internal fun KeyGrid(
                             // finger lifts or this touch resolves some other way, same lifecycle as
                             // [longPressJob].
                             var swipeDeleteHoldJob: Job? = null
+                            // Whether the finger has moved since the accent popup opened. Until it
+                            // has, the popup keeps its initial pick — the plain letter, or the hint
+                            // when hints are shown — instead of whatever cell happens to be drawn
+                            // under the spot the finger is already resting on.
+                            var accentMoved = false
 
                             val longPressJob: Job = scope.launch {
                                 delay(400)
@@ -261,10 +272,18 @@ internal fun KeyGrid(
                                         // and the MOVE/UP handling further down for how the rest
                                         // of this same touch drives it.
                                         feedback.onKeyPress()
+                                        // With hints on keys, a plain hold-and-release types the
+                                        // hint — the symbol the key advertises — as on keyboards
+                                        // that draw these; sliding still reaches the others.
+                                        val hintIndex = heldKey.secondarySymbol
+                                            ?.takeIf { layoutSettings.showSecondarySymbols }
+                                            ?.let { heldKey.popupChars.indexOf(it) + 1 }
+                                            ?.takeIf { it > 0 }
+                                        accentMoved = false
                                         accentDragState = AccentDragState(
                                             key = heldKey,
                                             options = listOf(heldKey.label) + heldKey.popupChars,
-                                            highlightedIndex = 0,
+                                            highlightedIndex = hintIndex ?: 0,
                                         )
                                     } else {
                                         handleGestureEvent(
@@ -339,10 +358,9 @@ internal fun KeyGrid(
                                     if (cursorDragActive) {
                                         settled = true
                                     } else if (dragState != null) {
-                                        // Commits whichever option the finger is currently over —
-                                        // index 0 (the base letter) if the finger never left the
-                                        // key, exactly like a plain long-press-then-release with no
-                                        // popup would type the base character.
+                                        // Commits whichever option is selected: the one the finger
+                                        // slid onto, or — if it never moved — the plain letter, or
+                                        // the hint when hints are shown on keys.
                                         dragState.options.getOrNull(dragState.highlightedIndex)
                                             ?.let { viewModel.onAccentSelected(it) }
                                         accentDragState = null
@@ -371,38 +389,39 @@ internal fun KeyGrid(
                                         cursorDragAnchorX = change.position.x
                                     }
                                 } else if (dragState != null) {
-                                    // Distance from the touch's *down* position (not the held
-                                    // key's own on-screen bounds/center), and unsigned — either
-                                    // direction advances the index equally. Real bug, fixed: this
-                                    // used to be signed distance rightward from the held key's own
-                                    // center, which meant a key sitting near the right edge of the
-                                    // row (P, L, M) had nowhere on-screen to drag *into* — there
-                                    // was no room to the right, and dragging left just clamped back
-                                    // to index 0. Since the popup itself no longer visually anchors
-                                    // to the held key either (see SymbolModeOverlay, a full-width
-                                    // fade over the whole grid), there's no reason the selection
-                                    // math still has to — any key can now be reached by dragging in
-                                    // whichever direction actually has screen room, symmetric cell
-                                    // width for the whole keyboard's key spacing.
-                                    val cellWidthPx = 40.dp.toPx()
-                                    val distancePx = kotlin.math.abs(change.position.x - down.position.x)
-                                    val wantIndex = (distancePx / cellWidthPx).toInt()
-                                    var options = dragState.options
-                                    if (wantIndex >= options.size) {
-                                        // Dragged past the last popup character — "keep
-                                        // dragging" reveals more special characters beyond the
-                                        // curated per-key set, the same idea as Fleksy's drag-
-                                        // into-symbols-mode, scoped here to extending this same
-                                        // popup rather than swapping the whole keyboard layout
-                                        // underneath the finger.
-                                        val extra = EXTENDED_POPUP_SYMBOLS
-                                            .filterNot { it in options }
-                                            .take(wantIndex - options.size + 1)
-                                        options = options + extra
-                                    }
-                                    val clampedIndex = wantIndex.coerceIn(0, options.size - 1)
-                                    if (options !== dragState.options || clampedIndex != dragState.highlightedIndex) {
-                                        accentDragState = dragState.copy(options = options, highlightedIndex = clampedIndex)
+                                    // The option drawn under the finger is the one selected — the
+                                    // cells' positions come from the same PopupStripGeometry the
+                                    // overlay draws them with. Real bug, reported for "ё": selection
+                                    // used to go by drag *distance* from the held key while the cells
+                                    // were drawn centred elsewhere, so sliding onto the option you
+                                    // could see picked a different one, or none. Centred cells are
+                                    // reachable from any key, including right-edge ones (P, L, М),
+                                    // which is what the distance scheme was originally for.
+                                    val dx = change.position.x - down.position.x
+                                    val dy = change.position.y - down.position.y
+                                    if (!accentMoved && kotlin.math.abs(dx) < touchSlopPx && kotlin.math.abs(dy) < touchSlopPx) {
+                                        // Still resting where the long-press landed.
+                                    } else {
+                                        accentMoved = true
+                                        val widthPx = size.width.toFloat()
+                                        val paddingPx = POPUP_PADDING.toPx()
+                                        val minCellPx = POPUP_MIN_CELL.toPx()
+                                        val maxCellPx = POPUP_MAX_CELL.toPx()
+                                        val maxCells = dev.omakey.core.layout.PopupStripGeometry.maxCells(widthPx, paddingPx, minCellPx)
+                                        var options = dragState.options
+                                        // options[0] is the plain letter, which has no cell.
+                                        var geometry = dev.omakey.core.layout.PopupStripGeometry.of(widthPx, paddingPx, options.size - 1, minCellPx, maxCellPx)
+                                        // Sliding on past the last cell reveals more symbols beyond
+                                        // the key's own set, one per half-cell, while there is room.
+                                        while (change.position.x > geometry.endPx + geometry.cellPx / 2 && options.size - 1 < maxCells) {
+                                            val next = EXTENDED_POPUP_SYMBOLS.firstOrNull { it !in options } ?: break
+                                            options = options + next
+                                            geometry = dev.omakey.core.layout.PopupStripGeometry.of(widthPx, paddingPx, options.size - 1, minCellPx, maxCellPx)
+                                        }
+                                        val index = geometry.indexAt(change.position.x) + 1
+                                        if (options !== dragState.options || index != dragState.highlightedIndex) {
+                                            accentDragState = dragState.copy(options = options, highlightedIndex = index)
+                                        }
                                     }
                                 } else {
                                     val gestureEvent = machine.onTouch(
@@ -492,6 +511,7 @@ internal fun KeyGrid(
                     enterAction = uiState.enterAction,
                     shimmerProgress = shimmerProgress.value,
                     alwaysShowUppercaseLetters = layoutSettings.alwaysShowUppercaseLetters,
+                    showSecondarySymbols = layoutSettings.showSecondarySymbols,
                 )
             }
         }
@@ -545,6 +565,7 @@ internal fun KeyGrid(
             lastAccentDragState?.let { state ->
                 SymbolModeOverlay(
                     state = state,
+                    uppercase = uiState.shiftOn,
                     alpha = symbolModeAlpha.value,
                     theme = theme,
                     fontFamily = fontFamily,
@@ -567,6 +588,9 @@ internal fun KeyGrid(
 @Composable
 private fun SymbolModeOverlay(
     state: AccentDragState,
+    /** Shift is on, so the options type in uppercase — draw them that way. Per character, as
+     * the commit does: the popup must show what a release types ("Ё", not "ё"). */
+    uppercase: Boolean,
     alpha: Float,
     theme: OmakeyTheme,
     fontFamily: androidx.compose.ui.text.font.FontFamily?,
@@ -580,9 +604,9 @@ private fun SymbolModeOverlay(
             .background(theme.keyboardBackground.toComposeColor()),
         contentAlignment = Alignment.Center,
     ) {
-        androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
+        androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
             val density = androidx.compose.ui.platform.LocalDensity.current
-            val availableWidthPx = with(density) { maxWidth.toPx() }
+            val widthPx = with(density) { maxWidth.toPx() }
             // state.options[0] is always the held key's own base label (see AccentDragState's
             // doc) — kept in the underlying list so the drag-distance math and "release without
             // dragging types the base char" behavior in KeyGrid's gesture loop stay unchanged, but
@@ -590,15 +614,14 @@ private fun SymbolModeOverlay(
             // re-showing it in its own popup is just visual noise. Only the special characters
             // past it get a cell.
             val displayOptions = state.options.drop(1)
-            // Shrinks cells to fit as more options accumulate (the EXTENDED_POPUP_SYMBOLS overflow
-            // tier can push option count well past what a fixed cell width would fit on one row),
-            // clamped so cells never get too cramped or absurdly wide with only 2-3 options.
-            val cellWidthDp = with(density) {
-                (availableWidthPx / displayOptions.size.coerceAtLeast(1)).toDp()
-            }.coerceIn(36.dp, 56.dp)
+            // The same geometry the gesture loop selects with, so each cell is drawn exactly where
+            // a finger picks it. Cells shrink as the overflow tier adds options, within limits.
+            val geometry = with(density) {
+                dev.omakey.core.layout.PopupStripGeometry.of(widthPx, POPUP_PADDING.toPx(), displayOptions.size, POPUP_MIN_CELL.toPx(), POPUP_MAX_CELL.toPx())
+            }
+            val cellWidthDp = with(density) { geometry.cellPx.toDp() }
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
+                modifier = Modifier.offset { androidx.compose.ui.unit.IntOffset(geometry.startPx.toInt(), 0) },
             ) {
                 val isGridModeOverlay = dev.omakey.core.theme.LocalKeyboardLayoutMode.current == dev.omakey.core.theme.LayoutMode.GRID
                 displayOptions.forEachIndexed { rawIndex, option ->
@@ -649,7 +672,7 @@ private fun SymbolModeOverlay(
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
-                            text = option,
+                            text = if (uppercase) buildString(option.length) { option.forEach { append(it.uppercaseChar()) } } else option,
                             color = (if (isHighlighted) theme.onAccent else theme.labelOn(theme.keyBackground)).toComposeColor(),
                             fontFamily = fontFamily,
                             fontSize = 20.sp,
@@ -835,6 +858,9 @@ internal fun KeyRowView(
     // own doc on includeBottom). Every other caller is a row inside a real multi-row grid, where
     // each row still needs to own the seam to the row below it.
     gridCellBottomBorder: Boolean = true,
+    // "Show secondary symbols": each character key's [KeyDefinition.secondarySymbol], drawn small
+    // above its label. See LayoutSettings.showSecondarySymbols.
+    showSecondarySymbols: Boolean = false,
 ) {
     Box(
         Modifier
@@ -1032,6 +1058,7 @@ internal fun KeyRowView(
                         else -> labelColor
                     }
                     val icon = keyIcon(key, capsLockOn, enterAction)
+                    val hint = if (showSecondarySymbols && icon == null) key.secondarySymbol else null
                     if (icon != null) {
                         Icon(imageVector = icon, contentDescription = keyDescription, tint = tint, modifier = Modifier.size(20.dp))
                     } else {
@@ -1040,6 +1067,19 @@ internal fun KeyRowView(
                             color = tint,
                             fontFamily = fontFamily,
                             fontSize = fontSize,
+                            // Nudged down to leave the top of the key to the hint.
+                            modifier = if (hint != null) Modifier.padding(top = 10.dp) else Modifier,
+                        )
+                    }
+                    if (hint != null) {
+                        Text(
+                            // A letter hint (ъ on х) follows the keycaps' case, like the label does.
+                            text = if (hint.length == 1 && (alwaysShowUppercaseLetters || shiftOn || capsLockOn)) hint.uppercase() else hint,
+                            color = tint.copy(alpha = SECONDARY_SYMBOL_ALPHA),
+                            fontFamily = fontFamily,
+                            fontSize = 10.sp,
+                            maxLines = 1,
+                            modifier = Modifier.align(Alignment.TopCenter).padding(top = 3.dp),
                         )
                     }
                 }
@@ -1050,3 +1090,6 @@ internal fun KeyRowView(
 
 /** How faded the language name on the spacebar is — see KeyRowView's tint. */
 private const val SPACEBAR_LABEL_ALPHA = 0.4f
+
+/** How faded a key's secondary symbol is: readable, but clearly second to the letter. */
+private const val SECONDARY_SYMBOL_ALPHA = 0.55f

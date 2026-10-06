@@ -23,10 +23,14 @@ data class ProfileSpec(
     val emojiWords: Map<String, List<String>> = emptyMap(),
     val clitics: List<String> = emptyList(),
     val autoApplyCorrections: Boolean = true,
+    /** The language's digits 0–9; null means the script's default (see
+     * [LanguageProfile.defaultDigits]). */
+    val digits: String? = null,
 ) {
     fun toProfile(): LanguageProfile {
         require(doubleSpaceInserts.length == 1) { "doubleSpaceInserts must be one character" }
         require(punctuationCycle.isNotEmpty()) { "punctuationCycle must not be empty" }
+        require(digits == null || digits.length == 10) { "digits must be ten characters" }
         val emoji = emojiWords.mapKeys { it.key.lowercase() }
         return LanguageProfile(
             script = script,
@@ -41,6 +45,7 @@ data class ProfileSpec(
             equivalentLetters = equivalentLetters,
             clitics = clitics,
             autoApplyCorrections = autoApplyCorrections,
+            digits = digits ?: LanguageProfile.defaultDigits(script),
         )
     }
 }

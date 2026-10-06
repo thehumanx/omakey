@@ -368,6 +368,17 @@ internal fun CapitalizationToggleSection(settings: LayoutSettings, layoutPrefere
 }
 
 @Composable
+internal fun SecondarySymbolsToggle(settings: LayoutSettings, layoutPreferences: LayoutPreferences) {
+    SettingToggle(
+        title = "Show secondary symbols",
+        description = "Show the digit or symbol a key types when held, small above its letter. " +
+            "Holding a key and letting go then types that symbol; slide to pick its other characters.",
+        checked = settings.showSecondarySymbols,
+        onCheckedChange = layoutPreferences::setShowSecondarySymbols,
+    )
+}
+
+@Composable
 internal fun SettingToggle(title: String, description: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth(),

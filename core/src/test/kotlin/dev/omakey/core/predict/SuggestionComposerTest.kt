@@ -157,4 +157,18 @@ class SuggestionComposerTest {
 
         assertFalse(result.fromCorrection)
     }
+
+    @Test
+    fun `after a silent autocorrect, the correction comes first and what was typed comes last`() {
+        // Three slots, as on the keyboard: the typed word must survive the squeeze.
+        val keyboardComposer = SuggestionComposer(index, predictions, limit = 3)
+        val result = runBlocking { keyboardComposer.forAutocorrectedWord(typed = "teh", corrected = "the", beforePreviousWord = null) }
+
+        assertEquals("the", result.words.first())
+        // The typed word is in the strip: swipe up or a tap gets it back, as in Fleksy.
+        assertEquals("teh", result.words.last())
+        assertEquals(result.words.size, result.words.map { it.lowercase() }.distinct().size)
+        assertEquals(3, result.words.size)
+        assertTrue(result.fromCorrection)
+    }
 }
