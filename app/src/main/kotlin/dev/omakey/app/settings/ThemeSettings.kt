@@ -559,6 +559,7 @@ internal fun ThemePreviewMock(
     homeRowTinted: Boolean = true,
     alwaysShowUppercaseLetters: Boolean = true,
     edgePadding: Boolean = false,
+    showSecondarySymbols: Boolean = false,
     // Keys respond to touch: a held key fills with the key tap colour, and Shift steps through
     // off → shift → caps lock, which is where the accent shows. Nothing is typed.
     interactive: Boolean = false,
@@ -667,6 +668,7 @@ internal fun ThemePreviewMock(
                 onBoundsMeasured = { measured -> measured.forEach { (code, _, rect) -> keyBounds[code] = rect } },
                 fontFamily = fontFamily,
                 alwaysShowUppercaseLetters = alwaysShowUppercaseLetters,
+                showSecondarySymbols = showSecondarySymbols,
             )
         }
         }

@@ -248,4 +248,21 @@ class AutocorrectIndexTest {
     fun `alternatives respects the limit`() {
         assertEquals(2, index.alternatives("cat", 2).size)
     }
+
+    @Test
+    fun `a word learned just by typing it can be unlearned, a bundled word cannot`() {
+        // Reported as swipe-up "sometimes working": a word typed often enough to be learned was
+        // trusted by autocorrect, yet a swipe up on it neither learned nor unlearned anything.
+        val personal = PersonalLanguageModel()
+        val learning = AutocorrectIndex().apply { load(TestLanguageModel.load(), personal) }
+        repeat(PersonalLanguageModel.IMPLICIT_TRUST_THRESHOLD.toInt()) { personal.record("bibek", explicit = false) }
+
+        assertTrue(learning.isKnown("bibek"))
+        assertTrue(learning.isUserAdded("bibek"))
+        learning.unlearn("bibek")
+        assertFalse(learning.isKnown("bibek"))
+
+        repeat(PersonalLanguageModel.IMPLICIT_TRUST_THRESHOLD.toInt()) { personal.record("keyboard", explicit = false) }
+        assertFalse(learning.isUserAdded("keyboard"))
+    }
 }

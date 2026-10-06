@@ -42,6 +42,8 @@ data class KeyboardUiState(
     val activeLanguageId: String = KeyboardLocale.Default.id,
     /** The active language's letter layout, for highlighting it in the language panel. */
     val activeLetterLayoutId: String = KeyboardLocale.Default.letterLayout.id,
+    /** The active language's digits 0–9, for the number tab. See [dev.omakey.core.locale.LanguageProfile.digits]. */
+    val digits: String = KeyboardLocale.Default.profile.digits,
     /** The language picker occupies the key-grid slot, like quick access. */
     val languagePickerOpen: Boolean = false,
     val shiftOn: Boolean = false,

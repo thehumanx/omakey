@@ -58,4 +58,15 @@ class CalculatorTest {
         assertEquals("19", Calculator.formatResult(19.0))
         assertEquals("4.5", Calculator.formatResult(4.5))
     }
+
+    @Test
+    fun `answers in the digits the sum was typed in`() {
+        val devanagari = dev.omakey.core.locale.LanguageProfile.DEVANAGARI_DIGITS
+        assertEquals("१९", Calculator.evaluateIn("१२+७", devanagari))
+        assertEquals("४.५", Calculator.evaluateIn("२+२.५", devanagari))
+        // Western digits typed on a Nepali keyboard (long-press) still answer in Western digits.
+        assertEquals("19", Calculator.evaluateIn("12+7", devanagari))
+        assertEquals("19", Calculator.evaluateIn("12+7", dev.omakey.core.locale.LanguageProfile.WESTERN_DIGITS))
+        assertNull(Calculator.evaluateIn("१२", devanagari))
+    }
 }

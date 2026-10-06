@@ -202,7 +202,7 @@ class AutocorrectIndex(
     fun unlearn(word: String) {
         profile.splitClitic(word)?.let { return unlearn(it.second) }
         val lower = word.toLookupForm()
-        if (!personal.isExplicit(lower)) return
+        if (!isUserAdded(lower)) return
         personal.forget(lower)
     }
 
@@ -217,10 +217,23 @@ class AutocorrectIndex(
         return languageModel.indexOf(lower) != LanguageModel.NO_WORD
     }
 
-    /** Whether [word] came from the user's own swipe-up save rather than the bundled vocabulary —
-     * exactly what determines whether a second swipe-up can [unlearn] it. */
-    fun isUserAdded(word: String): Boolean =
-        personal.isExplicit((profile.splitClitic(word)?.second ?: word).toLookupForm())
+    /**
+     * Whether [word] is known only because the user taught it — saved with a swipe up, or typed
+     * often enough to be learned — rather than from the bundled vocabulary. Exactly what decides
+     * whether a swipe up can [unlearn] it.
+     *
+     * Real bug, reported by a user ("sometimes swiping up works and sometimes it doesn't"): this
+     * used to mean *explicitly saved* only. A word learned by typing it three times was trusted by
+     * autocorrect and listed under Settings → Learned words, yet swiping up on it did nothing at
+     * all — neither learned (it was already known) nor unlearned (it wasn't "saved").
+     */
+    fun isUserAdded(word: String): Boolean {
+        val lower = (profile.splitClitic(word)?.second ?: word).toLookupForm()
+        if (personal.isExplicit(lower)) return true
+        if (!personal.isTrusted(lower)) return false
+        val languageModel = model ?: return false
+        return languageModel.indexOf(lower) == LanguageModel.NO_WORD
+    }
 
     /**
      * Curated apostrophe-insertion fixes ("im" -> "I'm", "weve" -> "we've").

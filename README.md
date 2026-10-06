@@ -47,7 +47,7 @@ ever leaves your phone.
 
 ## App Updates / Plans and PSA
 - I've publicly shared this keyboard only on Reddit threads (besides my website) and few kind volunteers have tried and provided feedback on fixes/improvements and features. 
-- Languages beyond English arrived in 5.0.0: Spanish, French, Brazilian Portuguese and Nepali, each a small optional download. 5.1.0 adds Italian and Russian. More to come.
+- Languages beyond English arrived in 5.0.0: Spanish, French, Brazilian Portuguese and Nepali, each a small optional download. 5.1.0 adds Italian and Russian, and 5.2.0 fixes what a Russian user reported. More to come.
 - I am prioritizing more on optimizing the UX and autocorrection/prediction engine as its being written from the scratch.
 - The keyboard is optimized for battery usage as well. Fleksy used to take around 5-10%, while this takes just around 1%.
 - Note: Not tested for old hardwares, if you do, please test and lmk feedback.
@@ -101,6 +101,8 @@ ever leaves your phone.
 
 - Full QWERTY with shift, caps lock, two pages of symbols, and long-press accents (à, é, ñ, and
   more — hold a key like `e` or `a` to see its variants).
+- Optional secondary symbols on the keys — the digit or symbol each key types when held, shown
+  small above its letter, so you can type `1` or `@` without leaving the letters. Off by default.
 - Type a symbol, then hit space — it drops you straight back into letters, no manual switch back
   needed.
 - The Enter key adapts to what you're typing into — "Go," "Search," "Send," "Next," "Done" —
@@ -129,7 +131,7 @@ menus involved:
 | **Swipe up/down right after a `. , ! ? ; : ' "`** | Cycles through that whole set of punctuation instead of word suggestions — turn "." into "," into "!" and so on with repeated swipes, without retyping. Works whether the cursor sits right against the mark or one space past it, so it chains naturally off double-tap-space-for-period. |
 | **Tap and hold Shift** | Locks in caps lock. A quick tap just capitalizes the next letter, then releases. |
 | **Long-press and drag the spacebar** | Moves the cursor without needing to tap precisely inside your text — fixes a typo three words back without losing your place. |
-| **Long-press a letter key** with accent variants | Fades into a full-width picker for that key's variants (à, á, â, ä...) — keep holding and drag to browse, lift to select. Drag further for a few extra everyday symbols. |
+| **Long-press a letter key** with accent variants | Fades into a full-width picker for that key's variants (à, á, â, ä...) — keep holding and slide onto the one you want, lift to type it. Slide past the end for a few extra everyday symbols. |
 | **Swipe left/right in the emoji panel** | Slides between emoji categories. |
 | Adjustable swipe sensitivity | A Settings slider tunes how far a swipe has to travel before it registers. |
 
@@ -168,7 +170,8 @@ only carry the ones you use. Settings → Languages → "Get more languages" lis
 - **Nepali** — type it the way you'd text it, in English letters ("namaste", "mero"), and the
   Devanagari appears as you go; tap a different choice in the strip if the first isn't right, or
   keep the English spelling for English words. There's also a proper Devanagari keyboard if you'd
-  rather type the script directly.
+  rather type the script directly. Numbers come out in Nepali digits (१२३), with 123 a long-press
+  away.
 - **Italian** — accents put back for you ("perche" becomes "perché", and the wrong-way "perchè"
   too), with an apostrophe key for "l'", "c'è" and "un'altra", which are understood as two words.
 - **Russian** — three keyboards: the standard ЙЦУКЕН, a phonetic one with each letter where the
@@ -186,6 +189,8 @@ learned, in case you add it back.
 
 - Real autocorrect — typos get fixed the moment you finish the word, not just quietly offered for
   you to notice and tap. Got it wrong? One backspace undoes it, and it won't just re-correct back.
+  Or swipe, Fleksy-style: down goes through other readings of what you typed, up puts back exactly
+  what you typed and saves it.
 - Catches typos that need two fixes at once — a swapped letter pair *and* a wrong character — not
   just single-letter slips.
 - Fixes the *first* letter too — "qccount" becomes "account", "hte" becomes "the" — as long as the
@@ -309,9 +314,10 @@ Neither sends anything you type, or any other data about you.
 
 ## Status
 
-omakey is on release 5.1.0, which adds Italian and Russian (with ЙЦУКЕН, phonetic and translit
-keyboards) and a theme builder that works out a whole matching theme from one background colour.
-5.0.0 before it was the languages release: Spanish, French, Brazilian Portuguese and Nepali as
+omakey is on release 5.2.0: optional secondary symbols on the keys, Nepali digits, swiping back
+after autocorrect, and fixes to auto-capitalise, swipe-up-to-save and the long-press picker. 5.1.0
+added Italian and Russian (with ЙЦУКЕН, phonetic and translit keyboards) and a theme builder that
+works out a whole matching theme from one background colour. 5.0.0 before it was the languages release: Spanish, French, Brazilian Portuguese and Nepali as
 optional downloads, with a globe button to switch between them and their layouts, a reorganised
 strip above the keys, Settings split into pages, and a floating keyboard that follows your finger.
 

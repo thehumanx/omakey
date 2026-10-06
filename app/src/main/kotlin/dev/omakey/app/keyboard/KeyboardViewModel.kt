@@ -29,6 +29,7 @@ import dev.omakey.core.layout.LayoutSettings
 import dev.omakey.core.layout.withLanguageKeyInsteadOfEmoji
 import dev.omakey.core.layout.withSpaceLabel
 import dev.omakey.core.layout.Layouts
+import dev.omakey.core.layout.withDigits
 import dev.omakey.core.layout.SpecialKeyCode
 import dev.omakey.core.predict.AutocorrectIndex
 import dev.omakey.core.predict.AutocorrectPreferences
@@ -372,12 +373,14 @@ class KeyboardViewModel(
             (info.imeOptions and EditorInfo.IME_FLAG_NO_ENTER_ACTION) != 0 -> EditorInfo.IME_ACTION_NONE
             else -> info.imeOptions and EditorInfo.IME_MASK_ACTION
         }
+        val capitalizeFieldStart = autocorrectPreferences.settings.value.autoCapitalizeEnabled && profile.hasCase &&
+            textEditor.textBeforeCursor(1).isEmpty()
+        shiftFromAutoCapitalize = capitalizeFieldStart
         _uiState.update {
             it.copy(
                 layout = display(locale().letterLayout),
                 baseRowCount = locale().letterLayout.rows.size,
-                shiftOn = autocorrectPreferences.settings.value.autoCapitalizeEnabled && profile.hasCase &&
-                    textEditor.textBeforeCursor(1).isEmpty(),
+                shiftOn = capitalizeFieldStart,
                 capsLockOn = false,
                 suggestions = emptyList(),
                 emojiSuggestions = emptyList(),
@@ -613,6 +616,8 @@ class KeyboardViewModel(
             textEditor.deleteCharacterBackward() // the punctuation
             textEditor.commitCharacter(next)
             textEditor.insertSpace()
+            // "." → "," must take back the capital the "." turned on, and "," → "?" add one.
+            reevaluateAutoCapitalize()
         } else {
             textEditor.deleteCharacterBackward()
             textEditor.commitCharacter(next)
@@ -731,6 +736,9 @@ class KeyboardViewModel(
             ?: words.bufferedWord.ifBlank { textEditor.wordBeforeCursor()?.word.orEmpty() }
         if (original.isBlank()) return
         if (active != null) applyActiveCorrection(original)
+        // Restoring a word autocorrect replaced is the swipe version of backspace-to-revert; the
+        // record must go, or the next backspace would "revert" a correction no longer on screen.
+        lastAutocorrect = null
         suggestionCycleIndex = -1
         undoHistory.breakCoalescing()
         // Either branch below decides this word's fate explicitly; the staged implicit learn would
@@ -747,9 +755,11 @@ class KeyboardViewModel(
                 scope.launch { predictionEngine.saveWord(original) }
                 showBanner("$original learned")
             }
-            // Already known and not user-added (i.e. a bundled dictionary word) — nothing to
-            // learn or unlearn, so no banner; swiping up on an ordinary real word is a plain
-            // "keep it as typed" with no side effect, same as it always was.
+            // A bundled dictionary word: nothing to learn or unlearn. Said so rather than silently
+            // doing nothing — real user report: with no feedback here, swipe-up looked like it
+            // worked only "sometimes", since this case was indistinguishable from a missed swipe.
+            // Longer than the learned/unlearned flash: a sentence needs time to be read.
+            else -> showBanner("$original is already in the dictionary", durationMs = 1200)
         }
     }
 
@@ -758,11 +768,11 @@ class KeyboardViewModel(
     /** Flashes [message] in the suggestion strip's slot for ~0.5s, matching the plan's ask for a
      * short learn/unlearn confirmation rather than a system Toast (which would interrupt typing
      * flow and, per Android 12+, may not even be visible while a keyboard has focus). */
-    private fun showBanner(message: String) {
+    private fun showBanner(message: String, durationMs: Long = 500) {
         bannerJob?.cancel()
         _uiState.update { it.copy(bannerMessage = message) }
         bannerJob = scope.launch {
-            delay(500)
+            delay(durationMs)
             _uiState.update { it.copy(bannerMessage = null) }
         }
     }
@@ -1055,10 +1065,10 @@ class KeyboardViewModel(
         val textBefore = textEditor.textBeforeCursor(64)
         if (textBefore.isEmpty() || textBefore.last() != '=') return false
         val beforeEquals = textBefore.dropLast(1)
-        val exprStart = beforeEquals.indexOfLast { it !in "0123456789+-*/. " }
+        val digits = profile.digits
+        val exprStart = beforeEquals.indexOfLast { it !in "0123456789+-*/. " && it !in digits }
         val expression = beforeEquals.substring(exprStart + 1)
-        val result = Calculator.evaluate(expression) ?: return false
-        val formatted = Calculator.formatResult(result)
+        val formatted = Calculator.evaluateIn(expression, digits) ?: return false
         val display = "$expression=$formatted"
         activeCorrection = ActiveCorrection(
             mode = CorrectionApplyMode.RETROACTIVE,
@@ -1135,13 +1145,40 @@ class KeyboardViewModel(
     }
 
     /** Off by default (per user request) — only capitalizes the very start of a field or right
-     * after sentence-ending punctuation, never mid-sentence. Caps lock always wins over this. */
+     * after sentence-ending punctuation and a space, never mid-sentence. Caps lock always wins
+     * over this. */
     private fun maybeAutoCapitalize() {
         if (!autocorrectPreferences.settings.value.autoCapitalizeEnabled || !profile.hasCase) return
         if (_uiState.value.capsLockOn) return
-        val before = textEditor.textBeforeCursor(3).trimEnd { it == ' ' }
-        val shouldCapitalize = before.isEmpty() || before.last() in profile.capitalizeAfter
-        if (shouldCapitalize) _uiState.update { it.copy(shiftOn = true) }
+        val raw = textEditor.textBeforeCursor(3)
+        // A space is required after the punctuation: the cursor sitting straight after "hello."
+        // is someone editing the sentence end, not starting the next one.
+        val before = raw.trimEnd { it == ' ' }
+        val shouldCapitalize = raw.isEmpty() || (raw.last() == ' ' && (before.isEmpty() || before.last() in profile.capitalizeAfter))
+        if (shouldCapitalize) {
+            _uiState.update { it.copy(shiftOn = true) }
+            shiftFromAutoCapitalize = true
+        }
+    }
+
+    /**
+     * Whether the Shift currently on was turned on by [maybeAutoCapitalize] rather than by the
+     * user — the only kind [reevaluateAutoCapitalize] may take back.
+     */
+    private var shiftFromAutoCapitalize = false
+
+    /**
+     * Re-decides an automatic capital after the text before the cursor changed underneath it.
+     *
+     * Real bug, reported by a user: double-space typed ". " and capitalised the next word, a swipe
+     * then turned that "." into "," — and the capital stayed, so the word after the comma came out
+     * capitalised. Deleting the "." had the same effect. Auto-capitalise was only ever *added*
+     * after a space; nothing removed it when its reason went away. A Shift the user tapped is left
+     * alone — only one this class turned on is withdrawn.
+     */
+    private fun reevaluateAutoCapitalize() {
+        if (shiftFromAutoCapitalize && _uiState.value.shiftOn && !_uiState.value.capsLockOn) releaseShift()
+        maybeAutoCapitalize()
     }
 
     private fun onEnter() {
@@ -1327,6 +1364,9 @@ class KeyboardViewModel(
      * open and the previous word's suggestions kept showing, stale, with nothing left to suggest
      * for). */
     internal fun refreshSuggestionsAfterDeletion() {
+        // Deleting the "." of ". " removes the reason for an automatic capital; deleting back to
+        // the start of the field adds one.
+        reevaluateAutoCapitalize()
         // See tryShowCalculatorResult()'s own doc — backspacing away just the applied result of
         // "12+7=19" leaves the cursor sitting right after "12+7=" again, which should show the
         // calculator suggestion again rather than falling through to plain word logic.
@@ -1584,6 +1624,7 @@ class KeyboardViewModel(
      * ([KeyboardLayout.shiftLayoutId]), which is what Shift means on a Devanagari keyboard.
      */
     private fun engageShift(capsLock: Boolean) {
+        shiftFromAutoCapitalize = false
         val current = _uiState.value.layout
         val shiftLayer = if (profile.hasCase) null else layouts.shiftLayerOf(current)
         _uiState.update {
@@ -1593,6 +1634,7 @@ class KeyboardViewModel(
 
     /** Shift and caps lock off, and back from a shift layer to the layer it came from. */
     private fun releaseShift() {
+        shiftFromAutoCapitalize = false
         val base = locale().letterLayout
         _uiState.update {
             val onShiftLayer = !profile.hasCase && it.layout.id == base.shiftLayoutId
@@ -1623,6 +1665,7 @@ class KeyboardViewModel(
                 baseRowCount = locale.letterLayout.rows.size,
                 activeLanguageId = locale.id,
                 activeLetterLayoutId = locale.letterLayout.id,
+                digits = locale.profile.digits,
                 shiftOn = false,
                 capsLockOn = false,
                 suggestions = emptyList(),
@@ -1695,6 +1738,8 @@ class KeyboardViewModel(
      */
     private fun display(layout: KeyboardLayout): KeyboardLayout {
         val locale = locale()
+        // The symbols page is shared by every language, but its digit row is the language's own.
+        if (layout.id == Layouts.Symbols1.id) return layout.withDigits(locale.profile.digits)
         val letterLayers = setOfNotNull(locale.letterLayout.id, locale.letterLayout.shiftLayoutId)
         if (layout.id !in letterLayers) return layout
         val stored = layouts[layout.id] ?: locale.letterLayout.takeIf { it.id == layout.id } ?: layout
@@ -1779,6 +1824,30 @@ class KeyboardViewModel(
         }
 
         val target = words.lastCommittedCased.takeIf { checkContextualCorrection }
+        val autocorrected = lastAutocorrect?.takeIf { it.corrected == target }
+        if (target != null && autocorrected != null) {
+            refreshJob = scope.launch {
+                val result = suggestionComposer.forAutocorrectedWord(
+                    typed = autocorrected.original,
+                    corrected = autocorrected.corrected,
+                    beforePreviousWord = words.previousToLastCommitted,
+                )
+                // originalWord is what was typed — the word swipe-up restores — while what occupies
+                // the text right now is the correction.
+                activeCorrection = ActiveCorrection(
+                    mode = CorrectionApplyMode.RETROACTIVE,
+                    originalWord = autocorrected.original,
+                    occupiedBefore = autocorrected.corrected.length,
+                    occupiedAfter = 0,
+                    separator = words.boundarySeparator,
+                )
+                show(result)
+                // The correction is already applied, so cycling starts on it: swipe down goes to
+                // the next reading, swipe up goes back to what was typed.
+                suggestionCycleIndex = 0
+            }
+            return
+        }
         if (target != null) {
             refreshJob = scope.launch {
                 val result = suggestionComposer.forFinishedWord(target, words.previousToLastCommitted)

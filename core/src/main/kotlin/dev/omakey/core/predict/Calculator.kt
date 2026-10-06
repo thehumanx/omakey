@@ -30,6 +30,24 @@ object Calculator {
         return if (result.isFinite()) result else null
     }
 
+    /**
+     * [expression] evaluated and formatted in the digits it was typed in: "१२+७" with Devanagari
+     * [digits] gives "१९", so a Nepali sum is answered in Nepali. [digits] is the language's 0–9;
+     * Western digits are always understood too. Null if it doesn't evaluate.
+     */
+    fun evaluateIn(expression: String, digits: String): String? {
+        val western = buildString(expression.length) {
+            for (c in expression) {
+                val native = digits.indexOf(c)
+                append(if (native >= 0) '0' + native else c)
+            }
+        }
+        val result = formatResult(evaluate(western) ?: return null)
+        val typedNative = expression.any { it in digits && it !in '0'..'9' }
+        if (!typedNative) return result
+        return buildString(result.length) { for (c in result) append(if (c in '0'..'9') digits[c - '0'] else c) }
+    }
+
     /** Formats a successful [evaluate] result the way a person would type it — "19" not "19.0",
      * but "4.5" kept as-is. */
     fun formatResult(value: Double): String =

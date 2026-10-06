@@ -58,7 +58,15 @@ class LanguageProfile(
     /** Whether autocorrect may replace a word silently at a word boundary. Off where the model is
      * not yet trusted for that — suggestions are still offered; nothing is changed unasked. */
     val autoApplyCorrections: Boolean = true,
+    /** The ten digits 0–9 as this language writes them, in order. What the number tab and the
+     * symbols page type; the Western digits stay reachable by long-press when these differ. See
+     * [defaultDigits]. */
+    val digits: String = defaultDigits(script),
 ) {
+    init {
+        require(digits.length == 10) { "digits must be exactly ten characters, got ${digits.length}" }
+    }
+
     private val cliticsLongestFirst = clitics.map { it.toLookupForm() }.sortedByDescending { it.length }
 
     /**
@@ -80,6 +88,18 @@ class LanguageProfile(
     fun isWord(text: CharSequence): Boolean = text.isNotEmpty() && text.all(::isWordChar)
 
     companion object {
+        const val WESTERN_DIGITS = "0123456789"
+        const val DEVANAGARI_DIGITS = "०१२३४५६७८९"
+
+        /** What a script's own languages type by default. A pack can override it in
+         * `profile.json` (Hindi users, for one, mostly type Western digits). Derived from the
+         * script rather than read only from the pack so packs already installed — whose
+         * profile.json predates the field — get the right digits without a re-download. */
+        fun defaultDigits(script: Script): String = when (script) {
+            Script.DEVANAGARI -> DEVANAGARI_DIGITS
+            Script.LATIN, Script.CYRILLIC -> WESTERN_DIGITS
+        }
+
         /** Non-spacing (Mn) and spacing-combining (Mc) marks. Enclosing marks (Me) are left out:
          * they draw a circle or keycap around what precedes them and are emoji machinery, not
          * spelling. */

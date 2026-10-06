@@ -49,6 +49,7 @@ import dev.omakey.core.icons.PhosphorSelectAll
 import dev.omakey.core.icons.PhosphorUndo
 import dev.omakey.core.layout.LayoutSettings
 import dev.omakey.core.layout.Layouts
+import dev.omakey.core.layout.withDigits
 import dev.omakey.core.theme.OmakeyTheme
 import kotlinx.coroutines.isActive
 
@@ -139,7 +140,7 @@ internal fun TopStrip(
             val showKeyBackgrounds = uiState.layoutSettings.showKeyBackgrounds
             when (page) {
                 0 -> SuggestionBar(viewModel, uiState, theme, fontFamily, feedback, quickAccessOpen, showKeyBackgrounds)
-                1 -> NumbersTabContent(theme, fontFamily, viewModel, feedback, uiState.layout.id, showKeyBackgrounds)
+                1 -> NumbersTabContent(theme, fontFamily, viewModel, feedback, uiState.layout.id, uiState.digits, showKeyBackgrounds)
                 else -> ToolsTabContent(
                     theme, fontFamily, viewModel, feedback, uiState.canUndo, uiState.canRedo,
                     clipboardModeActive = clipboardModeActive,
@@ -640,6 +641,7 @@ internal fun NumbersTabContent(
     viewModel: KeyboardViewModel,
     feedback: KeyboardFeedback,
     currentLayoutId: String,
+    digits: String,
     showKeyBackgrounds: Boolean = false,
 ) {
     val noOpAncestor: () -> androidx.compose.ui.layout.LayoutCoordinates? = remember { { null } }
@@ -649,7 +651,7 @@ internal fun NumbersTabContent(
     val rowKeys = if (currentLayoutId == Layouts.Symbols1.id || currentLayoutId == Layouts.Symbols2.id) {
         Layouts.SymbolsExtraRow.keys
     } else {
-        Layouts.NumberRow.keys
+        remember(digits) { Layouts.NumberRow.withDigits(digits).keys }
     }
     val isGridMode = dev.omakey.core.theme.LocalKeyboardLayoutMode.current == dev.omakey.core.theme.LayoutMode.GRID
     Box(Modifier.fillMaxWidth().fillMaxHeight().let { m -> if (isGridMode) m else m.padding(horizontal = 4.dp) }) {

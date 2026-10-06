@@ -87,6 +87,26 @@ class SuggestionComposer(
         return if (alternatives.isEmpty()) Suggestions.None else Suggestions(alternatives, fromCorrection = true)
     }
 
+    /**
+     * A word autocorrect just replaced silently: [corrected] is on screen, [typed] is what the
+     * user's fingers produced. Offers [corrected] first — it is what is applied — then the other
+     * readings of [typed], and [typed] itself last, so the strip shows the word that was replaced
+     * and a tap gets it back.
+     *
+     * Alternatives are of [typed], not [corrected]: the user's input is the evidence, and a
+     * neighbour of the engine's guess is a guess about a guess. This is the Fleksy behaviour of
+     * swiping through readings of what was typed after the keyboard has already picked one;
+     * before it, the list was [forFinishedWord] of the correction, which never contained the
+     * typed word, so no swipe could undo an autocorrect.
+     */
+    suspend fun forAutocorrectedWord(typed: String, corrected: String, beforePreviousWord: String?): Suggestions {
+        val context = autocorrectIndex.contextOf(beforePreviousWord, null)
+        val others = withContext(Dispatchers.Default) { alternatives(typed, context) }
+            .filterNot { it.equals(corrected, ignoreCase = true) || it.equals(typed, ignoreCase = true) }
+        val words = listOf(corrected) + others.take((limit - 2).coerceAtLeast(0)) + typed
+        return Suggestions(words.take(limit.coerceAtLeast(2)), fromCorrection = true)
+    }
+
     /** Nothing to correct: what word tends to come next. Never a correction, so accepting one of
      * these types a fresh word instead of replacing anything. */
     suspend fun nextWord(previousWord: String?, beforePreviousWord: String?): Suggestions {

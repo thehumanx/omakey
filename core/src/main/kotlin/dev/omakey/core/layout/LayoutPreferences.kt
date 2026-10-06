@@ -55,6 +55,11 @@ data class LayoutSettings(
      * language key in the bottom row and the emoji button in the suggestion bar. Only matters with
      * two or more languages enabled — with one, there is no language button at all. */
     val swapEmojiAndLanguage: Boolean = false,
+    /** A small secondary character in the corner of each letter key — the digit or symbol its
+     * long-press types ([KeyDefinition.secondarySymbol]). Off by default: it is visual noise for
+     * anyone who doesn't use long-press. While on, a long-press preselects that symbol so the
+     * hint is what a plain hold-and-release types, the way keyboards that show these behave. */
+    val showSecondarySymbols: Boolean = false,
 ) {
     companion object {
         const val DEFAULT_HEIGHT_DP = 260
@@ -92,6 +97,7 @@ class LayoutPreferences(context: Context) {
     fun setShowTapPreview(show: Boolean) = update { it.copy(showTapPreview = show) }
     fun setEdgePadding(enabled: Boolean) = update { it.copy(edgePadding = enabled) }
     fun setSwapEmojiAndLanguage(swap: Boolean) = update { it.copy(swapEmojiAndLanguage = swap) }
+    fun setShowSecondarySymbols(show: Boolean) = update { it.copy(showSecondarySymbols = show) }
 
     fun setPlacement(placement: KeyboardPlacement) = update { it.copy(placement = placement) }
 
@@ -124,6 +130,7 @@ class LayoutPreferences(context: Context) {
             putInt(KEY_FLOATING_Y, next.floatingYDp)
             putInt(KEY_ONE_HANDED_WIDTH, next.oneHandedWidthDp)
             putBoolean(KEY_SWAP_EMOJI_LANGUAGE, next.swapEmojiAndLanguage)
+            putBoolean(KEY_SECONDARY_SYMBOLS, next.showSecondarySymbols)
         }
     }
 
@@ -147,11 +154,13 @@ class LayoutPreferences(context: Context) {
         floatingYDp = prefs.getInt(KEY_FLOATING_Y, KeyboardPlacementGeometry.DEFAULT_FLOATING_Y_DP),
         oneHandedWidthDp = prefs.getInt(KEY_ONE_HANDED_WIDTH, LayoutSettings.DEFAULT_ONE_HANDED_WIDTH_DP),
         swapEmojiAndLanguage = prefs.getBoolean(KEY_SWAP_EMOJI_LANGUAGE, false),
+        showSecondarySymbols = prefs.getBoolean(KEY_SECONDARY_SYMBOLS, false),
     )
 
     private companion object {
         const val PREFS_NAME = "omakey_layout_prefs"
         const val KEY_SWAP_EMOJI_LANGUAGE = "swap_emoji_and_language"
+        const val KEY_SECONDARY_SYMBOLS = "show_secondary_symbols"
         const val KEY_HEIGHT = "keyboard_height_dp"
         const val KEY_KEY_BACKGROUNDS = "show_key_backgrounds"
         const val KEY_MIDDLE_STRIPE = "show_middle_row_stripe"
