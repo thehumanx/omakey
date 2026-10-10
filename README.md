@@ -337,6 +337,10 @@ Not on the Play Store yet. In the meantime:
 4. Switch to it from the keyboard-switcher icon on your current keyboard, or that same Settings
    screen.
 
+## Support
+
+Enjoying omakey? [Support the work here](https://ko-fi.com/thehumanx). Thank you.
+
 ## License
 
 [GPL-3.0](LICENSE). Fork it, modify it, ship your own version — just keep it open, the same way
