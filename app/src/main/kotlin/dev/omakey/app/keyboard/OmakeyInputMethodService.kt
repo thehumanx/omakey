@@ -108,11 +108,19 @@ class OmakeyInputMethodService :
     // "app read your clipboard" toast — skipping that read entirely for a change omakey itself
     // just caused (the text is already known, no read needed) is what avoids firing a second,
     // redundant toast on top of the OS's own unavoidable "Copied to clipboard" one.
-    private var suppressNextClipboardRead = false
+    //
+    // A deadline rather than a flag, because a flag can go stale: if omakey's Copy produced no
+    // change callback (nothing selected, the same text already on the clipboard, a host that
+    // ignores the copy action), the flag stayed set and silently swallowed the user's *next real
+    // copy* — one of the reasons copies went missing from the history.
+    private var suppressClipboardReadUntilMs = 0L
+    /** `ClipDescription.getTimestamp()` of the clip last captured, so the catch-up read on every
+     * keyboard appearance doesn't re-record a clip it already has. */
+    private var lastCapturedClipTimestamp = 0L
     // Real bug, fixed: this used to insert the raw, untrimmed `selectedText()` (e.g. "Select all"
     // on a multi-line field very often selects a trailing newline/whitespace the user never
     // meant to copy), while captureCurrentClipboardIfNew() below trims before comparing/inserting.
-    // If suppressNextClipboardRead ever failed to suppress the listener for this same copy (e.g.
+    // If the own-copy suppression ever failed to suppress the listener for this same copy (e.g.
     // ClipboardManager delivering more than one change callback for a single setPrimaryClip, a
     // known platform quirk on some OEM builds) the two paths' `lastCapturedClipText` values
     // wouldn't match — trimmed vs untrimmed — so the fallback path's own dedupe check silently
@@ -126,21 +134,17 @@ class OmakeyInputMethodService :
             // your clipboard" toast). That read is pointless whether or not we go on to store the
             // text, and skipping the flag while incognito would trade a privacy fix for a spurious
             // toast every time the user copies out of a password field.
-            suppressNextClipboardRead = true
+            suppressClipboardReadUntilMs = android.os.SystemClock.uptimeMillis() + OWN_COPY_SUPPRESS_MS
             lastCapturedClipText = text
             lastCapturedClipUri = null
             if (clipboardPreferences.settings.value.historyEnabled && !incognitoPreferences.incognito.value) {
-                serviceScope.launch {
-                    database.clipboardDao()
-                        .insert(ClipboardEntity(content = text, timestamp = System.currentTimeMillis()))
-                    clipboardHistory.trim()
-                }
+                serviceScope.launch { clipboardHistory.recordText(text) }
             }
         }
     }
     private val clipboardListener = ClipboardManager.OnPrimaryClipChangedListener {
-        if (suppressNextClipboardRead) {
-            suppressNextClipboardRead = false
+        if (android.os.SystemClock.uptimeMillis() < suppressClipboardReadUntilMs) {
+            suppressClipboardReadUntilMs = 0L
         } else {
             serviceScope.launch { captureCurrentClipboardIfNew() }
         }
@@ -173,6 +177,9 @@ class OmakeyInputMethodService :
     private suspend fun captureCurrentClipboardIfNew() {
         val clip = clipboardManager.primaryClip?.takeIf { it.itemCount > 0 } ?: return
         if (!shouldCaptureClip(clip.description)) return
+        val clipTimestamp = clip.description?.timestamp ?: 0L
+        if (clipTimestamp != 0L && clipTimestamp == lastCapturedClipTimestamp) return
+        lastCapturedClipTimestamp = clipTimestamp
         val item = clip.getItemAt(0)
         val imageUri = item.uri?.takeIf { clip.description?.hasMimeType("image/*") == true }
         if (imageUri != null) {
@@ -198,8 +205,7 @@ class OmakeyInputMethodService :
         if (text.isNullOrEmpty() || text == lastCapturedClipText) return
         lastCapturedClipText = text
         lastCapturedClipUri = null
-        database.clipboardDao().insert(ClipboardEntity(content = text, timestamp = System.currentTimeMillis()))
-        clipboardHistory.trim()
+        clipboardHistory.recordText(text)
     }
 
     /**
@@ -436,6 +442,12 @@ class OmakeyInputMethodService :
         // primaryClip for real — silently firing the "read your clipboard" toast a second time.
         clipboardManager.removePrimaryClipChangedListener(clipboardListener)
         clipboardManager.addPrimaryClipChangedListener(clipboardListener)
+        // Catch up on a copy made while the keyboard was hidden — "Select all" and Copy on a web
+        // page, where no text field (so no keyboard, so no listener) is involved. Only the latest
+        // clip can be recovered, but that is the one the user just made. Runs while omakey is the
+        // keyboard on screen, the same situation the listener reads in, and after
+        // resetForNewField so a password field's incognito gate already applies.
+        serviceScope.launch { captureCurrentClipboardIfNew() }
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
@@ -558,6 +570,7 @@ class OmakeyInputMethodService :
         insetsHandler.removeCallbacks(requestInsetsUpdate)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
         clipboardManager.removePrimaryClipChangedListener(clipboardListener)
+        (keyboardFeedback as? VibratorKeyboardFeedback)?.release()
         // Symmetry with the registrations in onCreate. Not strictly required — SharedPreferences
         // holds listeners weakly, which is why nothing broke while nothing anywhere unregistered —
         // but "we rely on an implementation detail nobody chose to rely on" is a worse position
@@ -581,6 +594,9 @@ class OmakeyInputMethodService :
     }
 
     private companion object {
+        /** Long enough for the system to deliver the change callback for omakey's own Copy/Cut,
+         * short enough that it can never swallow a copy the user makes afterwards. */
+        const val OWN_COPY_SUPPRESS_MS = 1_000L
         const val INSETS_SETTLE_MS = 60L
         /** Ceiling on a single copied clipboard image. Generous enough for any screenshot or photo
          * a user would plausibly paste, small enough that 50 of them is a bounded amount of

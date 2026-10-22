@@ -43,6 +43,8 @@ class AutocorrectIndex(
     private val strictRank: Int = STRICT_RANK,
     private val maxEdits: Int = MAX_EDITS,
     private val maxBrowsableEdits: Int = MAX_BROWSABLE_EDITS,
+    private val thirdEditMinLength: Int = THIRD_EDIT_MIN_LENGTH,
+    private val browsableScoreMargin: Float = BROWSABLE_SCORE_MARGIN,
 ) {
 
     @Volatile private var model: LanguageModel? = null
@@ -301,13 +303,19 @@ class AutocorrectIndex(
         if (lower.length !in MIN_LENGTH..MAX_LENGTH) return results.take(limit).toList()
 
         val scored = ArrayList<Scored>(SCORED_CAPACITY)
-        collectCandidates(lower, correctionFloor, context, maxBrowsableEdits, taps, scored)
+        val editBound = if (lower.length >= thirdEditMinLength) maxBrowsableEdits else minOf(maxEdits, maxBrowsableEdits)
+        collectCandidates(lower, correctionFloor, context, editBound, taps, scored)
         if (!isKnown(lower)) {
             correctSplitCandidate(lower, context)?.let { scored += it }
         }
         scored.sortByDescending { it.score }
+        // Only candidates in the same league as the best one. Without this, a strip with one good
+        // reading filled its other slots with whatever common word happened to be reachable —
+        // "bibek" offered "bike", "video" and "nine", three guesses with nothing in common.
+        val cutoff = (scored.firstOrNull()?.score ?: 0f) - browsableScoreMargin
         for (candidate in scored) {
             if (results.size >= limit) break
+            if (candidate.score < cutoff) break
             if (results.none { it.equals(candidate.text, ignoreCase = true) }) results += candidate.text
         }
         return results.take(limit).toList()
@@ -648,6 +656,20 @@ class AutocorrectIndex(
          * genuinely different costs of being wrong.
          */
         const val MAX_BROWSABLE_EDITS = 3
+
+        /**
+         * A third edit only for words at least this long. On a short word three edits reach almost
+         * anything ("bibek" → "video", "nine"), and those guesses crowd the right answer out of a
+         * three-slot strip. Measured on the 4,000-pair spelling corpus with the score margin below
+         * (2026-10-22): strip recall@3 47.45% → 47.63%, wrong words shown per typo 2.04 → 1.74,
+         * words offered for unknown names 2.82 → 2.06. Recall went *up*: the third edit only ever
+         * paid for itself on long words.
+         */
+        const val THIRD_EDIT_MIN_LENGTH = 8
+
+        /** How far below the best candidate's score a strip candidate may fall and still be shown.
+         * 4 trims noise for almost no recall (−0.4 pt); 3 and 2 cost 1–3 pt and were rejected. */
+        const val BROWSABLE_SCORE_MARGIN = 4f
 
         /** Typical number of candidates that clear the floor and the edit bound — sizing the list
          * up front avoids regrowth on the typing hot path. */

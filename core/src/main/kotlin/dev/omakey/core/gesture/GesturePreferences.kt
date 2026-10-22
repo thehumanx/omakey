@@ -15,6 +15,10 @@ data class GestureSettings(
      * users want as an explicit opt-in gesture rather than always-on (e.g. it can compete with a
      * word-cycling swipe started slightly diagonally). */
     val swipeRightForSpace: Boolean = false,
+    /** Off by default: a swipe left takes the last word together with any space after it, so
+     * "hello my name is " and "hello my name is" both become "hello my name ". On: a space after
+     * the word is a swipe of its own, the word the next one (the behaviour before 5.3). */
+    val swipeLeftSpaceIsOwnStep: Boolean = false,
 ) {
     companion object {
         const val DEFAULT_SENSITIVITY = 1.0f
@@ -40,12 +44,15 @@ class GesturePreferences(context: Context) {
 
     fun setSwipeRightForSpace(enabled: Boolean) = update { it.copy(swipeRightForSpace = enabled) }
 
+    fun setSwipeLeftSpaceIsOwnStep(enabled: Boolean) = update { it.copy(swipeLeftSpaceIsOwnStep = enabled) }
+
     private fun update(transform: (GestureSettings) -> GestureSettings) {
         val next = transform(store.settings.value)
         store.edit {
             putFloat(KEY_SENSITIVITY, next.swipeSensitivity)
             putBoolean(KEY_SHOW_POPUP, next.showKeyPopup)
             putBoolean(KEY_SWIPE_RIGHT_FOR_SPACE, next.swipeRightForSpace)
+            putBoolean(KEY_SWIPE_LEFT_SPACE_OWN_STEP, next.swipeLeftSpaceIsOwnStep)
         }
     }
 
@@ -55,6 +62,7 @@ class GesturePreferences(context: Context) {
         swipeSensitivity = prefs.getFloat(KEY_SENSITIVITY, GestureSettings.DEFAULT_SENSITIVITY),
         showKeyPopup = prefs.getBoolean(KEY_SHOW_POPUP, true),
         swipeRightForSpace = prefs.getBoolean(KEY_SWIPE_RIGHT_FOR_SPACE, false),
+        swipeLeftSpaceIsOwnStep = prefs.getBoolean(KEY_SWIPE_LEFT_SPACE_OWN_STEP, false),
     )
 
     private companion object {
@@ -62,5 +70,6 @@ class GesturePreferences(context: Context) {
         const val KEY_SENSITIVITY = "swipe_sensitivity"
         const val KEY_SHOW_POPUP = "show_key_popup"
         const val KEY_SWIPE_RIGHT_FOR_SPACE = "swipe_right_for_space"
+        const val KEY_SWIPE_LEFT_SPACE_OWN_STEP = "swipe_left_space_is_own_step"
     }
 }

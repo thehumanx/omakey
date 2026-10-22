@@ -76,6 +76,24 @@ class TransliterationSession(private val editor: TextEditor) {
         return word
     }
 
+    /**
+     * Removes the word being composed from the field and forgets it; returns what was on screen, or
+     * null if nothing was being composed.
+     *
+     * For a swipe-left mid-word. Deleting around the cursor instead (what a swipe does to committed
+     * text) leaves this session still holding the Latin, so the next keystroke put the "deleted"
+     * word straight back — and some host apps ignore a delete that lands inside the composing region
+     * at all. That is why swipe-to-delete in Nepali and Russian Translit worked after a space and
+     * failed mid-word.
+     */
+    fun discard(): String? {
+        if (latin.isEmpty()) return null
+        val shown = strip.getOrNull(selected)
+        editor.cancelComposing()
+        clear()
+        return shown
+    }
+
     /** The cursor moved elsewhere mid-word: leave what's shown as it is and stop composing. */
     fun abandon() {
         if (latin.isEmpty()) return

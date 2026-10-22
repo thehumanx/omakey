@@ -2,6 +2,7 @@ package dev.omakey.app.keyboard
 
 import android.content.Context
 import android.media.AudioAttributes
+import android.media.AudioManager
 import android.media.SoundPool
 import android.os.Build
 import android.os.VibrationEffect
@@ -9,7 +10,11 @@ import android.os.Vibrator
 import android.os.VibratorManager
 import android.util.Log
 import dev.omakey.app.R
+import dev.omakey.core.feedback.FeedbackKind
+import dev.omakey.core.feedback.FeedbackTuning
 import dev.omakey.core.feedback.HapticSoundPreferences
+import dev.omakey.core.feedback.HapticSoundSettings
+import dev.omakey.core.feedback.SoundChoices
 
 /** Decouples KeyboardViewModel/KeyboardRoot from raw Vibrator/SoundPool calls — those live here,
  * behind two intent-based methods, so the caller doesn't need to know or care how "a key was
@@ -25,13 +30,18 @@ interface KeyboardFeedback {
 }
 
 /**
- * Real implementation using VibrationEffect (amplitude-controlled, not just on/off — the whole
- * point of a "strength" setting is a vibration that actually feels different, not the same buzz
- * clipped to a different length) and a bundled click sound played via SoundPool, rather than
- * AudioManager.playSoundEffect — the system sound-effect API silently no-ops on many OEM builds
- * when the device's own "Touch sounds" system setting is off, which is outside this app's control
- * and was making the in-app sound toggle look broken even though it was firing correctly.
- * SoundPool bypasses that: our own click plays on our own terms.
+ * The real engine.
+ *
+ * **Haptics** use the best form the phone's motor supports — see [FeedbackTuning] for the three
+ * forms and the measurement behind preferring primitives. A keypress is a click; a swipe a stronger
+ * click; a word deleted a thud, so it reads as something going away.
+ *
+ * **Sound** is a bundled sample played via SoundPool, rather than AudioManager.playSoundEffect —
+ * the system sound-effect API silently no-ops on many OEM builds when the device's own "Touch
+ * sounds" setting is off, which made the in-app sound toggle look broken. Every sample is loaded
+ * when the keyboard starts: SoundPool loads asynchronously, and a sample loaded on first use is
+ * not ready for that first play, so the first click after a restart (and the first swoosh) used to
+ * be silent. Clicks follow the phone's silent and vibrate modes, as other keyboards' do.
  */
 class VibratorKeyboardFeedback(context: Context, private val preferences: HapticSoundPreferences) : KeyboardFeedback {
     private val appContext = context.applicationContext
@@ -45,90 +55,110 @@ class VibratorKeyboardFeedback(context: Context, private val preferences: Haptic
         }
     }
 
-    private val soundPool: SoundPool by lazy {
-        SoundPool.Builder()
-            .setMaxStreams(3)
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                    .build(),
-            )
-            .build()
-    }
-    // Keyed by sound-choice id rather than a single fixed slot — the user can switch which click
-    // plays from Settings at any time, and each choice's SoundPool sample only needs loading once
-    // per process, not on every switch back to a previously-picked choice.
-    private val loadedSoundIds = mutableMapOf<String, Int>()
+    private val audioManager: AudioManager by lazy { appContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
 
-    private fun ensureSoundLoaded(soundChoice: String) {
-        if (loadedSoundIds.containsKey(soundChoice)) return
-        loadedSoundIds[soundChoice] = soundPool.load(appContext, SoundCatalog.resolve(soundChoice), 1)
+    /** Which haptic form this motor gets, decided once — capabilities don't change at runtime. */
+    private val hapticForm: HapticForm by lazy {
+        when {
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
+                vibrator.areAllPrimitivesSupported(VibrationEffect.Composition.PRIMITIVE_CLICK) -> HapticForm.PRIMITIVE
+            vibrator.hasAmplitudeControl() -> HapticForm.ONE_SHOT
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q -> HapticForm.PRESET
+            else -> HapticForm.ONE_SHOT
+        }
     }
 
-    // Always this one fixed sample regardless of the user's tap-click sound choice — a "swoosh"
-    // reads as "something got deleted" independent of whichever click the rest of the keyboard
-    // is using, the same way most keyboards use a single dedicated delete sound.
-    private val swooshSoundId: Int by lazy { soundPool.load(appContext, R.raw.swipe_swoosh, 1) }
+    private val thudSupported: Boolean by lazy {
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
+            vibrator.areAllPrimitivesSupported(VibrationEffect.Composition.PRIMITIVE_THUD)
+    }
 
-    override fun onKeyPress() {
+    private val soundPool: SoundPool = SoundPool.Builder()
+        .setMaxStreams(4)
+        .setAudioAttributes(
+            AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .build(),
+        )
+        .build()
+
+    /** Sample id per sound-choice id, every choice loaded up front (a few KB each) so switching the
+     * click in Settings never lands on an unloaded sample either. */
+    private val clickSoundIds: Map<String, Int> =
+        SoundCatalog.displayNames.associate { (choice, _) -> choice to soundPool.load(appContext, SoundCatalog.resolve(choice), 1) }
+
+    // Always this one fixed sample regardless of the user's click choice — a "swoosh" reads as
+    // "something got deleted" whichever click the rest of the keyboard uses.
+    private val swooshSoundId: Int = soundPool.load(appContext, R.raw.swipe_swoosh, 1)
+
+    /** Samples that finished loading. Written on SoundPool's callback thread, read on main. */
+    private val readySoundIds: MutableSet<Int> = java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap())
+
+    init {
+        soundPool.setOnLoadCompleteListener { _, sampleId, status -> if (status == 0) readySoundIds += sampleId }
+    }
+
+    override fun onKeyPress() = play(FeedbackKind.KEY_PRESS)
+    override fun onSwipe() = play(FeedbackKind.SWIPE)
+    override fun onSwipeDelete() = play(FeedbackKind.SWIPE_DELETE)
+
+    private fun play(kind: FeedbackKind) {
         val settings = preferences.settings.value
-        if (settings.hapticEnabled) {
-            // Below ~20ms, several OEM haptic engines silently substitute their own fixed-length
-            // "TICK" primitive and largely ignore the requested amplitude — confirmed via
-            // dumpsys vibrator_manager, which showed our short requests being delivered but
-            // collapsed onto a canned effect regardless of strength. Staying above that floor
-            // gets a real, adjustable buzz instead of the same barely-there tick every time.
-            vibrate(durationMs = 20 + (settings.hapticStrength * 25).toLong(), amplitudeFraction = settings.hapticStrength)
-        }
-        if (settings.soundEnabled) playClick(settings.soundChoice, volume = 0.5f * settings.soundVolume)
+        if (settings.hapticEnabled) vibrate(kind, settings.hapticStrength)
+        if (settings.soundEnabled) playSound(kind, settings)
     }
 
-    override fun onSwipe() {
-        val settings = preferences.settings.value
-        if (settings.hapticEnabled) {
-            // Noticeably longer/punchier than a tap — confirms a swipe actually registered,
-            // distinct from an ordinary keystroke.
-            vibrate(
-                durationMs = 35 + (settings.hapticStrength * 30).toLong(),
-                amplitudeFraction = (settings.hapticStrength * 1.2f).coerceAtMost(1f),
-            )
-        }
-        if (settings.soundEnabled) playClick(settings.soundChoice, volume = 0.8f * settings.soundVolume)
+    private fun vibrate(kind: FeedbackKind, strength: Float) {
+        runCatching {
+            val effect = when (hapticForm) {
+                HapticForm.PRIMITIVE -> primitive(kind, strength)
+                HapticForm.ONE_SHOT -> VibrationEffect.createOneShot(
+                    FeedbackTuning.oneShotDurationMs(kind, strength),
+                    FeedbackTuning.oneShotAmplitude(kind, strength),
+                )
+                HapticForm.PRESET -> preset(kind)
+            }
+            vibrator.vibrate(effect)
+        }.onFailure { Log.w(TAG, "vibrate() failed", it) }
     }
 
-    override fun onSwipeDelete() {
-        val settings = preferences.settings.value
-        if (settings.hapticEnabled) {
-            vibrate(
-                durationMs = 35 + (settings.hapticStrength * 30).toLong(),
-                amplitudeFraction = (settings.hapticStrength * 1.2f).coerceAtMost(1f),
-            )
+    @androidx.annotation.RequiresApi(Build.VERSION_CODES.R)
+    private fun primitive(kind: FeedbackKind, strength: Float): VibrationEffect {
+        val id = if (kind == FeedbackKind.SWIPE_DELETE && thudSupported) {
+            VibrationEffect.Composition.PRIMITIVE_THUD
+        } else {
+            VibrationEffect.Composition.PRIMITIVE_CLICK
         }
-        // Same multiplier as onKeyPress's tap click (not onSwipe's louder 0.8f) — the swoosh
-        // should track the user's tap-volume slider directly, not sit at its own fixed level
-        // relative to it.
-        if (settings.soundEnabled) {
-            val volume = 0.5f * settings.soundVolume
-            soundPool.play(swooshSoundId, volume, volume, 1, 0, 1f)
-        }
+        return VibrationEffect.startComposition()
+            .addPrimitive(id, FeedbackTuning.primitiveScale(kind, strength))
+            .compose()
     }
 
-    private fun playClick(soundChoice: String, volume: Float) {
-        ensureSoundLoaded(soundChoice)
-        val soundId = loadedSoundIds[soundChoice] ?: return
+    @androidx.annotation.RequiresApi(Build.VERSION_CODES.Q)
+    private fun preset(kind: FeedbackKind): VibrationEffect = VibrationEffect.createPredefined(
+        if (kind == FeedbackKind.KEY_PRESS) VibrationEffect.EFFECT_CLICK else VibrationEffect.EFFECT_HEAVY_CLICK,
+    )
+
+    private fun playSound(kind: FeedbackKind, settings: HapticSoundSettings) {
+        // Silent and vibrate modes mean "no noise from this phone"; a keyboard clicking anyway is
+        // the thing people turn those modes on to stop.
+        if (audioManager.ringerMode != AudioManager.RINGER_MODE_NORMAL) return
+        val soundId = if (kind == FeedbackKind.SWIPE_DELETE) {
+            swooshSoundId
+        } else {
+            clickSoundIds[settings.soundChoice] ?: clickSoundIds.getValue(SoundChoices.DEFAULT)
+        }
+        if (soundId !in readySoundIds) return
+        val volume = FeedbackTuning.soundVolume(kind, settings.soundVolume)
         soundPool.play(soundId, volume, volume, 1, 0, 1f)
     }
 
-    private fun vibrate(durationMs: Long, amplitudeFraction: Float) {
-        // Floor above 0 regardless of strength setting — a near-zero amplitude at low "strength"
-        // is functionally the same as no feedback at all, which defeats a settings slider whose
-        // whole point is "still felt, just lighter."
-        val amplitude = (amplitudeFraction.coerceIn(0.25f, 1f) * 255).toInt().coerceIn(1, 255)
-        runCatching {
-            vibrator.vibrate(VibrationEffect.createOneShot(durationMs, amplitude))
-        }.onFailure { Log.w(TAG, "vibrate() failed", it) }
-    }
+    /** Frees the SoundPool's decoder and samples. Call when the owner (the keyboard service, the
+     * Settings screen) is destroyed; this instance plays nothing afterwards. */
+    fun release() = soundPool.release()
+
+    private enum class HapticForm { PRIMITIVE, ONE_SHOT, PRESET }
 
     private companion object {
         const val TAG = "OmakeyFeedback"

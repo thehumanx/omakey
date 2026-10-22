@@ -93,6 +93,11 @@ class SettingsActivity : ComponentActivity() {
         val emojiSkinTonePreferences = EmojiSkinTonePreferences(applicationContext)
         val updatePreferences = dev.omakey.core.update.UpdatePreferences(applicationContext)
         val feedback = VibratorKeyboardFeedback(applicationContext, hapticSoundPreferences)
+        // Each Activity instance owns its own SoundPool; free it with the Activity (rotation
+        // recreates it) rather than leaking one per instance.
+        lifecycle.addObserver(object : androidx.lifecycle.DefaultLifecycleObserver {
+            override fun onDestroy(owner: androidx.lifecycle.LifecycleOwner) = feedback.release()
+        })
         val database = OmakeyDatabase.getInstance(applicationContext)
         val wordDao = database.wordDao()
         val clipboardPreferences = ClipboardPreferences(applicationContext)
@@ -306,10 +311,14 @@ private fun SettingsScreen(
     // user back to the top.
     var page by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<SettingsPage?>(null) }
     androidx.activity.compose.BackHandler(enabled = page != null) { page = null }
+    // Held here, above the page switch, so the home list's scroll position survives opening a page
+    // and coming back. Inside SettingsHome it was created fresh each time the list re-entered
+    // composition, so Back always landed at the top. Saveable for rotation too.
+    val homeListState = androidx.compose.foundation.lazy.rememberLazyListState()
 
     Box(Modifier.fillMaxSize()) {
         when (page) {
-            null -> SettingsHome(onOpen = { page = it }, onOpenSystemSettings = onOpenSystemSettings, onSwitchKeyboard = onSwitchKeyboard)
+            null -> SettingsHome(listState = homeListState, onOpen = { page = it }, onOpenSystemSettings = onOpenSystemSettings, onSwitchKeyboard = onSwitchKeyboard)
 
             SettingsPage.APPEARANCE -> SettingsSubPage(SettingsPage.APPEARANCE.title, onBack = { page = null }) {
                 item {
@@ -328,6 +337,7 @@ private fun SettingsScreen(
                             alwaysShowUppercaseLetters = layoutSettings.alwaysShowUppercaseLetters,
                             edgePadding = layoutSettings.edgePadding,
                             showSecondarySymbols = layoutSettings.showSecondarySymbols,
+                            fleksySymbols = layoutSettings.fleksySymbols,
                             interactive = true,
                         )
                     }
@@ -388,6 +398,11 @@ private fun SettingsScreen(
                     SettingsSection(title = "Buttons") {
                         SwapEmojiLanguageToggle(layoutSettings, layoutPreferences)
                         TapPreviewToggle(layoutSettings, layoutPreferences)
+                    }
+                }
+                item {
+                    SettingsSection(title = "Symbols") {
+                        FleksySymbolsToggle(layoutSettings, layoutPreferences)
                     }
                 }
                 item {
@@ -580,11 +595,13 @@ private enum class SettingsPage(val title: String, val summary: String) {
 
 @Composable
 private fun SettingsHome(
+    listState: androidx.compose.foundation.lazy.LazyListState,
     onOpen: (SettingsPage) -> Unit,
     onOpenSystemSettings: () -> Unit,
     onSwitchKeyboard: () -> Unit,
 ) {
     LazyColumn(
+        state = listState,
         modifier = Modifier
             .fillMaxSize()
             .statusBarsPadding()

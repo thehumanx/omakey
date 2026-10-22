@@ -47,7 +47,7 @@ ever leaves your phone.
 
 ## App Updates / Plans and PSA
 - I've publicly shared this keyboard only on Reddit threads (besides my website) and few kind volunteers have tried and provided feedback on fixes/improvements and features. 
-- Languages beyond English arrived in 5.0.0: Spanish, French, Brazilian Portuguese and Nepali, each a small optional download. 5.1.0 adds Italian and Russian, and 5.2.0 fixes what a Russian user reported. More to come.
+- Languages beyond English arrived in 5.0.0: Spanish, French, Brazilian Portuguese and Nepali, each a small optional download. 5.1.0 adds Italian and Russian, 5.2.0 fixes what a Russian user reported, and 5.3.0 is a round of fixes and Fleksy touches from user feedback. More to come.
 - I am prioritizing more on optimizing the UX and autocorrection/prediction engine as its being written from the scratch.
 - The keyboard is optimized for battery usage as well. Fleksy used to take around 5-10%, while this takes just around 1%.
 - Note: Not tested for old hardwares, if you do, please test and lmk feedback.
@@ -63,12 +63,12 @@ ever leaves your phone.
 
 - A floating keyboard you can put anywhere on screen.
 - One-handed mode and drag-to-resize.
-- Inline calculator — type `12+7=` and `12+7=19` shows up in the suggestion strip, ready to tap (took inspo from iOS keyboard).
+- Inline calculator — type `12+7=` and `12+7=19` shows up in the suggestion strip; tap it and the answer, `19`, replaces the sum (took inspo from iOS keyboard).
 - Undo/redo — two buttons that step back and forward through your last several typed or deleted
   words.
 - Clipboard history — text and images.
 - Grid layout mode — a bordered, edge-to-edge key style theme
-- Gestures like on Fleksy — swipe left deletes a whole word (Swipe left and hold keeps deleting the words), swipe up saves it to your dictionary, swipe up/down to switch between the suggestions/corrections, hold and drag the spacebar to move the cursor, swipe right for space (off by default).
+- Gestures like on Fleksy — swipe left deletes a whole word (Swipe left and hold keeps deleting the words), swipe up puts back what you typed and a second swipe up saves it to your dictionary, swipe up/down to switch between the suggestions/corrections, hold and drag the spacebar to move the cursor, swipe right for space (off by default).
 - An editable "Learned words" list — view, search, edit, or delete anything individually, not
   just wipe the whole dictionary (Note: the app is set to suggest your autolearned word after 3 enters).
 - A theme editor that builds a whole matching, readable theme from one background colour, with a live, tappable preview and a proper HSV/hex color picker.
@@ -101,6 +101,9 @@ ever leaves your phone.
 
 - Full QWERTY with shift, caps lock, two pages of symbols, and long-press accents (à, é, ñ, and
   more — hold a key like `e` or `a` to see its variants).
+- The symbols page is laid out like Fleksy's, with sentence punctuation right where your thumb
+  already is — and holding a letter gives you the symbol sitting in the same spot on that page.
+  Prefer omakey's original symbols page? Settings → Keyboard → Symbols.
 - Optional secondary symbols on the keys — the digit or symbol each key types when held, shown
   small above its letter, so you can type `1` or `@` without leaving the letters. Off by default.
 - Type a symbol, then hit space — it drops you straight back into letters, no manual switch back
@@ -123,9 +126,9 @@ menus involved:
 
 | Gesture | What it does |
 |---|---|
-| **Swipe left** on any key | Deletes the entire last word, not just a character — its own "swoosh" sound and a shimmer across the home row so it's unmistakably not a normal tap. A trailing space is its own swipe first, then a trailing emoji or punctuation mark glued to a word with no space (`hahaha😂`), then the word itself — nothing bundles into the same swipe. |
+| **Swipe left** on any key | Deletes the entire last word, not just a character — its own "swoosh" sound, a thud you can feel, and a shimmer across the home row so it's unmistakably not a normal tap. A space after the word goes with it and the space before it stays: "hello my name is" becomes "hello my name ", ready for the next word. An emoji or punctuation mark glued to a word with no space (`hahaha😂`) is its own swipe. Prefer the space to take a swipe of its own? Settings → Gestures. |
 | **Swipe right** on any key | Inserts a space (off by default, one tap to turn on). Swipe right twice quickly for a period instead, if "Double-tap space for period" is on. |
-| **Swipe up** on the suggestion strip | Accepts the current suggestion — or, on a word you typed yourself, saves it to your personal dictionary so it's never flagged again. Swipe up a second time on an already-learned word to un-learn it. |
+| **Swipe up** | If autocorrect or a swipe down changed your word, puts back exactly what you typed — without saving it. On the word as you typed it, saves it to your personal dictionary so it's never flagged again. Swipe up on an already-learned word to un-learn it. |
 | **Swipe down** on the suggestion strip | Cycles backward through alternatives — the mirror of swipe up. |
 | **Swipe up/down repeatedly** | Genuinely cycles through every alternative, as many times as you want, whether the word's still being typed or you've tapped back into something you wrote a minute ago. The one about to be typed stands out; the rest fade. |
 | **Swipe up/down right after a `. , ! ? ; : ' "`** | Cycles through that whole set of punctuation instead of word suggestions — turn "." into "," into "!" and so on with repeated swipes, without retyping. Works whether the cursor sits right against the mark or one space past it, so it chains naturally off double-tap-space-for-period. |
@@ -179,7 +182,9 @@ only carry the ones you use. Settings → Languages → "Get more languages" lis
   English letters and get "привет", whichever way you spell it ("horosho" or "khorosho").
 
 With more than one language turned on, a globe button appears at the right of the suggestion bar:
-tap it to step through every language and layout, hold it to pick one. The spacebar quietly shows
+tap it to step through every language and layout, hold it to pick one. Only use some of a
+language's layouts? Switch the others off under that language in Settings → Languages, and the
+globe skips them. The spacebar quietly shows
 where you are ("PT BR - QWERTY"). Prefer the globe down by the spacebar? Settings → Keyboard swaps
 it with the emoji button. Each language learns its own words, so switching never mixes one
 language's vocabulary into another. Removing a language keeps what it
@@ -190,7 +195,7 @@ learned, in case you add it back.
 - Real autocorrect — typos get fixed the moment you finish the word, not just quietly offered for
   you to notice and tap. Got it wrong? One backspace undoes it, and it won't just re-correct back.
   Or swipe, Fleksy-style: down goes through other readings of what you typed, up puts back exactly
-  what you typed and saves it.
+  what you typed (swipe up again to save it).
 - Catches typos that need two fixes at once — a swapped letter pair *and* a wrong character — not
   just single-letter slips.
 - Fixes the *first* letter too — "qccount" becomes "account", "hte" becomes "the" — as long as the
@@ -199,7 +204,8 @@ learned, in case you add it back.
 - Catches "real-word" mistakes too — "thus" when you meant "this" — based on the words around it,
   without ever auto-applying something that risky on its own.
 - Offers alternatives even when what you typed is already a valid word, because only you know
-  which one you actually meant.
+  which one you actually meant — but only close ones. A name or a word the keyboard doesn't know
+  stays in the strip next to its closest matches, instead of three unrelated guesses.
 - Shows you the fix *before* you finish typing — "corrcet" shows "correct" mid-word.
 - Missing a space between two words ("thisis") gets split back apart automatically.
 - Full contraction support (im → I'm, weve → we've, shoudve → should've) with fuzzy matching for
@@ -213,13 +219,14 @@ learned, in case you add it back.
 - **Incognito** — an eye button in the tools row pauses learning whenever you want it, and password
   fields are never learned from at all, automatically. None of it ever leaves your phone.
 - Optional next-word prediction, off by default.
-- Optional auto-capitalize, off by default.
+- Optional auto-capitalize, off by default: new sentences, new lines, and "i" as "I". Never in
+  email, web address or password fields.
 - A "Learned words" screen — view, search, edit, or remove anything your typing has taught the
   keyboard, individually or all at once. And a Settings switch to turn learning off entirely.
 - The inline calculator mentioned above — `12+7=` shows `12+7=19` right in the strip, and tapping
-  it fills in the missing `19`.
-- A few matching emoji show up as extra chips next to word suggestions for words like "sad" or
-  "happy" — tap one to insert it without touching the word itself.
+  it leaves just the answer, `19`.
+- A few matching emoji show up as extra chips next to word suggestions for words like "fire" or
+  "happy" — tap one and it takes the word's place: "fire" becomes 🔥.
 
 ### Undo, redo, and text tools — one tab away
 
@@ -228,7 +235,8 @@ Swipe to the Tools tab for:
 - **Undo / Redo** for your last several typed or deleted words. A paste, a cut or a deleted
   selection counts as one step, however much text it moved.
 - **Select all / Copy / Cut / Paste**, without leaving the keyboard.
-- **Clipboard history** — every recent copy, text and images, one tap away. Long-press an entry to
+- **Clipboard history** — every recent copy, text and images, one tap away — including something
+  you copied with the keyboard closed, like "Select all" and Copy on a web page. Long-press an entry to
   pin or remove it; pinned entries stay at the top and are never cleared out to make room for newer
   ones. Opening clipboard mode dims everything else so it's clearly its own space.
 - Settings → Privacy & data has the full list: see everything that's saved, unpin or remove single
@@ -274,8 +282,11 @@ Swipe to the Tools tab for:
 
 ### Feedback that feels right
 
-- Adjustable haptic feedback with a strength slider.
+- Adjustable haptic feedback with a strength slider that actually changes the feel — omakey uses
+  your phone's own crisp click effects where it has them, instead of a buzz many phones flatten
+  into one fixed strength. A swipe feels firmer than a tap; deleting a word feels like a thud.
 - An optional keypress sound with a few click styles to preview and pick, plus its own volume.
+  Clicks land right on the touch, and stay quiet when your phone is on silent or vibrate.
 
 ### Accessible by default
 
@@ -314,8 +325,11 @@ Neither sends anything you type, or any other data about you.
 
 ## Status
 
-omakey is on release 5.2.0: optional secondary symbols on the keys, Nepali digits, swiping back
-after autocorrect, and fixes to auto-capitalise, swipe-up-to-save and the long-press picker. 5.1.0
+omakey is on release 5.3.0: Fleksy's symbols page, swipe left that takes the space with the word,
+swipe up that puts your word back before saving it, closer suggestions, per-layout language
+switches, haptics and sounds reworked, and a full pass over auto-capitalise and clipboard history.
+5.2.0 added optional secondary symbols on the keys, Nepali digits and swiping back after
+autocorrect. 5.1.0
 added Italian and Russian (with ЙЦУКЕН, phonetic and translit keyboards) and a theme builder that
 works out a whole matching theme from one background colour. 5.0.0 before it was the languages release: Spanish, French, Brazilian Portuguese and Nepali as
 optional downloads, with a globe button to switch between them and their layouts, a reorganised

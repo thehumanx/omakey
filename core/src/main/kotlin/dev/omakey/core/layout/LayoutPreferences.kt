@@ -60,6 +60,10 @@ data class LayoutSettings(
      * anyone who doesn't use long-press. While on, a long-press preselects that symbol so the
      * hint is what a plain hold-and-release types, the way keyboards that show these behave. */
     val showSecondarySymbols: Boolean = false,
+    /** Fleksy's first symbols page ([Layouts.Symbols1]), with each letter's long-press symbol
+     * following it (`withSymbolsPage`). On by default; off gives omakey's original page
+     * ([Layouts.ClassicSymbols1]). */
+    val fleksySymbols: Boolean = true,
 ) {
     companion object {
         const val DEFAULT_HEIGHT_DP = 260
@@ -98,6 +102,7 @@ class LayoutPreferences(context: Context) {
     fun setEdgePadding(enabled: Boolean) = update { it.copy(edgePadding = enabled) }
     fun setSwapEmojiAndLanguage(swap: Boolean) = update { it.copy(swapEmojiAndLanguage = swap) }
     fun setShowSecondarySymbols(show: Boolean) = update { it.copy(showSecondarySymbols = show) }
+    fun setFleksySymbols(enabled: Boolean) = update { it.copy(fleksySymbols = enabled) }
 
     fun setPlacement(placement: KeyboardPlacement) = update { it.copy(placement = placement) }
 
@@ -131,6 +136,7 @@ class LayoutPreferences(context: Context) {
             putInt(KEY_ONE_HANDED_WIDTH, next.oneHandedWidthDp)
             putBoolean(KEY_SWAP_EMOJI_LANGUAGE, next.swapEmojiAndLanguage)
             putBoolean(KEY_SECONDARY_SYMBOLS, next.showSecondarySymbols)
+            putBoolean(KEY_FLEKSY_SYMBOLS, next.fleksySymbols)
         }
     }
 
@@ -155,12 +161,14 @@ class LayoutPreferences(context: Context) {
         oneHandedWidthDp = prefs.getInt(KEY_ONE_HANDED_WIDTH, LayoutSettings.DEFAULT_ONE_HANDED_WIDTH_DP),
         swapEmojiAndLanguage = prefs.getBoolean(KEY_SWAP_EMOJI_LANGUAGE, false),
         showSecondarySymbols = prefs.getBoolean(KEY_SECONDARY_SYMBOLS, false),
+        fleksySymbols = prefs.getBoolean(KEY_FLEKSY_SYMBOLS, true),
     )
 
     private companion object {
         const val PREFS_NAME = "omakey_layout_prefs"
         const val KEY_SWAP_EMOJI_LANGUAGE = "swap_emoji_and_language"
         const val KEY_SECONDARY_SYMBOLS = "show_secondary_symbols"
+        const val KEY_FLEKSY_SYMBOLS = "fleksy_symbols"
         const val KEY_HEIGHT = "keyboard_height_dp"
         const val KEY_KEY_BACKGROUNDS = "show_key_backgrounds"
         const val KEY_MIDDLE_STRIPE = "show_middle_row_stripe"

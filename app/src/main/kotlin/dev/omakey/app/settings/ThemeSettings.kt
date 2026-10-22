@@ -1,5 +1,6 @@
 package dev.omakey.app.settings
 
+import dev.omakey.core.layout.withSymbolsPage
 import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.BackHandler
@@ -560,6 +561,9 @@ internal fun ThemePreviewMock(
     alwaysShowUppercaseLetters: Boolean = true,
     edgePadding: Boolean = false,
     showSecondarySymbols: Boolean = false,
+    /** Whether the letters' long-press symbols follow the Fleksy symbols page — see
+     * `LayoutSettings.fleksySymbols`; matters only when [showSecondarySymbols] draws them. */
+    fleksySymbols: Boolean = true,
     // Keys respond to touch: a held key fills with the key tap colour, and Shift steps through
     // off → shift → caps lock, which is where the accent shows. Nothing is typed.
     interactive: Boolean = false,
@@ -648,7 +652,16 @@ internal fun ThemePreviewMock(
                         }
                 },
         ) {
-        KeyboardLocale.Default.letterLayout.rows.forEachIndexed { rowIndex, row ->
+        val previewLayout = remember(fleksySymbols) {
+            KeyboardLocale.Default.letterLayout.let {
+                if (fleksySymbols) {
+                    it.withSymbolsPage(dev.omakey.core.layout.Layouts.ClassicSymbols1, dev.omakey.core.layout.Layouts.Symbols1)
+                } else {
+                    it
+                }
+            }
+        }
+        previewLayout.rows.forEachIndexed { rowIndex, row ->
             dev.omakey.app.keyboard.ui.KeyRowView(
                 rowKeys = row.keys,
                 rowHeightDp = rowHeightDp,

@@ -49,6 +49,19 @@ data class KeyboardLocale(
     /** What the spacebar calls this language: "EN", "FR", or the pack's own label ("PT BR"). */
     val spacebarName: String get() = shortLabel ?: language.uppercase()
 
+    /**
+     * This language without the letter layouts the user switched off ([layoutIds]): they leave
+     * [letterLayoutChoices], so the globe key, the language picker and the spacebar label skip
+     * them. At least one always stays — switching every layout off would leave no keyboard — and a
+     * switched-off current layout gives way to the first one left.
+     */
+    fun withoutLayouts(layoutIds: Set<String>): KeyboardLocale {
+        if (layoutIds.isEmpty() || letterLayoutChoices.size < 2) return this
+        val kept = letterLayoutChoices.filter { it.id !in layoutIds }.ifEmpty { listOf(letterLayoutChoices.first()) }
+        if (kept.size == letterLayoutChoices.size) return this
+        return copy(letterLayoutChoices = kept, letterLayout = letterLayout.takeIf { it in kept } ?: kept.first())
+    }
+
     /** This language with the user's chosen letter layout, if [layoutId] is one of its choices. */
     fun withLetterLayout(layoutId: String?): KeyboardLocale {
         val chosen = letterLayoutChoices.firstOrNull { it.id == layoutId } ?: return this

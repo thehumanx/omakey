@@ -57,9 +57,11 @@ class LocaleManager(
         combine(registry.available, preferences.settings) { _, settings -> resolve(settings) }
             .stateIn(scope, SharingStarted.Eagerly, resolve(preferences.settings.value))
 
-    /** Enabled languages, each with the letter layout the user picked for it. */
+    /** Enabled languages, each with only the layouts the user left on, and the one they picked. */
     private fun resolve(settings: dev.omakey.core.locale.LocaleSettings): List<KeyboardLocale> =
-        registry.resolve(settings.enabledIds).map { it.withLetterLayout(settings.layoutChoices[it.id]) }
+        registry.resolve(settings.enabledIds).map {
+            it.withoutLayouts(settings.disabledLayoutsOf(it.id)).withLetterLayout(settings.layoutChoices[it.id])
+        }
 
     private val _transliterator = MutableStateFlow<Transliterator?>(null)
 

@@ -142,4 +142,62 @@ class TextEditorTest {
         val plain = FakeInputConnection("abc def")
         assertEquals(false, editorOver(plain).hasSelection())
     }
+
+    @Test
+    fun `swipe delete takes the last word and keeps the space before it`() {
+        val connection = FakeInputConnection("hello my name is")
+        editorOver(connection).deleteWordBackward()
+        assertEquals("hello my name ", connection.content)
+    }
+
+    @Test
+    fun `swipe delete takes a trailing space together with the word`() {
+        val connection = FakeInputConnection("hello my name is ")
+        val editor = editorOver(connection)
+        assertEquals("is ", editor.wordBackwardDeletionPreview())
+        editor.deleteWordBackward()
+        assertEquals("hello my name ", connection.content)
+    }
+
+    @Test
+    fun `swipe delete mid-word takes the whole word`() {
+        val connection = FakeInputConnection("my name is", selectionStart = 5, selectionEnd = 5)
+        editorOver(connection).deleteWordBackward()
+        assertEquals("my  is", connection.content)
+    }
+
+    @Test
+    fun `replaceLastWord swaps a finished word and keeps its separator`() {
+        val connection = FakeInputConnection("light the fire ")
+        assertEquals(" ", editorOver(connection).replaceLastWord("fire", "🔥"))
+        assertEquals("light the 🔥 ", connection.content)
+    }
+
+    @Test
+    fun `replaceLastWord swaps a word the cursor touches`() {
+        val connection = FakeInputConnection("so fire")
+        assertEquals("", editorOver(connection).replaceLastWord("fire", "🔥"))
+        assertEquals("so 🔥", connection.content)
+    }
+
+    @Test
+    fun `replaceLastWord keeps punctuation after the word`() {
+        val connection = FakeInputConnection("fire! ")
+        editorOver(connection).replaceLastWord("fire", "🔥")
+        assertEquals("🔥! ", connection.content)
+    }
+
+    @Test
+    fun `replaceLastWord matches whole words only`() {
+        val connection = FakeInputConnection("campfire ")
+        assertEquals(null, editorOver(connection).replaceLastWord("fire", "🔥"))
+        assertEquals("campfire ", connection.content)
+    }
+
+    @Test
+    fun `replaceLastWord does nothing when the word is not last`() {
+        val connection = FakeInputConnection("fire and ")
+        assertEquals(null, editorOver(connection).replaceLastWord("fire", "🔥"))
+        assertEquals("fire and ", connection.content)
+    }
 }

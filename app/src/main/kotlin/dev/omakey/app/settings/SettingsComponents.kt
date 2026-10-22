@@ -379,6 +379,17 @@ internal fun SecondarySymbolsToggle(settings: LayoutSettings, layoutPreferences:
 }
 
 @Composable
+internal fun FleksySymbolsToggle(settings: LayoutSettings, layoutPreferences: LayoutPreferences) {
+    SettingToggle(
+        title = "Keep Fleksy secondary keys layout",
+        description = "The ?123 page uses Fleksy's symbol layout, and holding a letter gives the " +
+            "symbol in the same spot on that page. Turn off for omakey's original symbols page.",
+        checked = settings.fleksySymbols,
+        onCheckedChange = layoutPreferences::setFleksySymbols,
+    )
+}
+
+@Composable
 internal fun SettingToggle(title: String, description: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -455,6 +466,14 @@ internal fun GestureSettingsSection(gesturePreferences: GesturePreferences) {
             description = "Swipe right anywhere on the keys to insert a space. Off by default.",
             checked = settings.swipeRightForSpace,
             onCheckedChange = gesturePreferences::setSwipeRightForSpace,
+        )
+        SettingToggle(
+            title = "Count space as its own swipe-left delete",
+            description = "Off: swipe left deletes the last word together with a space after it, " +
+                "so \"hello my name is \" becomes \"hello my name \". On: a space after the word " +
+                "takes a swipe of its own, and the word goes on the next one.",
+            checked = settings.swipeLeftSpaceIsOwnStep,
+            onCheckedChange = gesturePreferences::setSwipeLeftSpaceIsOwnStep,
         )
     }
 }
