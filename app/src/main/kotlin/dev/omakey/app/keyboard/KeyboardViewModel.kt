@@ -10,6 +10,7 @@ import dev.omakey.core.gesture.GesturePreferences
 import dev.omakey.core.gesture.GestureSettings
 import dev.omakey.core.input.TextEdit
 import dev.omakey.core.input.AutoCapitalization
+import dev.omakey.core.input.AutocorrectPolicy
 import dev.omakey.core.input.SwipeUpAction
 import dev.omakey.core.input.TextEditor
 import dev.omakey.core.input.TransliterationSession
@@ -235,6 +236,10 @@ class KeyboardViewModel(
     private data class ActiveCorrection(
         val mode: CorrectionApplyMode,
         val originalWord: String,
+        /** Exactly what sits in the text for the word right now — the typed word, the
+         * correction, or whichever candidate cycling last applied. Checked before every swap
+         * ([TextEditor.replaceBefore]), so a field that changed underneath is left alone. */
+        var shownText: String,
         var occupiedBefore: Int,
         var occupiedAfter: Int,
         val separator: String,
@@ -380,6 +385,7 @@ class KeyboardViewModel(
             else -> info.imeOptions and EditorInfo.IME_MASK_ACTION
         }
         fieldCapsMode = AutoCapitalization.fieldMode(info?.inputType ?: android.text.InputType.TYPE_NULL)
+        fieldAllowsAutocorrect = AutocorrectPolicy.fieldAllows(info?.inputType ?: android.text.InputType.TYPE_NULL)
         // Not just an empty field: one opened with the cursor after "Hello. " or on a fresh line is
         // at a sentence start too.
         val capitalizeFieldStart = autocorrectPreferences.settings.value.autoCapitalizeEnabled &&
@@ -621,15 +627,11 @@ class KeyboardViewModel(
         if (index == -1) return false
         val next = punctuationCycle[(index + if (forward) 1 else -1).mod(punctuationCycle.size)]
         if (trailingSpace) {
-            textEditor.deleteCharacterBackward() // the space
-            textEditor.deleteCharacterBackward() // the punctuation
-            textEditor.commitCharacter(next)
-            textEditor.insertSpace()
+            if (!textEditor.replaceBefore("$char ", "$next ")) return false
             // "." → "," must take back the capital the "." turned on, and "," → "?" add one.
             reevaluateAutoCapitalize()
         } else {
-            textEditor.deleteCharacterBackward()
-            textEditor.commitCharacter(next)
+            if (!textEditor.replaceBefore("$char", "$next")) return false
         }
         return true
     }
@@ -709,7 +711,7 @@ class KeyboardViewModel(
         // No word "in focus" being corrected/varied — this suggestion is a plain next-word
         // prediction instead, typed fresh (matches the pre-swipe-cycling behavior: left open for
         // further editing, no trailing space, unlike tap-accepting one via onSuggestionAccepted).
-        val wasSplit = commitCorrection(word)
+        val wasSplit = commitCorrection(word) ?: return
         if (wasSplit) {
             suggestionCycleIndex = -1
             refreshSuggestions()
@@ -831,7 +833,7 @@ class KeyboardViewModel(
             refreshSuggestions()
             return
         }
-        commitCorrection(word)
+        commitCorrection(word) ?: return
         textEditor.commitCharacter(' ')
         // An empty buffer records nothing, where the previous open-coded version would have stored
         // an empty string as the last committed word.
@@ -853,22 +855,22 @@ class KeyboardViewModel(
         val replacement = active.appliedAs[shown] ?: shown
         when (active.mode) {
             CorrectionApplyMode.LIVE_BUFFER -> {
-                repeat(active.occupiedBefore) { textEditor.deleteCharacterBackward() }
+                if (!textEditor.replaceBefore(words.bufferedWord, replacement)) return abandonCorrection()
                 val split = splitCorrection(replacement)
                 if (split == null) {
-                    replacement.forEach { textEditor.commitCharacter(it) }
                     words.replaceBuffer(replacement)
+                    active.shownText = replacement
                     active.occupiedBefore = replacement.length
                 } else {
-                    commitSplitCorrection(split)
+                    recordSplit(split)
                     activeCorrection = null
                 }
             }
             CorrectionApplyMode.RETROACTIVE -> {
-                repeat(active.occupiedBefore + active.separator.length) { textEditor.deleteCharacterBackward() }
-                replacement.forEach { textEditor.commitCharacter(it) }
-                active.separator.forEach { textEditor.commitCharacter(it) }
+                val expected = active.shownText + active.separator
+                if (!textEditor.replaceBefore(expected, replacement + active.separator)) return abandonCorrection()
                 words.retargetLastCommitted(replacement)
+                active.shownText = replacement
                 active.occupiedBefore = replacement.length
             }
             CorrectionApplyMode.CURSOR -> {
@@ -876,10 +878,25 @@ class KeyboardViewModel(
                     TextEditor.WordAtCursor(active.originalWord, active.occupiedBefore, active.occupiedAfter),
                     replacement,
                 )
+                active.shownText = replacement
                 active.occupiedBefore = replacement.length
                 active.occupiedAfter = 0
             }
         }
+    }
+
+    /**
+     * The text isn't what the correction in focus says it is — the host app changed it, or dropped
+     * part of an edit — so nothing was replaced. Everything describing that word is stale; drop it
+     * and re-read the field, rather than keep swapping text by a count that no longer matches.
+     */
+    private fun abandonCorrection() {
+        activeCorrection = null
+        lastAutocorrect = null
+        revertedWord = null
+        suggestionCycleIndex = -1
+        words.clearBuffer()
+        refreshSuggestionsAfterDeletion()
     }
 
     /** Deletes the currently-buffered raw text and commits [replacement] in its place — the
@@ -891,31 +908,33 @@ class KeyboardViewModel(
      * don't share that handling directly): a "missing space" split correction, e.g. "thisbis" ->
      * "this is" — the embedded space is a real word boundary, so the first word is committed and
      * flushed (bookkeeping only, no learning) while the second becomes the new active buffer.
-     * Returns true if [replacement] was a two-word split, false for a plain single word. */
-    private fun commitCorrection(replacement: String): Boolean {
-        repeat(words.bufferLength) { textEditor.deleteCharacterBackward() }
-
+     * Returns true if [replacement] was a two-word split, false for a plain single word, and null
+     * when the text wasn't what the buffer says, so nothing was changed (see [abandonCorrection]).
+     * Callers must not record a correction on null. */
+    private fun commitCorrection(replacement: String): Boolean? {
+        // Nothing buffered: a plain next-word prediction, typed fresh.
+        if (!textEditor.replaceBefore(words.bufferedWord, replacement)) {
+            abandonCorrection()
+            return null
+        }
         val split = splitCorrection(replacement)
         if (split == null) {
-            replacement.forEach { textEditor.commitCharacter(it) }
             words.replaceBuffer(replacement)
             return false
         }
-        commitSplitCorrection(split)
+        recordSplit(split)
         return true
     }
 
-    /** Commits both halves of a [splitCorrection]: the first word is finished then and there
-     * (bookkeeping only, no learning — see [flushWordBuffer]'s doc), the second becomes the new
-     * live buffer. Shared by [commitCorrection] and [applyActiveCorrection], which each carried
-     * their own copy of this — including the [WordTracker] assignments, the exact invariant that
-     * had already been got wrong once by being written out more than once. */
-    private fun commitSplitCorrection(split: Pair<String, String>) {
+    /** Bookkeeping for a [splitCorrection] already in the text ("this is", typed as one swap):
+     * the first word is finished then and there (no learning — see [flushWordBuffer]'s doc), the
+     * second becomes the new live buffer. Shared by [commitCorrection] and
+     * [applyActiveCorrection], which each carried their own copy of this — including the
+     * [WordTracker] assignments, the exact invariant that had already been got wrong once by being
+     * written out more than once. */
+    private fun recordSplit(split: Pair<String, String>) {
         val (firstWord, secondWord) = split
-        firstWord.forEach { textEditor.commitCharacter(it) }
-        textEditor.commitCharacter(' ')
         words.commitWord(firstWord)
-        secondWord.forEach { textEditor.commitCharacter(it) }
         words.replaceBuffer(secondWord)
     }
 
@@ -979,6 +998,7 @@ class KeyboardViewModel(
         activeCorrection = ActiveCorrection(
             mode = CorrectionApplyMode.CURSOR,
             originalWord = wordAtCursor.word,
+            shownText = wordAtCursor.word,
             occupiedBefore = wordAtCursor.charsBeforeCursor,
             occupiedAfter = wordAtCursor.charsAfterCursor,
             separator = "",
@@ -1101,6 +1121,7 @@ class KeyboardViewModel(
         activeCorrection = ActiveCorrection(
             mode = CorrectionApplyMode.RETROACTIVE,
             originalWord = expression + "=",
+            shownText = expression + "=",
             occupiedBefore = expression.length + 1,
             occupiedAfter = 0,
             separator = "",
@@ -1158,10 +1179,8 @@ class KeyboardViewModel(
     }
 
     private fun convertPrecedingSpaceToPeriod() {
-        textEditor.deleteCharacterBackward()
         val terminator = profile.doubleSpaceInserts
-        textEditor.commitCharacter(terminator)
-        textEditor.insertSpace()
+        textEditor.replaceBefore(" ", "$terminator ")
         // Real bug, fixed: this used to record just " " here, but the actual text sitting
         // between the word and the cursor is ". " (period *and* space, 2 characters) — the very
         // next RETROACTIVE correction (whether swiped or tapped) would then delete only
@@ -1188,6 +1207,9 @@ class KeyboardViewModel(
         }
     }
 
+    /** Whether the focused field lets the keyboard change a word unasked; see [AutocorrectPolicy]. */
+    private var fieldAllowsAutocorrect = true
+
     /** What the focused field allows auto-capitalise to do; see [AutoCapitalization.fieldMode]. */
     private var fieldCapsMode = AutoCapitalization.FieldMode.SENTENCES
 
@@ -1213,9 +1235,17 @@ class KeyboardViewModel(
 
     private fun onEnter() {
         if (translit.isComposing) commitTranslit(separator = "")
-        maybeAutocorrectBufferedWord(separator = "\n")
         val action = _uiState.value.enterAction
         val willInsertNewline = action == EditorInfo.IME_ACTION_NONE || action == EditorInfo.IME_ACTION_UNSPECIFIED
+        if (willInsertNewline) {
+            maybeAutocorrectBufferedWord(separator = "\n")
+        } else {
+            // Search, Go, Send, Done: what was typed is sent this instant, so it's sent as typed.
+            // A correction applied now couldn't be seen or undone first (GitHub issue #9: "whenever
+            // I type a word and press search, it autocorrects"). See [AutocorrectPolicy].
+            lastAutocorrect = null
+            revertedWord = null
+        }
         // A real editor action (Go/Search/Send/...) doesn't insert anything of its own after the
         // word — nothing to record as a trailing separator for undo in that case.
         flushWordBuffer(separator = if (willInsertNewline) "\n" else "")
@@ -1254,6 +1284,8 @@ class KeyboardViewModel(
         revertedWord = null
         lastAutocorrect = null
         if (typed.isEmpty()) return
+        // A web address, an email, a password: changing a word there breaks it. See [AutocorrectPolicy].
+        if (!fieldAllowsAutocorrect) return
         val settings = autocorrectPreferences.settings.value
         // English "i" → "I" (and so "i'm" → "I'm": the apostrophe is what ends the "i"). Recorded
         // as an autocorrect, so backspace and swipe up take it back like any other. Not before a
@@ -1261,7 +1293,7 @@ class KeyboardViewModel(
         if ((settings.autoCapitalizeEnabled || settings.autocorrectEnabled) && separator != ".") {
             val capitalized = AutoCapitalization.alwaysCapitalized(typed, profile)
             if (capitalized != null) {
-                commitCorrection(capitalized)
+                commitCorrection(capitalized) ?: return
                 lastAutocorrect = AutocorrectRecord(original = typed, corrected = capitalized)
                 return
             }
@@ -1271,7 +1303,7 @@ class KeyboardViewModel(
         val correctedLower = autocorrectIndex.correct(typed, correctionContext()) ?: return
         val corrected = matchCase(typed, correctedLower)
         if (corrected == typed) return
-        commitCorrection(corrected)
+        commitCorrection(corrected) ?: return
         lastAutocorrect = AutocorrectRecord(original = typed, corrected = corrected)
     }
 
@@ -1308,13 +1340,16 @@ class KeyboardViewModel(
             // word. +1 accounts for the single separator char (space/punctuation/newline) always
             // committed right after the corrected word by whichever boundary triggered this.
             lastAutocorrect = null
-            revertedWord = record.original
             undoHistory.breakCoalescing()
-            repeat(record.corrected.length + 1) { textEditor.deleteCharacterBackward() }
-            record.original.forEach { textEditor.commitCharacter(it) }
-            words.replaceBuffer(record.original)
-            refreshSuggestions()
-            return
+            // The separator is whatever ended the word (a space, punctuation, a newline), not
+            // assumed to be one character; and if the text isn't the correction any more, this is
+            // an ordinary backspace instead.
+            if (textEditor.replaceBefore(record.corrected + words.boundarySeparator, record.original)) {
+                revertedWord = record.original
+                words.replaceBuffer(record.original)
+                refreshSuggestions()
+                return
+            }
         }
         forgetCorrectionMemory()
         if (words.isBufferNotEmpty) {
@@ -1440,6 +1475,7 @@ class KeyboardViewModel(
         activeCorrection = ActiveCorrection(
             mode = CorrectionApplyMode.RETROACTIVE,
             originalWord = wordBeforeCursor.word,
+            shownText = wordBeforeCursor.word,
             occupiedBefore = wordBeforeCursor.word.length,
             occupiedAfter = 0,
             separator = wordBeforeCursor.separator,
@@ -1852,8 +1888,11 @@ class KeyboardViewModel(
         undoHistory.breakCoalescing()
         if (source != null && words.isBufferNotEmpty && words.bufferedWord == source) {
             discardPendingLearn()
-            repeat(words.bufferLength) { textEditor.deleteCharacterBackward() }
-            textEditor.insertText("$emoji ")
+            if (!textEditor.replaceBefore(source, "$emoji ")) {
+                textEditor.insertText(emoji)
+                pushUndo(TextEdit(inserted = emoji))
+                return
+            }
             pushUndo(TextEdit(removed = takeSelectionReplacement() + source, inserted = "$emoji "))
             words.clearBuffer()
             activeCorrection = null
@@ -1892,6 +1931,7 @@ class KeyboardViewModel(
             activeCorrection = ActiveCorrection(
                 mode = CorrectionApplyMode.LIVE_BUFFER,
                 originalWord = prefix,
+                shownText = prefix,
                 occupiedBefore = prefix.length,
                 occupiedAfter = 0,
                 separator = "",
@@ -1920,6 +1960,7 @@ class KeyboardViewModel(
             activeCorrection = ActiveCorrection(
                 mode = CorrectionApplyMode.RETROACTIVE,
                 originalWord = autocorrected.original,
+                shownText = autocorrected.corrected,
                 occupiedBefore = autocorrected.corrected.length,
                 occupiedAfter = 0,
                 separator = words.boundarySeparator,
@@ -1949,6 +1990,7 @@ class KeyboardViewModel(
                 activeCorrection = ActiveCorrection(
                     mode = CorrectionApplyMode.RETROACTIVE,
                     originalWord = target,
+                    shownText = target,
                     occupiedBefore = target.length,
                     occupiedAfter = 0,
                     separator = words.boundarySeparator,

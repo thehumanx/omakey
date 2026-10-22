@@ -47,7 +47,7 @@ ever leaves your phone.
 
 ## App Updates / Plans and PSA
 - I've publicly shared this keyboard only on Reddit threads (besides my website) and few kind volunteers have tried and provided feedback on fixes/improvements and features. 
-- Languages beyond English arrived in 5.0.0: Spanish, French, Brazilian Portuguese and Nepali, each a small optional download. 5.1.0 adds Italian and Russian, 5.2.0 fixes what a Russian user reported, and 5.3.0 is a round of fixes and Fleksy touches from user feedback. More to come.
+- Languages beyond English arrived in 5.0.0: Spanish, French, Brazilian Portuguese and Nepali, each a small optional download. 5.1.0 adds Italian and Russian, 5.2.0 fixes what a Russian user reported, 5.3.0 is a round of fixes and Fleksy touches from user feedback, and 5.3.1 fixes autocorrect in search boxes. More to come.
 - I am prioritizing more on optimizing the UX and autocorrection/prediction engine as its being written from the scratch.
 - The keyboard is optimized for battery usage as well. Fleksy used to take around 5-10%, while this takes just around 1%.
 - Note: Not tested for old hardwares, if you do, please test and lmk feedback.
@@ -196,6 +196,8 @@ learned, in case you add it back.
   you to notice and tap. Got it wrong? One backspace undoes it, and it won't just re-correct back.
   Or swipe, Fleksy-style: down goes through other readings of what you typed, up puts back exactly
   what you typed (swipe up again to save it).
+- Never changes a word as you send it: pressing Search, Go or Send sends exactly what you typed.
+  And it leaves web addresses, email addresses and passwords alone.
 - Catches typos that need two fixes at once — a swapped letter pair *and* a wrong character — not
   just single-letter slips.
 - Fixes the *first* letter too — "qccount" becomes "account", "hte" becomes "the" — as long as the
@@ -325,7 +327,8 @@ Neither sends anything you type, or any other data about you.
 
 ## Status
 
-omakey is on release 5.3.0: Fleksy's symbols page, swipe left that takes the space with the word,
+omakey is on release 5.3.1, which stops autocorrect changing a word as you press Search or Send
+and fixes stray letters a correction could leave in some search boxes. 5.3.0 brought Fleksy's symbols page, swipe left that takes the space with the word,
 swipe up that puts your word back before saving it, closer suggestions, per-layout language
 switches, haptics and sounds reworked, and a full pass over auto-capitalise and clipboard history.
 5.2.0 added optional secondary symbols on the keys, Nepali digits and swiping back after

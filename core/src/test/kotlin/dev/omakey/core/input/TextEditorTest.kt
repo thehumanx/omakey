@@ -200,4 +200,38 @@ class TextEditorTest {
         assertEquals(null, editorOver(connection).replaceLastWord("fire", "🔥"))
         assertEquals("fire and ", connection.content)
     }
+
+    @Test
+    fun `replaceBefore swaps the word in one batched edit`() {
+        val connection = FakeInputConnection("search worfs")
+        assertEquals(true, editorOver(connection).replaceBefore("worfs", "words"))
+        assertEquals("search words", connection.content)
+        assertEquals("delete + commit, nothing per character", 2, connection.editCallCount)
+        assertEquals(1, connection.maxBatchDepth)
+        assertEquals(0, connection.batchDepth)
+    }
+
+    @Test
+    fun `replaceBefore leaves a field that is not what the keyboard expects`() {
+        // The host app changed the text (here: it dropped part of an earlier edit), so the word the
+        // keyboard thinks is there isn't. Deleting by count is what chewed into the wrong letters.
+        val connection = FakeInputConnection("wword")
+        assertEquals(false, editorOver(connection).replaceBefore("words ", "worfs "))
+        assertEquals("wword", connection.content)
+        assertEquals(0, connection.editCallCount)
+    }
+
+    @Test
+    fun `replaceBefore with a matching separator retypes both`() {
+        val connection = FakeInputConnection("I typed worfs ")
+        assertEquals(true, editorOver(connection).replaceBefore("worfs ", "words "))
+        assertEquals("I typed words ", connection.content)
+    }
+
+    @Test
+    fun `replaceBefore with nothing expected is an insertion`() {
+        val connection = FakeInputConnection("abc")
+        assertEquals(true, editorOver(connection).replaceBefore("", "d"))
+        assertEquals("abcd", connection.content)
+    }
 }
