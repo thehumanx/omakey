@@ -3,6 +3,22 @@
 All notable changes to omakey are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [5.3.1] — 2026-10-22
+
+A fix release for autocorrect in search boxes, from a user's report. Thanks to @sebsebseb9b for
+reporting it.
+
+### Fixed
+- **Pressing Search (or Go, Send, Done) sends exactly what you typed.** Autocorrect used to change
+  the last word at the moment you submitted it, with no chance to see or undo it. Corrections are
+  still offered in the suggestion strip. Autocorrect also no longer changes words in web address,
+  email, password and "no suggestions" fields. (GitHub issue #9)
+- In some apps (the Google search box, for one) a correction could leave stray letters behind:
+  "worfs" was autocorrected to "wwords", and tapping "words" in the suggestions then made
+  "wwowords". Corrections, suggestions, the punctuation swipe, double-space for a period, emoji
+  chips and the calculator now replace the word in one step, and leave the text alone if an app
+  has already changed it, instead of deleting the wrong letters.
+
 ## [5.3.0] — 2026-10-22
 
 Fleksy's symbols page and swipe habits, closer suggestions, and a round of fixes from user

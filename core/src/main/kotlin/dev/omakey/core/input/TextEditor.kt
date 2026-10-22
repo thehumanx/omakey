@@ -99,6 +99,32 @@ class TextEditor(
         connection.endBatchEdit()
     }
 
+    /**
+     * Replaces [expected] — which must be exactly the text right before the cursor — with
+     * [replacement], as one batched edit. Returns false, changing nothing, when the text there is
+     * not [expected].
+     *
+     * Every correction, suggestion, revert and punctuation swap goes through this. They used to
+     * delete one character per call and retype one character per call — "worfs" → "words" was ten
+     * separate edits — and a host app that dropped one of them corrupted the word: the Google
+     * search box turned "worfs" into "wwords", and accepting "words" from the strip after that into
+     * "wwowords" (real report). One edit can't be half-applied, and checking first means a field
+     * that changed underneath the keyboard is left alone instead of being chewed into.
+     */
+    fun replaceBefore(expected: String, replacement: String): Boolean {
+        val connection = ic ?: return false
+        if (expected.isNotEmpty()) {
+            val actual = connection.getTextBeforeCursor(expected.length, 0)?.toString() ?: return false
+            if (actual != expected) return false
+        }
+        if (expected.isEmpty() && replacement.isEmpty()) return true
+        connection.beginBatchEdit()
+        if (expected.isNotEmpty()) connection.deleteSurroundingText(expected.length, 0)
+        if (replacement.isNotEmpty()) connection.commitText(replacement, 1)
+        connection.endBatchEdit()
+        return true
+    }
+
     fun sendEditorAction(actionId: Int) {
         ic?.performEditorAction(actionId)
     }
