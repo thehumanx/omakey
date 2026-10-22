@@ -1,5 +1,7 @@
 package dev.omakey.core.predict
 
+import dev.omakey.core.input.AutoCapitalization
+import dev.omakey.core.locale.LanguageProfile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -26,7 +28,18 @@ class SuggestionComposer(
     private val autocorrectIndex: AutocorrectIndex,
     private val predictionEngine: PredictionEngine,
     private val limit: Int = DEFAULT_LIMIT,
+    /** The active language, read per call — for words it always capitalises ("i'm" → "I'm"),
+     * which the model stores lowercase like every other word. */
+    private val profile: () -> LanguageProfile = { LanguageProfile.English },
 ) {
+
+    /** [words] as the strip should show them: always-capitalised words cased, duplicates that
+     * casing creates ("i" and "I") dropped. */
+    private fun cased(words: List<String>): List<String> {
+        val language = profile()
+        if (language.alwaysCapitalized.isEmpty()) return words
+        return words.map { AutoCapitalization.capitalizedSuggestion(it, language) }.distinctBy { it.lowercase() }
+    }
 
     /**
      * @property words what to show, best first.
@@ -65,9 +78,15 @@ class SuggestionComposer(
             currentPrefix = prefix,
             limit = limit,
         )
-        val merged = (alternatives + predicted.filterNot { p -> alternatives.any { it.equals(p, ignoreCase = true) } })
+        val merged = cased(alternatives + predicted.filterNot { p -> alternatives.any { it.equals(p, ignoreCase = true) } })
             .take(limit)
-        return Suggestions(merged, fromCorrection = alternatives.isNotEmpty())
+        // Nothing starts with what was typed and it isn't a word: probably a name or a word the
+        // keyboard doesn't know ("bibek"). Keep it in the strip, last, so it can be picked and the
+        // guesses don't look like the only options. Not while a prefix still completes to
+        // something — "hel" would waste a slot on every keystroke.
+        val keepTyped = predicted.isEmpty() && alternatives.isNotEmpty() && !autocorrectIndex.isKnown(prefix)
+        val words = if (keepTyped) withTyped(merged, prefix) else merged
+        return Suggestions(words, fromCorrection = alternatives.isNotEmpty())
     }
 
     /**
@@ -84,7 +103,9 @@ class SuggestionComposer(
     suspend fun forFinishedWord(word: String, beforePreviousWord: String?): Suggestions {
         val context = autocorrectIndex.contextOf(beforePreviousWord, null)
         val alternatives = withContext(Dispatchers.Default) { alternatives(word, context) }
-        return if (alternatives.isEmpty()) Suggestions.None else Suggestions(alternatives, fromCorrection = true)
+        if (alternatives.isEmpty()) return Suggestions.None
+        val words = if (autocorrectIndex.isKnown(word)) alternatives else withTyped(alternatives, word)
+        return Suggestions(words, fromCorrection = true)
     }
 
     /**
@@ -107,6 +128,10 @@ class SuggestionComposer(
         return Suggestions(words.take(limit.coerceAtLeast(2)), fromCorrection = true)
     }
 
+    /** [words] with [typed] in the last slot (once), within [limit]. */
+    private fun withTyped(words: List<String>, typed: String): List<String> =
+        words.filterNot { it.equals(typed, ignoreCase = true) }.take((limit - 1).coerceAtLeast(1)) + typed
+
     /** Nothing to correct: what word tends to come next. Never a correction, so accepting one of
      * these types a fresh word instead of replacing anything. */
     suspend fun nextWord(previousWord: String?, beforePreviousWord: String?): Suggestions {
@@ -116,7 +141,7 @@ class SuggestionComposer(
             currentPrefix = "",
             limit = limit,
         )
-        return Suggestions(predicted, fromCorrection = false)
+        return Suggestions(cased(predicted), fromCorrection = false)
     }
 
     /**
@@ -128,13 +153,15 @@ class SuggestionComposer(
      */
     fun alternatives(word: String, context: AutocorrectIndex.Context): List<String> {
         val contraction = autocorrectIndex.contractionFor(word)
-        return autocorrectIndex.alternatives(word, limit, context).map { alt ->
-            when {
-                alt == contraction -> alt
-                alt.contains(' ') -> alt
-                else -> matchCase(word, alt)
-            }
-        }
+        return cased(
+            autocorrectIndex.alternatives(word, limit, context).map { alt ->
+                when {
+                    alt == contraction -> alt
+                    alt.contains(' ') -> alt
+                    else -> matchCase(word, alt)
+                }
+            },
+        )
     }
 
     companion object {

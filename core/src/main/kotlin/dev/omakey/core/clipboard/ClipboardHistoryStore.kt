@@ -45,6 +45,15 @@ class ClipboardHistoryStore(context: Context, private val dao: ClipboardDao) {
         }
     }.getOrNull()
 
+    /** Records copied [text]: an entry already in the history moves to the top rather than
+     * appearing twice — copying the same thing again is the user saying it's current. */
+    suspend fun recordText(text: String, timestamp: Long = System.currentTimeMillis()) {
+        if (dao.touchText(text, timestamp) == 0) {
+            dao.insert(dev.omakey.core.db.ClipboardEntity(content = text, timestamp = timestamp))
+        }
+        trim()
+    }
+
     /** Trims to the newest [KEEP] unpinned entries, then reconciles the image directory against
      * what survived. Pinned entries are exempt — see [ClipboardDao.trimUnpinned]. */
     suspend fun trim() {

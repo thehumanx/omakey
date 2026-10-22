@@ -7,6 +7,9 @@ private fun charKey(label: String, popup: List<String> = emptyList(), widthWeigh
  * path (community/alternate layouts) is additive, not a restructure. */
 object Layouts {
 
+    /** Private-use code for the Fleksy symbols page's bottom-row "." — see its key. */
+    const val BOTTOM_PERIOD_CODE = 0xF02E
+
     /** Rendered in the top strip's "numbers" tab, not as a persistent grid row — reused here
      * rather than duplicated since it's the same 1-0 key set as the Symbols layout's first row. */
     val NumberRow = KeyRow(listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0").map(::charKey))
@@ -18,7 +21,8 @@ object Layouts {
     val SymbolsExtraRow = KeyRow(listOf("~", "%", "=", "{", "}", "<", ">", "]", "€", "£").map(::charKey))
 
     // Each letter's `popupChars` ends with the symbol sitting at the *same grid position* on
-    // `Symbols1` (row 1 <-> digits, row 2 <-> `@#$_&-+()`, row 3 <-> `*"':,;!`) — long-pressing
+    // `ClassicSymbols1`, remapped onto the Fleksy page at display time (see `withSymbolsPage`)
+    // (row 1 <-> digits, row 2 <-> `@#$_&-+()`, row 3 <-> `*"':,;!`) — long-pressing
     // "z" (row 3, position 1) pops up "*" (Symbols1 row 3, position 1, right after the row's
     // `=\<` toggle key, which isn't a real symbol) for exactly that reason. Vowels keep their
     // existing accent variants first, with the mirrored symbol appended after them rather than
@@ -63,8 +67,50 @@ object Layouts {
         ),
     )
 
+    /**
+     * Fleksy's first symbols page, the default ("Keep Fleksy secondary keys layout" in Settings):
+     * sentence punctuation on the third row where the thumb already is, "&" through "$" on the home
+     * row. Shares [Symbols1]'s id with [ClassicSymbols1] — the two are the same page drawn two
+     * ways, and everything that switches to or checks for "the symbols page" uses that id.
+     */
     val Symbols1 = KeyboardLayout(
         id = "symbols_1",
+        homeRow = 1,
+        rows = listOf(
+            KeyRow(listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0").map(::charKey)),
+            // Nine keys, like the letters' home row, so every key lines up with the letter above
+            // it — and so each letter's long-press symbol is the one sitting where it does here.
+            KeyRow(listOf("&", "/", ":", ";", "(", ")", "-", "+", "$").map(::charKey)),
+            KeyRow(
+                listOf(
+                    KeyDefinition("=\\<", SpecialKeyCode.SYMBOLS, widthWeight = 1.5f, keyType = KeyType.SPECIAL),
+                    // 7/9 each: nine keys in the 7f the letters' seven occupy, so the backspace
+                    // doesn't move when switching between letters and symbols.
+                    *listOf(".", ",", "?", "!", "'", "\"", "*", "#", "@").map { charKey(it, widthWeight = 7f / 9f) }.toTypedArray(),
+                    KeyDefinition("⌫", SpecialKeyCode.BACKSPACE, widthWeight = 1.5f, keyType = KeyType.SPECIAL),
+                ),
+            ),
+            KeyRow(
+                listOf(
+                    KeyDefinition("ABC", SpecialKeyCode.LETTERS, widthWeight = 1.5f, keyType = KeyType.SPECIAL),
+                    // Where Fleksy has its microphone; omakey has no voice input, and this slot
+                    // keeps the row's weights equal to the letters' bottom row.
+                    KeyDefinition("⚙", SpecialKeyCode.SETTINGS, widthWeight = 1f, keyType = KeyType.SPECIAL),
+                    KeyDefinition(" ", SpecialKeyCode.SPACE, widthWeight = 4f, keyType = KeyType.SPECIAL),
+                    // "." is on the third row too, and taps are identified by code, so this one
+                    // types "." under a private-use code of its own — otherwise a long-press here
+                    // would resolve to the third-row key and lose this key's punctuation list.
+                    KeyDefinition(".", code = BOTTOM_PERIOD_CODE, text = ".", popupChars = listOf(",", "!", "?", "-", ":", ";", "'")),
+                    KeyDefinition("⏎", SpecialKeyCode.ENTER, widthWeight = 1.5f, keyType = KeyType.SPECIAL),
+                ),
+            ),
+        ),
+    )
+
+    /** omakey's original first symbols page, kept for "Keep Fleksy secondary keys layout" off. */
+    val ClassicSymbols1 = KeyboardLayout(
+        id = "symbols_1",
+        homeRow = 1,
         rows = listOf(
             KeyRow(listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0").map(::charKey)),
             KeyRow(listOf("@", "#", "$", "_", "&", "-", "+", "(", ")", "/").map(::charKey)),
@@ -100,14 +146,16 @@ object Layouts {
      * characters that don't fit the primary symbols grid. */
     val Symbols2 = KeyboardLayout(
         id = "symbols_2",
+        homeRow = 1,
         rows = listOf(
             KeyRow(listOf("~", "`", "|", "•", "√", "π", "÷", "×", "¶", "∆").map(::charKey)),
             KeyRow(listOf("£", "¥", "€", "¢", "^", "°", "=", "{", "}", "\\").map(::charKey)),
             KeyRow(
                 listOf(
                     KeyDefinition("123", SpecialKeyCode.SYMBOLS, widthWeight = 1.5f, keyType = KeyType.SPECIAL),
-                    // Same widthWeight-parity fix as Symbols1's row 3 — see comment there.
-                    *listOf("©", "®", "™", "✓", "[", "]", "<", ">").map { charKey(it, widthWeight = 0.875f) }.toTypedArray(),
+                    // Same widthWeight-parity fix as Symbols1's row 3 — see comment there. "_" is
+                    // here because Fleksy's first page has no room for it.
+                    *listOf("_", "©", "®", "™", "✓", "[", "]", "<", ">").map { charKey(it, widthWeight = 7f / 9f) }.toTypedArray(),
                     KeyDefinition("⌫", SpecialKeyCode.BACKSPACE, widthWeight = 1.5f, keyType = KeyType.SPECIAL),
                 ),
             ),

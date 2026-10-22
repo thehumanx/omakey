@@ -5,6 +5,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -12,9 +15,9 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -31,7 +34,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import dev.omakey.app.BuildConfig
 import dev.omakey.app.languages.LanguagePacks
+import dev.omakey.core.icons.PhosphorCheck
 import dev.omakey.core.locale.KeyboardLocale
+import dev.omakey.core.locale.flagEmoji
 import dev.omakey.core.locale.LocalePreferences
 import dev.omakey.core.pack.PackIndex
 import dev.omakey.core.pack.PackIndexEntry
@@ -55,6 +60,7 @@ import java.io.File
  * - "Install from file" takes a pack from storage, after a warning: there's no signed checksum to
  *   hold it to, so it is only as trustworthy as wherever it came from.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun LanguagesSection(localePreferences: LocalePreferences, languagePacks: LanguagePacks) {
     val settings by localePreferences.settings.collectAsState()
@@ -102,7 +108,7 @@ internal fun LanguagesSection(localePreferences: LocalePreferences, languagePack
         val isLastEnabled = enabled && settings.enabledIds.count { id -> available.any { it.id == id } } == 1
         val installed = installedVersions[locale.id]
         SettingToggle(
-            title = locale.nativeName,
+            title = listOfNotNull(flagEmoji(locale.id), locale.nativeName).joinToString(" "),
             description = buildString {
                 append(locale.displayName)
                 if (installed != null) append(" · pack $installed")
@@ -115,15 +121,37 @@ internal fun LanguagesSection(localePreferences: LocalePreferences, languagePack
             },
         )
         if (enabled && locale.letterLayoutChoices.size > 1) {
-            val chosen = settings.layoutChoices[locale.id] ?: locale.letterLayout.id
-            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                locale.letterLayoutChoices.forEachIndexed { i, layout ->
-                    SegmentedButton(
-                        selected = layout.id == chosen,
-                        onClick = { localePreferences.setLayoutChoice(locale.id, layout.id) },
-                        shape = SegmentedButtonDefaults.itemShape(i, locale.letterLayoutChoices.size),
-                        icon = {},
-                    ) { Text(dev.omakey.core.layout.shortName(layout)) }
+            // One chip per layout, each switched on or off on its own: the globe key, the
+            // language picker and the spacebar only go through the ones left on. One must stay.
+            val disabled = settings.disabledLayoutsOf(locale.id)
+            val onCount = locale.letterLayoutChoices.count { it.id !in disabled }
+            Text(
+                text = "Layouts — the globe key switches between the ones that are on",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+            FlowRow(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                locale.letterLayoutChoices.forEach { layout ->
+                    val on = layout.id !in disabled
+                    FilterChip(
+                        selected = on,
+                        onClick = {
+                            if (on && onCount == 1) return@FilterChip
+                            localePreferences.setLayoutEnabled(locale.id, layout.id, !on)
+                        },
+                        label = { Text(dev.omakey.core.layout.shortName(layout)) },
+                        // A check as well as the fill: the selected tint alone was too close to the
+                        // unselected chip to tell on/off apart at a glance.
+                        leadingIcon = if (on) {
+                            { Icon(PhosphorCheck, contentDescription = null, modifier = Modifier.size(FilterChipDefaults.IconSize)) }
+                        } else {
+                            null
+                        },
+                    )
                 }
             }
         }
@@ -182,7 +210,7 @@ internal fun LanguagesSection(localePreferences: LocalePreferences, languagePack
                 Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text(entry.nativeName, style = MaterialTheme.typography.bodyLarge)
+                            Text(listOfNotNull(flagEmoji(entry.id), entry.nativeName).joinToString(" "), style = MaterialTheme.typography.bodyLarge)
                             Text(
                                 "${entry.displayName} · ${"%.1f".format(entry.sizeBytes / 1_000_000.0)} MB · ${entry.license}",
                                 style = MaterialTheme.typography.bodySmall,

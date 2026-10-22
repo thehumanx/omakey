@@ -76,6 +76,11 @@ interface ClipboardDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insert(entry: ClipboardEntity)
 
+    /** Moves text already in the history to the top instead of storing it twice; returns how many
+     * rows matched (0 = not there yet, insert it). */
+    @Query("UPDATE clipboard_history SET timestamp = :timestamp WHERE contentType = 'text' AND content = :content")
+    suspend fun touchText(content: String, timestamp: Long): Int
+
     /** Pinning an item exempts it from [trimUnpinned] and floats it to the top of [recent]. */
     @Query("UPDATE clipboard_history SET pinned = :pinned WHERE id = :id")
     suspend fun setPinned(id: Long, pinned: Boolean)

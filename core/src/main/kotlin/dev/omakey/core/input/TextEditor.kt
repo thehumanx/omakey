@@ -264,6 +264,27 @@ class TextEditor(
 
     data class WordBeforeCursor(val word: String, val separator: String)
 
+    /**
+     * Replaces [word] with [replacement] when it is the last word before the cursor — touching it,
+     * or followed only by a separator (spaces, punctuation), which stays where it is. Returns that
+     * separator, or null (and changes nothing) when [word] isn't there.
+     *
+     * For an emoji suggestion: tapping 🔥 offered for "fire" turns "fire " into "🔥 ". The word is
+     * matched whole, so "campfire " is left alone when the suggestion came from "fire".
+     */
+    fun replaceLastWord(word: String, replacement: String): String? {
+        val connection = ic ?: return null
+        if (word.isEmpty()) return null
+        val textBefore = connection.getTextBeforeCursor(word.length + MAX_SEPARATOR_CHARS, 0)?.toString() ?: return null
+        val separator = textBefore.takeLastWhile { !isWordOrDigit(it) && it != '\n' }.take(MAX_SEPARATOR_CHARS)
+        val beforeSeparator = textBefore.dropLast(separator.length)
+        if (!beforeSeparator.endsWith(word)) return null
+        val wordStart = beforeSeparator.length - word.length
+        if (wordStart > 0 && isWordOrDigit(beforeSeparator[wordStart - 1])) return null
+        replaceBackward(word.length + separator.length, replacement + separator)
+        return separator
+    }
+
     fun sendKeyEvent(keyCode: Int) {
         val connection = ic ?: return
         connection.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, keyCode))
@@ -300,5 +321,7 @@ class TextEditor(
 
     companion object {
         private const val MAX_CURSOR_CONTEXT_CHARS = 128
+        /** How much separator [replaceLastWord] looks past: a space, or ". " and a stray space. */
+        private const val MAX_SEPARATOR_CHARS = 4
     }
 }

@@ -62,6 +62,10 @@ class LanguageProfile(
      * symbols page type; the Western digits stay reachable by long-press when these differ. See
      * [defaultDigits]. */
     val digits: String = defaultDigits(script),
+    /** Words the language always writes capitalised, lowercase → proper form: English "i" → "I".
+     * Fixed at the word boundary when auto-capitalise or autocorrect is on, and always shown that
+     * way in suggestions. See `AutoCapitalization`. */
+    val alwaysCapitalized: Map<String, String> = emptyMap(),
 ) {
     init {
         require(digits.length == 10) { "digits must be exactly ten characters, got ${digits.length}" }
@@ -116,6 +120,7 @@ class LanguageProfile(
             punctuationCycle = listOf('.', ',', '!', '?', ';', ':', '\'', '"'),
             contractions = EnglishContractions.map,
             emojiFor = WordEmojiSuggestions::suggest,
+            alwaysCapitalized = mapOf("i" to "I"),
         )
     }
 }

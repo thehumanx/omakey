@@ -74,4 +74,22 @@ class TransliterationSessionTest {
         session.commit("timi", " ")
         assertEquals("म timi ", connection.content)
     }
+
+    @Test
+    fun `discarding mid-word removes the word, and the next letter starts a new one`() {
+        type("mero")
+        assertEquals("मेरो", session.discard())
+        assertEquals("म ", connection.content)
+        assertNull(connection.composing)
+        assertFalse(session.isComposing)
+        // The bug: the session still held "mero", so the next keystroke put "मेरो" back.
+        type("k")
+        assertEquals("म क", connection.content)
+    }
+
+    @Test
+    fun `discarding with nothing composing does nothing`() {
+        assertNull(session.discard())
+        assertEquals("म ", connection.content)
+    }
 }

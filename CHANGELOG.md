@@ -3,6 +3,55 @@
 All notable changes to omakey are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [5.3.0] — 2026-10-22
+
+Fleksy's symbols page and swipe habits, closer suggestions, and a round of fixes from user
+feedback. Thanks to Konstanin and John for feedback and suggestions.
+
+### Added
+- **Fleksy's symbols page** (Settings → Keyboard → Symbols, on by default): the ?123 page is laid
+  out like Fleksy's, and holding a letter gives the symbol in the same spot on it. Turn it off for
+  the previous page. "_" moved to the second page.
+- **Choose which layouts of a language you use** (Settings → Languages): each layout of Russian,
+  Nepali or French can be switched on or off (a check marks the ones that are on); the globe key
+  only goes through the ones that are on.
+- **Flags next to languages** in Settings → Languages, for installed and downloadable ones.
+- **"Count space as its own swipe-left delete"** (Settings → Gestures, off by default) — see below.
+
+### Changed
+- **Swipe left takes a trailing space with the word.** "hello my name is " and "hello my name is"
+  both become "hello my name " in one swipe; the space before the word stays.
+- **Swipe up: put back first, save second.** After autocorrect or a swipe down changed your word,
+  swipe up brings back what you typed without saving it; swipe up again to save it. Swipe up on
+  a word nothing changed saves it straight away, as before.
+- **Fewer far-fetched suggestions.** Words that need three changes to match are only offered for
+  long words, and suggestions much weaker than the best one are dropped ("bibek" no longer offers
+  "video" and "nine"). A word the keyboard doesn't know stays in the suggestions so you can keep it.
+- **An emoji suggestion replaces its word**: tapping 🔥 for "fire" turns "fire" into 🔥.
+- **The calculator inserts only the answer**: tapping "1+1=2" leaves "2".
+- Settings returns to where you were scrolled when you come back from a page.
+
+### Fixed
+- Swipe left in Nepali (Romanized) and Russian (Translit) sometimes did nothing, or the word came
+  back on the next letter, while a word was still being typed.
+- Auto-capitalise: "i" now becomes "I" (with auto-capitalise or autocorrect on); a new line, a
+  blank line and a field opened after ". " now start with a capital; Russian Translit capitalises
+  after a full stop; email, web address and password fields are never capitalised; name fields
+  capitalise every word.
+- Copied text missing from clipboard history: a copy made while the keyboard was hidden (for
+  example "Select all" and Copy on a web page) is now picked up the next time the keyboard opens,
+  and copying with the keyboard's own Copy button could make the next copy go missing.
+- Copying text that is already in the clipboard history moves it to the top instead of adding it
+  twice.
+- The home-row highlight now shows on the symbols pages too.
+- **Haptic strength now works on phones that override vibrations.** Many phones replace a
+  keyboard's buzz with their own fixed "strong" click, so the strength slider did nothing. omakey
+  now uses the phone's precise click effects where it has them, at the strength you set; a swipe
+  feels firmer than a tap, and deleting a word feels like a thud.
+- **Key sounds:** the first click after the keyboard starts (and the first delete swoosh) was
+  silent; the swoosh played 70 ms late; sounds now start right on the touch and are evened out in
+  level. Key sounds stay quiet when the phone is on silent or vibrate.
+
 ## [5.2.0] — 2026-10-06
 
 A round of fixes from a Russian user's report, secondary symbols on keys, and Nepali digits.

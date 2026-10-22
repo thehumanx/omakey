@@ -9,6 +9,8 @@ import dev.omakey.core.emoji.EmojiSkinTone
 import dev.omakey.core.gesture.GesturePreferences
 import dev.omakey.core.gesture.GestureSettings
 import dev.omakey.core.input.TextEdit
+import dev.omakey.core.input.AutoCapitalization
+import dev.omakey.core.input.SwipeUpAction
 import dev.omakey.core.input.TextEditor
 import dev.omakey.core.input.TransliterationSession
 import dev.omakey.core.translit.Transliterator
@@ -30,6 +32,7 @@ import dev.omakey.core.layout.withLanguageKeyInsteadOfEmoji
 import dev.omakey.core.layout.withSpaceLabel
 import dev.omakey.core.layout.Layouts
 import dev.omakey.core.layout.withDigits
+import dev.omakey.core.layout.withSymbolsPage
 import dev.omakey.core.layout.SpecialKeyCode
 import dev.omakey.core.predict.AutocorrectIndex
 import dev.omakey.core.predict.AutocorrectPreferences
@@ -131,7 +134,7 @@ class KeyboardViewModel(
     /** Owns candidate selection; this class owns *when* to ask and what to do with the answer.
      * Constructed here rather than injected because both its dependencies are already constructor
      * parameters — it is a regrouping of what this class already had, not a new collaborator. */
-    private val suggestionComposer = SuggestionComposer(autocorrectIndex, predictionEngine, SUGGESTION_LIMIT)
+    private val suggestionComposer = SuggestionComposer(autocorrectIndex, predictionEngine, SUGGESTION_LIMIT, profile = { profile })
 
     /** When the most recent space was actually committed — 0 means "none yet this session, or
      * already consumed by a double-tap conversion." Powers [onSpace]'s double-tap-space-for-
@@ -235,6 +238,9 @@ class KeyboardViewModel(
         var occupiedBefore: Int,
         var occupiedAfter: Int,
         val separator: String,
+        /** What to put in the text for a strip entry, when that differs from what the strip shows.
+         * The calculator shows "1+1=2" so the answer reads as an answer, but inserts just "2". */
+        val appliedAs: Map<String, String> = emptyMap(),
     )
     private var activeCorrection: ActiveCorrection? = null
 
@@ -373,8 +379,11 @@ class KeyboardViewModel(
             (info.imeOptions and EditorInfo.IME_FLAG_NO_ENTER_ACTION) != 0 -> EditorInfo.IME_ACTION_NONE
             else -> info.imeOptions and EditorInfo.IME_MASK_ACTION
         }
-        val capitalizeFieldStart = autocorrectPreferences.settings.value.autoCapitalizeEnabled && profile.hasCase &&
-            textEditor.textBeforeCursor(1).isEmpty()
+        fieldCapsMode = AutoCapitalization.fieldMode(info?.inputType ?: android.text.InputType.TYPE_NULL)
+        // Not just an empty field: one opened with the cursor after "Hello. " or on a fresh line is
+        // at a sentence start too.
+        val capitalizeFieldStart = autocorrectPreferences.settings.value.autoCapitalizeEnabled &&
+            AutoCapitalization.shouldCapitalize(textEditor.textBeforeCursor(AUTO_CAP_CONTEXT_CHARS), profile, fieldCapsMode)
         shiftFromAutoCapitalize = capitalizeFieldStart
         _uiState.update {
             it.copy(
@@ -643,10 +652,9 @@ class KeyboardViewModel(
         undoHistory.breakCoalescing()
     }
 
-    /** Cycles left through the frozen suggestions snapshot (does not re-query, so the candidate
-     * set stays stable while cycling). At the leftmost candidate — or when there's nothing to
-     * cycle at all — restores the original word and, if it's still actively being typed and not
-     * already a known word, saves it to the local dictionary (see [revertAndMaybeSave]). */
+    /** Swipe up: see [SwipeUpAction] for the rule — restore the typed word if a candidate is
+     * showing, save it if the typed word already is. Walks back through the frozen suggestions
+     * snapshot (no re-query, so the candidate set stays stable while cycling). */
     fun onSwipeUp() {
         if (translit.isComposing) {
             translit.select(translit.selected - 1)
@@ -655,15 +663,11 @@ class KeyboardViewModel(
         }
         if (tryCyclePunctuation(forward = false)) return
         val suggestions = _uiState.value.suggestions
-        when {
-            suggestions.isEmpty() -> revertAndMaybeSave()
-            // Not cycling yet — the word on screen is still exactly what was typed, so there's
-            // nothing "up"/before it to cycle back to. Swiping up here means "keep it as typed,"
-            // i.e. save (see revertAndMaybeSave), not "jump to the first suggestion" (that's what
-            // swipe down is for — a real bug, previously identical to suggestionCycleIndex == -1
-            // falling through to applySuggestion(0), which silently replaced the typed word).
-            suggestionCycleIndex <= 0 -> revertAndMaybeSave()
-            else -> applySuggestion(suggestionCycleIndex - 1)
+        when (SwipeUpAction.decide(suggestionCycleIndex, hasWordInFocus = activeCorrection != null)) {
+            SwipeUpAction.STEP_BACK ->
+                if (suggestionCycleIndex - 1 < suggestions.size) applySuggestion(suggestionCycleIndex - 1) else restoreTypedWord()
+            SwipeUpAction.RESTORE_TYPED -> restoreTypedWord()
+            SwipeUpAction.SAVE -> saveOrUnsaveWordInFocus()
         }
     }
 
@@ -714,30 +718,45 @@ class KeyboardViewModel(
         }
     }
 
-    /** Reached when there's nothing further "left" to cycle to (already showing the first
-     * suggestion, or there were none at all): restores whatever was originally there — undoing
-     * any candidate currently applied, via the same [applyActiveCorrection] every other cycle
-     * step uses, so further swipes keep working normally afterward — and offers to save/unsave it
-     * as a known word, showing a brief banner either way.
+    /**
+     * Puts back the word as typed, replacing whatever candidate — swiped to, or applied by
+     * autocorrect — is showing. Deliberately does **not** save it: undoing a correction is not a
+     * request to learn the word. A further swipe up does that ([saveOrUnsaveWordInFocus]).
      *
-     * Previously gated to `LIVE_BUFFER` mode only (word still being typed) — that excluded the
-     * two other, arguably more common ways a word ends up "in focus" for the strip (finished and
-     * re-suggested via `RETROACTIVE`, or reached by tapping the cursor into it via `CURSOR`),
-     * which is why swipe-up-to-save read as "not working" for most real usage. There's no actual
-     * reason learning should care how the word got into focus, only whether it's a real word the
-     * user wants remembered — so this now applies uniformly to any mode. */
-    private fun revertAndMaybeSave() {
-        val active = activeCorrection
+     * Applies to any way the word got into focus (being typed, just finished, or reached by moving
+     * the cursor), through the same [applyActiveCorrection] every cycle step uses, so further swipes
+     * keep working afterwards.
+     */
+    private fun restoreTypedWord() {
+        val active = activeCorrection ?: return
+        val original = active.originalWord
+        applyActiveCorrection(original)
+        // Restoring a word autocorrect replaced is the swipe version of backspace-to-revert; the
+        // record must go, or the next backspace would "revert" a correction no longer on screen.
+        lastAutocorrect = null
+        // And it must stick: a word still being typed would otherwise be corrected straight back
+        // at the next space.
+        revertedWord = original
+        suggestionCycleIndex = -1
+        undoHistory.breakCoalescing()
+        discardPendingLearn()
+    }
+
+    /**
+     * The typed word is what's showing: save it, or unsave it if the user taught it — with a short
+     * banner either way.
+     *
+     * Applies uniformly to any mode a word can be in focus in; there's no reason learning should
+     * care how the word got there, only whether it's a real word the user wants remembered.
+     */
+    private fun saveOrUnsaveWordInFocus() {
         // The buffer is already empty once a trailing separator (space, punctuation) has
         // flushed it — e.g. cursor sitting right after "bibek " with nothing typed since. Falling
         // back to wordBeforeCursor() recovers "bibek" (not "bibek " — its separator is reported
         // separately and never included) instead of silently no-op'ing the swipe-up-to-save.
-        val original = active?.originalWord
+        val original = activeCorrection?.originalWord
             ?: words.bufferedWord.ifBlank { textEditor.wordBeforeCursor()?.word.orEmpty() }
         if (original.isBlank()) return
-        if (active != null) applyActiveCorrection(original)
-        // Restoring a word autocorrect replaced is the swipe version of backspace-to-revert; the
-        // record must go, or the next backspace would "revert" a correction no longer on screen.
         lastAutocorrect = null
         suggestionCycleIndex = -1
         undoHistory.breakCoalescing()
@@ -753,6 +772,8 @@ class KeyboardViewModel(
             !autocorrectIndex.isKnown(original) -> {
                 autocorrectIndex.learn(original)
                 scope.launch { predictionEngine.saveWord(original) }
+                // Saved means trusted: nothing should correct it at the next space any more.
+                revertedWord = null
                 showBanner("$original learned")
             }
             // A bundled dictionary word: nothing to learn or unlearn. Said so rather than silently
@@ -827,8 +848,9 @@ class KeyboardViewModel(
      * only, no learning — see [flushWordBuffer]'s doc) while the second becomes the new live
      * buffer, ending this cycling session — a split mid-sentence via RETROACTIVE/CURSOR modes
      * isn't a case [AutocorrectIndex.alternatives] produces, so it isn't handled here. */
-    private fun applyActiveCorrection(replacement: String) {
+    private fun applyActiveCorrection(shown: String) {
         val active = activeCorrection ?: return
+        val replacement = active.appliedAs[shown] ?: shown
         when (active.mode) {
             CorrectionApplyMode.LIVE_BUFFER -> {
                 repeat(active.occupiedBefore) { textEditor.deleteCharacterBackward() }
@@ -922,6 +944,10 @@ class KeyboardViewModel(
     }
 
     fun onCursorMoved() {
+        // The cursor moved to after "Hello. " or onto a new line by a tap, or away from one: the
+        // reason for an automatic capital may have appeared or gone. Not mid-word, where the
+        // keystroke handlers already decided.
+        if (words.isBufferEmpty && !translit.isComposing) reevaluateAutoCapitalize()
         val wordAtCursor = textEditor.wordAtCursor()
         // The cursor sitting right at the end of a word that exactly matches what's actively
         // being typed is the ordinary, extremely common case (every keystroke moves the cursor)
@@ -1003,7 +1029,7 @@ class KeyboardViewModel(
         // Punctuation typed directly after a word (no space) is a word boundary too — correct
         // before committing the punctuation itself, so it lands after the fixed word.
         if (!isWordText) {
-            maybeAutocorrectBufferedWord()
+            maybeAutocorrectBufferedWord(separator = text)
         }
         textEditor.insertText(text)
         if (_uiState.value.layout.id in SYMBOLS_LAYOUT_IDS) symbolTypedInSymbolsMode = true
@@ -1037,6 +1063,8 @@ class KeyboardViewModel(
         val opensSentence = text.length == 1 && text[0] in profile.openingPunctuation
         if (_uiState.value.shiftOn && !_uiState.value.capsLockOn && !opensSentence) {
             releaseShift() // one-shot shift, matches typical mobile keyboard behavior
+            // A field that wants every letter capitalised gets the next one too.
+            if (fieldCapsMode == AutoCapitalization.FieldMode.CHARACTERS) maybeAutoCapitalize()
         }
     }
 
@@ -1076,6 +1104,7 @@ class KeyboardViewModel(
             occupiedBefore = expression.length + 1,
             occupiedAfter = 0,
             separator = "",
+            appliedAs = mapOf(display to formatted),
         )
         suggestionCycleIndex = -1
         _uiState.update { it.copy(suggestions = listOf(display), firstSuggestionKind = SuggestionKind.CORRECTION) }
@@ -1087,13 +1116,15 @@ class KeyboardViewModel(
             commitTranslit(separator = " ")
             lastSpaceCommitAtMs = System.currentTimeMillis()
             refreshSuggestions()
+            // Russian Translit has letter case too; this path used to return before it.
+            maybeAutoCapitalize()
             return
         }
         if (shouldConvertDoubleSpaceToPeriod()) {
             convertPrecedingSpaceToPeriod()
             return
         }
-        maybeAutocorrectBufferedWord()
+        maybeAutocorrectBufferedWord(separator = " ")
         flushWordBuffer(separator = " ")
         textEditor.insertSpace()
         words.boundarySeparator = " "
@@ -1144,22 +1175,21 @@ class KeyboardViewModel(
         maybeAutoCapitalize()
     }
 
-    /** Off by default (per user request) — only capitalizes the very start of a field or right
-     * after sentence-ending punctuation and a space, never mid-sentence. Caps lock always wins
-     * over this. */
+    /** Off by default (per user request). Turns Shift on where [AutoCapitalization] says the next
+     * letter starts a sentence (or a word, or every letter, if the field asks for that). Caps lock
+     * always wins over this. */
     private fun maybeAutoCapitalize() {
         if (!autocorrectPreferences.settings.value.autoCapitalizeEnabled || !profile.hasCase) return
         if (_uiState.value.capsLockOn) return
-        val raw = textEditor.textBeforeCursor(3)
-        // A space is required after the punctuation: the cursor sitting straight after "hello."
-        // is someone editing the sentence end, not starting the next one.
-        val before = raw.trimEnd { it == ' ' }
-        val shouldCapitalize = raw.isEmpty() || (raw.last() == ' ' && (before.isEmpty() || before.last() in profile.capitalizeAfter))
-        if (shouldCapitalize) {
+        val textBefore = textEditor.textBeforeCursor(AUTO_CAP_CONTEXT_CHARS)
+        if (AutoCapitalization.shouldCapitalize(textBefore, profile, fieldCapsMode)) {
             _uiState.update { it.copy(shiftOn = true) }
             shiftFromAutoCapitalize = true
         }
     }
+
+    /** What the focused field allows auto-capitalise to do; see [AutoCapitalization.fieldMode]. */
+    private var fieldCapsMode = AutoCapitalization.FieldMode.SENTENCES
 
     /**
      * Whether the Shift currently on was turned on by [maybeAutoCapitalize] rather than by the
@@ -1183,7 +1213,7 @@ class KeyboardViewModel(
 
     private fun onEnter() {
         if (translit.isComposing) commitTranslit(separator = "")
-        maybeAutocorrectBufferedWord()
+        maybeAutocorrectBufferedWord(separator = "\n")
         val action = _uiState.value.enterAction
         val willInsertNewline = action == EditorInfo.IME_ACTION_NONE || action == EditorInfo.IME_ACTION_UNSPECIFIED
         // A real editor action (Go/Search/Send/...) doesn't insert anything of its own after the
@@ -1211,8 +1241,7 @@ class KeyboardViewModel(
      * (not [AutocorrectIndex.alternatives]) — this is the *silent* auto-apply path, so it should
      * only ever fire for something that plainly isn't a real word, never a "well" -> "we'll" style
      * variant of something already valid; those stay opt-in, offered on the suggestion strip. */
-    private fun maybeAutocorrectBufferedWord() {
-        if (!profile.autoApplyCorrections) return
+    private fun maybeAutocorrectBufferedWord(separator: String? = null) {
         val typed = words.bufferedWord
         // The user just backspaced this exact word back to what they actually typed — respect
         // that as a rejection instead of immediately re-correcting it right back on the very next
@@ -1224,8 +1253,21 @@ class KeyboardViewModel(
         }
         revertedWord = null
         lastAutocorrect = null
-        if (!autocorrectPreferences.settings.value.autocorrectEnabled) return
         if (typed.isEmpty()) return
+        val settings = autocorrectPreferences.settings.value
+        // English "i" → "I" (and so "i'm" → "I'm": the apostrophe is what ends the "i"). Recorded
+        // as an autocorrect, so backspace and swipe up take it back like any other. Not before a
+        // full stop, where "i" is far more often "i.e." than a sentence ending in "I".
+        if ((settings.autoCapitalizeEnabled || settings.autocorrectEnabled) && separator != ".") {
+            val capitalized = AutoCapitalization.alwaysCapitalized(typed, profile)
+            if (capitalized != null) {
+                commitCorrection(capitalized)
+                lastAutocorrect = AutocorrectRecord(original = typed, corrected = capitalized)
+                return
+            }
+        }
+        if (!profile.autoApplyCorrections) return
+        if (!settings.autocorrectEnabled) return
         val correctedLower = autocorrectIndex.correct(typed, correctionContext()) ?: return
         val corrected = matchCase(typed, correctedLower)
         if (corrected == typed) return
@@ -1311,6 +1353,14 @@ class KeyboardViewModel(
         forgetCorrectionMemory()
         undoHistory.breakCoalescing()
         words.clearBuffer()
+        // A word being transliterated is composing text the session still owns — see
+        // [TransliterationSession.discard] for why deleting around the cursor brought it back.
+        if (translit.isComposing) {
+            val shown = translit.discard().orEmpty()
+            if (shown.isNotEmpty()) pushUndo(TextEdit(removed = shown))
+            refreshSuggestionsAfterDeletion()
+            return
+        }
         // Same selection-takes-priority rule as onDeleteCharacter() — swipe-left with everything
         // selected should clear the selection, not just delete one word next to the cursor.
         if (textEditor.hasSelection()) {
@@ -1320,15 +1370,12 @@ class KeyboardViewModel(
             refreshSuggestions()
             return
         }
-        // A single trailing whitespace character (almost always a space — typed, tapped, or via
-        // swipe-right) is its own swipe-left now, not bundled into the same swipe as the word
-        // before it — real bug report: typing "hellow" then a space and swiping left deleted the
-        // whole word *and* the space together in one gesture, with no way to just undo the space.
-        // Matches how a punctuation/emoji run glued to the cursor is already its own swipe (see
-        // wordBackwardDeletionParts's own doc) — whitespace is the same idea, just the opposite
-        // direction (skipped *past* to find the word today; now consumed on its own first).
-        // Multiple consecutive spaces are consumed one swipe at a time for the same reason.
-        if (textEditor.textBeforeCursor(1).lastOrNull()?.isWhitespace() == true) {
+        // Off by default: a space after the word goes in the same swipe as the word, so "hello my
+        // name is " and "hello my name is" both become "hello my name ". With "Count space as its
+        // own swipe" on, a trailing whitespace character is a swipe of its own first (one per
+        // swipe for several), the word the next swipe.
+        val spaceIsOwnStep = _uiState.value.gestureSettings.swipeLeftSpaceIsOwnStep
+        if (spaceIsOwnStep && textEditor.textBeforeCursor(1).lastOrNull()?.isWhitespace() == true) {
             val deletedChar = textEditor.textBeforeCursor(1)
             textEditor.deleteCharacterBackward()
             pushUndo(TextEdit(removed = deletedChar))
@@ -1738,11 +1785,16 @@ class KeyboardViewModel(
      */
     private fun display(layout: KeyboardLayout): KeyboardLayout {
         val locale = locale()
+        val fleksy = layoutPreferences.settings.value.fleksySymbols
         // The symbols page is shared by every language, but its digit row is the language's own.
-        if (layout.id == Layouts.Symbols1.id) return layout.withDigits(locale.profile.digits)
+        if (layout.id == Layouts.Symbols1.id) {
+            return (if (fleksy) Layouts.Symbols1 else Layouts.ClassicSymbols1).withDigits(locale.profile.digits)
+        }
         val letterLayers = setOfNotNull(locale.letterLayout.id, locale.letterLayout.shiftLayoutId)
         if (layout.id !in letterLayers) return layout
-        val stored = layouts[layout.id] ?: locale.letterLayout.takeIf { it.id == layout.id } ?: layout
+        val stored = (layouts[layout.id] ?: locale.letterLayout.takeIf { it.id == layout.id } ?: layout)
+            // Letters' long-press symbols are written against the classic page.
+            .let { if (fleksy) it.withSymbolsPage(Layouts.ClassicSymbols1, Layouts.Symbols1) else it }
         if (localeController.enabled.value.size < 2) return stored
         // "FR - AZERTY": language and layout together, so the spacebar says exactly what the globe
         // key just switched to — two layouts of one language would otherwise look identical.
@@ -1778,19 +1830,51 @@ class KeyboardViewModel(
         // for an already-toned chip (apply strips before re-adding) — so the two can't disagree.
         val tone = emojiSkinTone()
         val emoji = word?.let(profile.emojiFor).orEmpty().map(tone::apply)
+        emojiSourceWord = word.takeIf { emoji.isNotEmpty() }
         _uiState.update { it.copy(emojiSuggestions = emoji) }
     }
 
-    /** Tapping an emoji-suggestion chip (see [KeyboardUiState.emojiSuggestions]) just inserts it
-     * next to whatever's already there — entirely independent of [activeCorrection]/word-cycling
-     * state, since the emoji isn't replacing or completing the word, only riding along with it. */
+    /** The word, as it appears in the text, that the emoji chips on screen were suggested for. */
+    private var emojiSourceWord: String? = null
+
+    /**
+     * Tapping an emoji-suggestion chip (see [KeyboardUiState.emojiSuggestions]) **replaces** the
+     * word that suggested it: 🔥 for "fire" turns "fire" into "🔥". A word still being typed is
+     * finished with a space, as tapping a word suggestion does; a finished word keeps whatever
+     * separator followed it. If that word can no longer be found where it was, the emoji is just
+     * inserted. One tap, one undo step, which puts the word back.
+     */
     fun onEmojiSuggestionAccepted(rawEmoji: String) {
         val emoji = emojiSkinTone().apply(rawEmoji)
-        textEditor.insertText(emoji)
-        // One tap, one undo step — and an emoji is often a surrogate pair, so "just backspace it"
-        // is not reliably one keypress either.
-        pushUndo(TextEdit(inserted = emoji))
+        val source = emojiSourceWord
+        emojiSourceWord = null
         _uiState.update { it.copy(emojiSuggestions = emptyList()) }
+        undoHistory.breakCoalescing()
+        if (source != null && words.isBufferNotEmpty && words.bufferedWord == source) {
+            discardPendingLearn()
+            repeat(words.bufferLength) { textEditor.deleteCharacterBackward() }
+            textEditor.insertText("$emoji ")
+            pushUndo(TextEdit(removed = takeSelectionReplacement() + source, inserted = "$emoji "))
+            words.clearBuffer()
+            activeCorrection = null
+            forgetCorrectionMemory()
+            refreshSuggestions()
+            return
+        }
+        if (source != null && words.isBufferEmpty) {
+            val separator = textEditor.replaceLastWord(source, emoji)
+            if (separator != null) {
+                // The word was "accepted" by surviving to here; replacing it says otherwise.
+                discardPendingLearn()
+                pushUndo(TextEdit(removed = source + separator, inserted = emoji + separator))
+                activeCorrection = null
+                forgetCorrectionMemory()
+                return
+            }
+        }
+        textEditor.insertText(emoji)
+        // An emoji is often a surrogate pair, so "just backspace it" is not reliably one keypress.
+        pushUndo(TextEdit(inserted = emoji))
     }
 
     private fun refreshSuggestions(checkContextualCorrection: Boolean = false) {
@@ -1799,7 +1883,8 @@ class KeyboardViewModel(
         // overwrite the suggestion strip with outdated results.
         refreshJob?.cancel()
         val prefix = words.bufferedWord
-        updateEmojiSuggestions(prefix.ifEmpty { words.lastCommitted.takeIf { checkContextualCorrection } })
+        // Cased as typed, so a chip can find the word in the text to replace it.
+        updateEmojiSuggestions(prefix.ifEmpty { words.lastCommittedCased.takeIf { checkContextualCorrection } })
 
         if (prefix.isNotEmpty()) {
             // Set synchronously — it is only bookkeeping, and cycling/revert need it available
@@ -1826,25 +1911,31 @@ class KeyboardViewModel(
         val target = words.lastCommittedCased.takeIf { checkContextualCorrection }
         val autocorrected = lastAutocorrect?.takeIf { it.corrected == target }
         if (target != null && autocorrected != null) {
+            // Set synchronously, with a two-entry strip until the full list arrives. These used to
+            // be set only once the background query finished, so a quick swipe up right after the
+            // space found no correction in focus and "saved" the autocorrected word instead of
+            // bringing back what was typed.
+            // originalWord is what was typed — the word swipe-up restores — while what occupies
+            // the text right now is the correction.
+            activeCorrection = ActiveCorrection(
+                mode = CorrectionApplyMode.RETROACTIVE,
+                originalWord = autocorrected.original,
+                occupiedBefore = autocorrected.corrected.length,
+                occupiedAfter = 0,
+                separator = words.boundarySeparator,
+            )
+            show(SuggestionComposer.Suggestions(listOf(autocorrected.corrected, autocorrected.original), fromCorrection = true))
+            // The correction is already applied, so cycling starts on it: swipe down goes to the
+            // next reading, swipe up goes back to what was typed.
+            suggestionCycleIndex = 0
             refreshJob = scope.launch {
                 val result = suggestionComposer.forAutocorrectedWord(
                     typed = autocorrected.original,
                     corrected = autocorrected.corrected,
                     beforePreviousWord = words.previousToLastCommitted,
                 )
-                // originalWord is what was typed — the word swipe-up restores — while what occupies
-                // the text right now is the correction.
-                activeCorrection = ActiveCorrection(
-                    mode = CorrectionApplyMode.RETROACTIVE,
-                    originalWord = autocorrected.original,
-                    occupiedBefore = autocorrected.corrected.length,
-                    occupiedAfter = 0,
-                    separator = words.boundarySeparator,
-                )
-                show(result)
-                // The correction is already applied, so cycling starts on it: swipe down goes to
-                // the next reading, swipe up goes back to what was typed.
-                suggestionCycleIndex = 0
+                // Only if nothing moved on meanwhile — a swipe may already have changed the word.
+                if (suggestionCycleIndex == 0 && lastAutocorrect === autocorrected) show(result)
             }
             return
         }
@@ -1919,6 +2010,8 @@ class KeyboardViewModel(
         const val SUGGESTION_LIMIT = 3
 
         const val DOUBLE_TAP_SHIFT_MS = 350L
+        // Enough to see past trailing spaces, a closing quote and the full stop before them.
+        const val AUTO_CAP_CONTEXT_CHARS = 16
         // Matches the ~500ms window most mainstream keyboards use for double-tap-space-for-period.
         const val DOUBLE_TAP_SPACE_WINDOW_MS = 500L
         val SYMBOLS_LAYOUT_IDS = setOf(Layouts.Symbols1.id, Layouts.Symbols2.id)
