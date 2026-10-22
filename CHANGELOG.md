@@ -6,7 +6,7 @@ All notable changes to omakey are documented here. Format loosely follows
 ## [5.3.0] — 2026-10-22
 
 Fleksy's symbols page and swipe habits, closer suggestions, and a round of fixes from user
-feedback. Thanks to Konstanin and John for feedback and suggestions.
+feedback. Thanks to Konstantin and John for feedback and suggestions.
 
 ### Added
 - **Fleksy's symbols page** (Settings → Keyboard → Symbols, on by default): the ?123 page is laid
