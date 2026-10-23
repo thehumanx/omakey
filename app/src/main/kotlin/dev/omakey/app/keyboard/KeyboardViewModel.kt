@@ -10,6 +10,7 @@ import dev.omakey.core.gesture.GesturePreferences
 import dev.omakey.core.gesture.GestureSettings
 import dev.omakey.core.input.TextEdit
 import dev.omakey.core.input.AutoCapitalization
+import dev.omakey.core.input.PunctuationSpacing
 import dev.omakey.core.input.AutocorrectPolicy
 import dev.omakey.core.input.SwipeUpAction
 import dev.omakey.core.input.TextEditor
@@ -34,6 +35,7 @@ import dev.omakey.core.layout.withSpaceLabel
 import dev.omakey.core.layout.Layouts
 import dev.omakey.core.layout.withDigits
 import dev.omakey.core.layout.withSymbolsPage
+import dev.omakey.core.layout.withPopupSymbols
 import dev.omakey.core.layout.SpecialKeyCode
 import dev.omakey.core.predict.AutocorrectIndex
 import dev.omakey.core.predict.AutocorrectPreferences
@@ -121,7 +123,8 @@ class KeyboardViewModel(
             layoutSettings = layoutPreferences.settings.value,
             fontId = fontPreferences.fontId.value,
             gestureSettings = gesturePreferences.settings.value,
-            topStripTab = topStripTabPreferences.tab.value,
+            topStripTab = topStripTabPreferences.settings.value.tab,
+            topStripPages = topStripTabPreferences.settings.value.pages,
         ),
     )
     val uiState: StateFlow<KeyboardUiState> = _uiState.asStateFlow()
@@ -302,6 +305,9 @@ class KeyboardViewModel(
             .launchIn(scope)
         fontPreferences.fontId
             .onEach { id -> _uiState.update { it.copy(fontId = id) } }
+            .launchIn(scope)
+        topStripTabPreferences.settings
+            .onEach { settings -> _uiState.update { it.copy(topStripPages = settings.pages) } }
             .launchIn(scope)
         gesturePreferences.settings
             .onEach { settings -> _uiState.update { it.copy(gestureSettings = settings) } }
@@ -807,6 +813,7 @@ class KeyboardViewModel(
      * [flushWordBuffer]'s doc) — the word came from the suggestion strip, so it was already a
      * known word or an already-vetted correction. */
     fun onSuggestionAccepted(word: String) {
+        autoSpacePending = false
         if (translit.isComposing) {
             commitTranslit(separator = " ", word = word)
             refreshSuggestions()
@@ -1020,6 +1027,9 @@ class KeyboardViewModel(
 
     private fun commitTypedText(rawText: String) {
         if (rawText.isEmpty()) return
+        // Before anything is typed: a space this keyboard just added after punctuation may have to
+        // go first ("?!", "3.14").
+        val replacedAutoSpace = takeBackAutoSpace(rawText)
         captureSelectionBeingReplaced()
         if (transliterating()) {
             if (rawText.all { it in 'a'..'z' || it in 'A'..'Z' }) {
@@ -1046,25 +1056,31 @@ class KeyboardViewModel(
             rawText
         }
         val isWordText = profile.isWord(text)
+        // With "Space after punctuation" on, the mark and its space are one separator throughout:
+        // the correction, the undo step and the word tracker all see what is really on screen.
+        val autoSpaced = !isWordText && autoSpaceAfterPunctuationApplies() &&
+            (PunctuationSpacing.addsSpace(text, textEditor.textAfterCursor(1)) ||
+                (replacedAutoSpace && PunctuationSpacing.respacesAfter(text)))
+        val separator = if (autoSpaced) "$text " else text
         // Punctuation typed directly after a word (no space) is a word boundary too — correct
         // before committing the punctuation itself, so it lands after the fixed word.
         if (!isWordText) {
-            maybeAutocorrectBufferedWord(separator = text)
+            maybeAutocorrectBufferedWord(separator = separator)
         }
-        textEditor.insertText(text)
+        textEditor.insertText(separator)
         if (_uiState.value.layout.id in SYMBOLS_LAYOUT_IDS) symbolTypedInSymbolsMode = true
         if (isWordText) {
             words.appendToBuffer(text)
             refreshSuggestions()
         } else {
-            flushWordBuffer(separator = text)
+            flushWordBuffer(separator = separator)
             // Punctuation typed straight over a selection: one step that removed the selection and
             // inserted the punctuation, since there is no word for it to ride along with.
             pendingSelectionReplacement?.let {
-                pushUndo(TextEdit(removed = it, inserted = text))
+                pushUndo(TextEdit(removed = it, inserted = separator))
                 pendingSelectionReplacement = null
             }
-            words.boundarySeparator = text
+            words.boundarySeparator = separator
             val char = text.singleOrNull()
             // Real bug, fixed: this used to pass checkContextualCorrection = true for *every*
             // non-letter character, including digits and arbitrary symbols-page characters (@, #,
@@ -1086,6 +1102,45 @@ class KeyboardViewModel(
             // A field that wants every letter capitalised gets the next one too.
             if (fieldCapsMode == AutoCapitalization.FieldMode.CHARACTERS) maybeAutoCapitalize()
         }
+        if (autoSpaced) {
+            autoSpacePending = true
+            // "Hello. " is a sentence start like any other; the space just wasn't typed by hand.
+            maybeAutoCapitalize()
+        }
+    }
+
+    /**
+     * Set right after "Space after punctuation" added a space, cleared by whatever comes next. The
+     * next keystroke is the only one that may take that space back ([PunctuationSpacing]); after
+     * it, the space is ordinary text.
+     */
+    private var autoSpacePending = false
+
+    private fun autoSpaceAfterPunctuationApplies(): Boolean =
+        autocorrectPreferences.settings.value.autoSpaceAfterPunctuation && fieldAllowsAutocorrect
+
+    /**
+     * The space "Space after punctuation" added, if it is still right before the cursor after its
+     * mark — checked against the text, not trusted from [autoSpacePending] alone, since the host
+     * can move the cursor without telling us in time.
+     */
+    private fun pendingAutoSpaceText(): String? {
+        if (!autoSpacePending) return null
+        autoSpacePending = false
+        val before = textEditor.textBeforeCursor(3)
+        if (before.length < 2 || !before.endsWith(' ') || before[before.length - 2] !in PunctuationSpacing.SPACED) return null
+        return before
+    }
+
+    /** Removes the added space when [next] belongs before it; returns whether it did. */
+    private fun takeBackAutoSpace(next: String): Boolean {
+        val before = pendingAutoSpaceText() ?: return false
+        if (!PunctuationSpacing.replacesSpace(next, before)) return false
+        if (!textEditor.replaceBefore(" ", "")) return false
+        words.boundarySeparator = words.boundarySeparator.removeSuffix(" ")
+        // The capital "Hello. " turned on no longer has a sentence start behind it.
+        reevaluateAutoCapitalize()
+        return true
     }
 
     /** Inline calculator — typing "12+7=" offers the full "12+7=19" in the suggestion strip
@@ -1143,6 +1198,15 @@ class KeyboardViewModel(
         }
         if (shouldConvertDoubleSpaceToPeriod()) {
             convertPrecedingSpaceToPeriod()
+            return
+        }
+        if (pendingAutoSpaceText() != null) {
+            // The space after the punctuation is already there; one typed by habit isn't a second.
+            // Not a space commit for double-tap-period either, or the next space would add "..".
+            if (symbolTypedInSymbolsMode) {
+                symbolTypedInSymbolsMode = false
+                switchLayout(locale().letterLayout)
+            }
             return
         }
         maybeAutocorrectBufferedWord(separator = " ")
@@ -1234,6 +1298,7 @@ class KeyboardViewModel(
     }
 
     private fun onEnter() {
+        autoSpacePending = false
         if (translit.isComposing) commitTranslit(separator = "")
         val action = _uiState.value.enterAction
         val willInsertNewline = action == EditorInfo.IME_ACTION_NONE || action == EditorInfo.IME_ACTION_UNSPECIFIED
@@ -1308,6 +1373,7 @@ class KeyboardViewModel(
     }
 
     private fun onDeleteCharacter() {
+        autoSpacePending = false
         if (translit.isComposing && translit.backspace(::translitCandidates)) {
             if (translit.isComposing) showTranslitStrip() else refreshSuggestions()
             return
@@ -1384,6 +1450,7 @@ class KeyboardViewModel(
     }
 
     private fun onDeleteWord() {
+        autoSpacePending = false
         discardPendingLearn()
         forgetCorrectionMemory()
         undoHistory.breakCoalescing()
@@ -1497,6 +1564,7 @@ class KeyboardViewModel(
      * not.
      */
     private fun resetTypingState() {
+        autoSpacePending = false
         settleSelectionReplacement()
         words.clearBuffer()
         activeCorrection = null
@@ -1831,6 +1899,8 @@ class KeyboardViewModel(
         val stored = (layouts[layout.id] ?: locale.letterLayout.takeIf { it.id == layout.id } ?: layout)
             // Letters' long-press symbols are written against the classic page.
             .let { if (fleksy) it.withSymbolsPage(Layouts.ClassicSymbols1, Layouts.Symbols1) else it }
+            // Last, so the user's own symbols win over everything above.
+            .withPopupSymbols(layoutPreferences.settings.value.popupSymbols)
         if (localeController.enabled.value.size < 2) return stored
         // "FR - AZERTY": language and layout together, so the spacebar says exactly what the globe
         // key just switched to — two layouts of one language would otherwise look identical.

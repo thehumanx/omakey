@@ -218,6 +218,10 @@ class TextEditor(
      * `wordAtCursor`'s letters-only definition doesn't cover, like digits and operators. */
     fun textBeforeCursor(maxChars: Int): String = ic?.getTextBeforeCursor(maxChars, 0)?.toString() ?: ""
 
+    /** Plain text immediately after the cursor, up to [maxChars]. Empty at the end of the field,
+     * and also when the host can't say — callers treat both as "nothing follows". */
+    fun textAfterCursor(maxChars: Int): String = ic?.getTextAfterCursor(maxChars, 0)?.toString() ?: ""
+
     /** True if there's currently a non-empty text selection (e.g. after "Select all", or a
      * host-app text-selection drag) — [getSelectedText] is a standard `InputConnection` method,
      * not a heuristic. Used to make delete-word/delete-character remove the *whole* selection

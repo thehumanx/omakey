@@ -13,7 +13,7 @@ picked up from here belong in `AGENTS.md`, not this file.
 | Offline dictionary/prediction | Yes (+cloud) | Yes (+cloud) | Yes | Yes | Yes | Yes | **Yes (trigram model, memory-mapped)** |
 | Cloud-assisted prediction | Yes | Yes | No | No | No | Unknown | No (offline-by-default, deliberate) |
 | Clipboard manager | Yes | Yes | No | No | Yes (Smartbar) | Yes | **Yes** |
-| Number row toggle / dedicated numbers access | Yes (row) | Yes (row) | Yes (row) | Yes (row) | Yes (row) | Unknown | **Yes (swipeable Numbers tab, not a fixed row)** |
+| Number row toggle / dedicated numbers access | Yes (row) | Yes (row) | Yes (row) | Yes (row) | Yes (row) | Unknown | **Yes (swipeable Numbers tab; with the other tabs hidden in Settings, a fixed row)** |
 | One-handed mode | Yes | Yes | No | No | Yes | Unknown | No |
 | Split keyboard for tablets | Yes | Yes | No | No | No | Unknown | No |
 | Resizable keyboard height | Yes | Yes | No | Limited | Yes | Unknown | **Yes** |

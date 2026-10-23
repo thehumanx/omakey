@@ -14,6 +14,9 @@ data class AutocorrectSettings(
      * twice quickly when that gesture is enabled) replaces the two spaces with ". " instead.
      * See [KeyboardViewModel.onSpace]'s own doc for the actual detection logic. */
     val doubleTapSpaceForPeriod: Boolean = false,
+    /** Off by default, like the toggles above: typing . , ! ? ; : adds a space after it. See
+     * [dev.omakey.core.input.PunctuationSpacing] for when that space is taken back. */
+    val autoSpaceAfterPunctuation: Boolean = false,
 )
 
 /** Persists the autocorrect on/off preference. Same SharedPreferences + cross-instance-sync
@@ -36,12 +39,17 @@ class AutocorrectPreferences(context: Context) {
         store.edit { putBoolean(KEY_DOUBLE_TAP_SPACE_FOR_PERIOD, enabled) }
     }
 
+    fun setAutoSpaceAfterPunctuation(enabled: Boolean) {
+        store.edit { putBoolean(KEY_AUTO_SPACE_AFTER_PUNCTUATION, enabled) }
+    }
+
     fun close() = store.close()
 
     private fun load(prefs: SharedPreferences) = AutocorrectSettings(
         autocorrectEnabled = prefs.getBoolean(KEY_AUTOCORRECT_ENABLED, true),
         autoCapitalizeEnabled = prefs.getBoolean(KEY_AUTO_CAPITALIZE_ENABLED, false),
         doubleTapSpaceForPeriod = prefs.getBoolean(KEY_DOUBLE_TAP_SPACE_FOR_PERIOD, false),
+        autoSpaceAfterPunctuation = prefs.getBoolean(KEY_AUTO_SPACE_AFTER_PUNCTUATION, false),
     )
 
     private companion object {
@@ -49,5 +57,6 @@ class AutocorrectPreferences(context: Context) {
         const val KEY_AUTOCORRECT_ENABLED = "autocorrect_enabled"
         const val KEY_AUTO_CAPITALIZE_ENABLED = "auto_capitalize_enabled"
         const val KEY_DOUBLE_TAP_SPACE_FOR_PERIOD = "double_tap_space_for_period"
+        const val KEY_AUTO_SPACE_AFTER_PUNCTUATION = "auto_space_after_punctuation"
     }
 }

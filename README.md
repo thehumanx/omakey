@@ -47,7 +47,7 @@ ever leaves your phone.
 
 ## App Updates / Plans and PSA
 - I've publicly shared this keyboard only on Reddit threads (besides my website) and few kind volunteers have tried and provided feedback on fixes/improvements and features. 
-- Languages beyond English arrived in 5.0.0: Spanish, French, Brazilian Portuguese and Nepali, each a small optional download. 5.1.0 adds Italian and Russian, 5.2.0 fixes what a Russian user reported, 5.3.0 is a round of fixes and Fleksy touches from user feedback, and 5.3.1 fixes autocorrect in search boxes. More to come.
+- Languages beyond English arrived in 5.0.0: Spanish, French, Brazilian Portuguese and Nepali, each a small optional download. 5.1.0 adds Italian and Russian, 5.2.0 fixes what a Russian user reported, 5.3.0 is a round of fixes and Fleksy touches from user feedback, 5.3.1 fixes autocorrect in search boxes, and 5.4.0 adds your own long-press symbols, an optional space after punctuation, a choice of what the bar above the keys shows, and a new icon. More to come.
 - I am prioritizing more on optimizing the UX and autocorrection/prediction engine as its being written from the scratch.
 - The keyboard is optimized for battery usage as well. Fleksy used to take around 5-10%, while this takes just around 1%.
 - Note: Not tested for old hardwares, if you do, please test and lmk feedback.
@@ -106,6 +106,8 @@ ever leaves your phone.
   Prefer omakey's original symbols page? Settings → Keyboard → Symbols.
 - Optional secondary symbols on the keys — the digit or symbol each key types when held, shown
   small above its letter, so you can type `1` or `@` without leaving the letters. Off by default.
+- Your own long-press symbols: list up to 10 you use most (`@ # $ _ &`, say) and holding any letter
+  shows exactly those, in your order. Settings → Keyboard → Symbols.
 - Type a symbol, then hit space — it drops you straight back into letters, no manual switch back
   needed.
 - The Enter key adapts to what you're typing into — "Go," "Search," "Send," "Next," "Done" —
@@ -114,6 +116,10 @@ ever leaves your phone.
   landed. Turn it off in Settings if you'd rather not see it.
 - Built to keep up with fast, sloppy typing — fingers overlapping mid-word won't throw it off.
 - Optional double-tap (or double-swipe-right) space for a period, off by default.
+- Optional space after punctuation, off by default: `. , ! ? ; :` add the space for you. Type a
+  space anyway and you still get one; "?!", "..." and numbers like 3.14 come out right.
+- Choose what the bar above the keys shows — suggestions, a row of numbers, text tools, or any mix.
+  Hide suggestions and tools and you have a fixed number row. Settings → Keyboard.
 - Keyboard height and position, adjustable in one screen: drag to resize, drag to lift it off the
   bottom edge for easier one-handed reach. Capped so it can never cover what you're typing into.
 - Optional padding down the left and right edges, so the outer keys aren't flush against a curved
@@ -134,7 +140,7 @@ menus involved:
 | **Swipe up/down right after a `. , ! ? ; : ' "`** | Cycles through that whole set of punctuation instead of word suggestions — turn "." into "," into "!" and so on with repeated swipes, without retyping. Works whether the cursor sits right against the mark or one space past it, so it chains naturally off double-tap-space-for-period. |
 | **Tap and hold Shift** | Locks in caps lock. A quick tap just capitalizes the next letter, then releases. |
 | **Long-press and drag the spacebar** | Moves the cursor without needing to tap precisely inside your text — fixes a typo three words back without losing your place. |
-| **Long-press a letter key** with accent variants | Fades into a full-width picker for that key's variants (à, á, â, ä...) — keep holding and slide onto the one you want, lift to type it. Slide past the end for a few extra everyday symbols. |
+| **Long-press a letter key** with accent variants | Fades into a full-width picker for that key's variants (à, á, â, ä...) — keep holding and slide onto the one you want, lift to type it. Slide past the end for a few extra everyday symbols. Set your own long-press symbols and every letter offers exactly those instead. |
 | **Swipe left/right in the emoji panel** | Slides between emoji categories. |
 | Adjustable swipe sensitivity | A Settings slider tunes how far a swipe has to travel before it registers. |
 

@@ -58,17 +58,9 @@ import kotlinx.coroutines.isActive
  * Split out of KeyboardRoot.kt.
  */
 
-private fun tabToPage(tab: dev.omakey.app.keyboard.TopStripTab): Int = when (tab) {
-    dev.omakey.app.keyboard.TopStripTab.SUGGESTIONS -> 0
-    dev.omakey.app.keyboard.TopStripTab.NUMBERS -> 1
-    dev.omakey.app.keyboard.TopStripTab.TOOLS -> 2
-}
-
-private fun pageToTab(page: Int): dev.omakey.app.keyboard.TopStripTab = when (page) {
-    1 -> dev.omakey.app.keyboard.TopStripTab.NUMBERS
-    2 -> dev.omakey.app.keyboard.TopStripTab.TOOLS
-    else -> dev.omakey.app.keyboard.TopStripTab.SUGGESTIONS
-}
+/** The pager index showing [tab] among [pages]; the first page when [tab] is turned off. */
+private fun tabToPage(pages: List<dev.omakey.app.keyboard.TopStripTab>, tab: dev.omakey.app.keyboard.TopStripTab): Int =
+    pages.indexOf(tab).coerceAtLeast(0)
 
 /**
  * The strip above the key grid — one shared slot with three horizontally swipeable pages
@@ -81,6 +73,10 @@ private fun pageToTab(page: Int): dev.omakey.app.keyboard.TopStripTab = when (pa
  * The quick-access and language buttons live on the suggestion page only, not pinned across all
  * three: the numbers and tools pages need the full width, and the suggestion page is the one the
  * keyboard sits on by default.
+ *
+ * Any of the three can be turned off in Settings (GitHub issue #10); the pager holds only the
+ * pages left on (`uiState.topStripPages`). Clipboard mode always has the tools page, since that
+ * is what it locks the strip to.
  */
 @Composable
 internal fun TopStrip(
@@ -92,24 +88,34 @@ internal fun TopStrip(
     clipboardModeActive: Boolean = false,
     quickAccessOpen: Boolean = false,
 ) {
+    val pages = if (clipboardModeActive && dev.omakey.app.keyboard.TopStripTab.TOOLS !in uiState.topStripPages) {
+        uiState.topStripPages + dev.omakey.app.keyboard.TopStripTab.TOOLS
+    } else {
+        uiState.topStripPages
+    }
+    val toolsPage = pages.indexOf(dev.omakey.app.keyboard.TopStripTab.TOOLS)
     val pagerState = androidx.compose.foundation.pager.rememberPagerState(
-        initialPage = if (clipboardModeActive) 2 else tabToPage(uiState.topStripTab),
-    ) { 3 }
+        initialPage = if (clipboardModeActive) toolsPage else tabToPage(pages, uiState.topStripTab),
+    ) { pages.size }
 
     // Two-way sync with the ViewModel: a swipe here updates topStripTab (persisted, so the strip
     // reopens on the page it was left on), and an external change scrolls the pager to match.
     // Suppressed in clipboard mode, where the pager is locked to the tools page.
     if (!clipboardModeActive) {
+        // Turning a page off shifts the indices of those after it. Only a page change the user
+        // made is written back (keyed on currentPage alone, reading the latest pages); the effect
+        // below, keyed on the pages, scrolls back to the page that was showing.
+        val currentPages by androidx.compose.runtime.rememberUpdatedState(pages)
         androidx.compose.runtime.LaunchedEffect(pagerState.currentPage) {
-            viewModel.selectTopStripTab(pageToTab(pagerState.currentPage))
+            currentPages.getOrNull(pagerState.currentPage)?.let(viewModel::selectTopStripTab)
         }
-        androidx.compose.runtime.LaunchedEffect(uiState.topStripTab) {
-            val target = tabToPage(uiState.topStripTab)
+        androidx.compose.runtime.LaunchedEffect(uiState.topStripTab, pages) {
+            val target = tabToPage(pages, uiState.topStripTab)
             if (pagerState.currentPage != target) pagerState.scrollToPage(target)
         }
     } else {
-        androidx.compose.runtime.LaunchedEffect(Unit) {
-            if (pagerState.currentPage != 2) pagerState.scrollToPage(2)
+        androidx.compose.runtime.LaunchedEffect(pages) {
+            if (pagerState.currentPage != toolsPage) pagerState.scrollToPage(toolsPage)
         }
     }
 
@@ -128,7 +134,7 @@ internal fun TopStrip(
         androidx.compose.foundation.pager.HorizontalPager(
             state = pagerState,
             modifier = Modifier.fillMaxSize(),
-            userScrollEnabled = !clipboardModeActive,
+            userScrollEnabled = !clipboardModeActive && pages.size > 1,
             // The default 0.5 threshold needed a near-full-width flick ("not seamless").
             flingBehavior = androidx.compose.foundation.pager.PagerDefaults.flingBehavior(
                 state = pagerState,
@@ -138,10 +144,10 @@ internal fun TopStrip(
             // Same "Show key backgrounds" toggle the letter grid uses, so the strip's controls stay
             // legible on a theme whose suggestion-bar and text colours are close.
             val showKeyBackgrounds = uiState.layoutSettings.showKeyBackgrounds
-            when (page) {
-                0 -> SuggestionBar(viewModel, uiState, theme, fontFamily, feedback, quickAccessOpen, showKeyBackgrounds)
-                1 -> NumbersTabContent(theme, fontFamily, viewModel, feedback, uiState.layout.id, uiState.digits, showKeyBackgrounds)
-                else -> ToolsTabContent(
+            when (pages[page]) {
+                dev.omakey.app.keyboard.TopStripTab.SUGGESTIONS -> SuggestionBar(viewModel, uiState, theme, fontFamily, feedback, quickAccessOpen, showKeyBackgrounds)
+                dev.omakey.app.keyboard.TopStripTab.NUMBERS -> NumbersTabContent(theme, fontFamily, viewModel, feedback, uiState.layout.id, uiState.digits, showKeyBackgrounds)
+                dev.omakey.app.keyboard.TopStripTab.TOOLS -> ToolsTabContent(
                     theme, fontFamily, viewModel, feedback, uiState.canUndo, uiState.canRedo,
                     clipboardModeActive = clipboardModeActive,
                     showKeyBackgrounds = showKeyBackgrounds,
