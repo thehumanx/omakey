@@ -3,6 +3,28 @@
 All notable changes to omakey are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [5.4.0] — 2026-10-23
+
+Your own long-press symbols, a space after punctuation, a choice of what the bar above the keys
+shows, and a new icon. Thanks to @sebsebseb9b for all three ideas (GitHub issue #10 and their
+follow-up feedback).
+
+### Added
+- **Your own long-press symbols** (Settings → Keyboard → Symbols → "Long-press symbols"): type up
+  to 10 symbols you use most, like `@ # $ _ &`, and holding any letter shows exactly those, in your
+  order. Leave it empty to keep each key's own accents and symbols.
+- **Space after punctuation** (Settings → Typing, off by default): `. , ! ? ; :` add a space after
+  them so you can carry straight on. Typing a space yourself doesn't add a second one, more
+  punctuation joins up ("?!", "..."), and numbers like 3.14, 1,000 and 10:30 stay together. Never
+  in web address, email or password fields.
+- **Choose the bar's pages** (Settings → Keyboard → "Suggestion bar"): switch Suggestions, Numbers
+  or Text tools off. Hide Suggestions and Text tools and you have a fixed number row above the keys.
+  Autocorrect and swiping up or down through suggestions keep working with Suggestions hidden.
+  (GitHub issue #10)
+
+### Changed
+- **New app icon.**
+
 ## [5.3.1] — 2026-10-22
 
 A fix release for autocorrect in search boxes, from a user's report. Thanks to @sebsebseb9b for

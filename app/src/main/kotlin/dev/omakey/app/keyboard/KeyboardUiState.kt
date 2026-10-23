@@ -71,6 +71,8 @@ data class KeyboardUiState(
     val fontId: String = FontChoices.SYSTEM_DEFAULT,
     val gestureSettings: GestureSettings = GestureSettings(),
     val topStripTab: TopStripTab = TopStripTab.SUGGESTIONS,
+    /** The strip pages the user hasn't turned off, in swipe order; see [TopStripSettings]. */
+    val topStripPages: List<TopStripTab> = TopStripSettings.PAGE_ORDER,
     val firstSuggestionKind: SuggestionKind = SuggestionKind.PLAIN,
     /** Mirrors the private `suggestionCycleIndex` in [KeyboardViewModel] — -1 means "nothing's
      * been cycled yet, treat index 0 as the highlighted candidate," >=0 is the actual index into

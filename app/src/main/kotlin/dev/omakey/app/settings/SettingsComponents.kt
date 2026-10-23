@@ -20,6 +20,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -51,6 +52,8 @@ import dev.omakey.core.gesture.GesturePreferences
 import dev.omakey.core.gesture.GestureSettings
 import dev.omakey.core.layout.LayoutPreferences
 import dev.omakey.core.layout.LayoutSettings
+import dev.omakey.core.layout.MAX_POPUP_SYMBOLS
+import dev.omakey.core.layout.popupSymbolsAsTyped
 import dev.omakey.core.predict.AutocorrectPreferences
 import dev.omakey.core.predict.AutocorrectSettings
 import dev.omakey.core.predict.IncognitoPreferences
@@ -263,6 +266,18 @@ internal fun DoubleTapSpaceForPeriodToggle(settings: AutocorrectSettings, autoco
 }
 
 @Composable
+internal fun AutoSpaceAfterPunctuationToggle(settings: AutocorrectSettings, autocorrectPreferences: AutocorrectPreferences) {
+    SettingToggle(
+        title = "Space after punctuation",
+        description = "Adds a space after . , ! ? ; and : so you can go straight on to the next " +
+            "word. Typing a space yourself, more punctuation, or a number like 3.14 takes it " +
+            "back. Not in web address, email or password fields. Off by default.",
+        checked = settings.autoSpaceAfterPunctuation,
+        onCheckedChange = autocorrectPreferences::setAutoSpaceAfterPunctuation,
+    )
+}
+
+@Composable
 internal fun NextWordPredictionToggle(predictionPreferences: PredictionPreferences) {
     val settings by predictionPreferences.settings.collectAsState()
     SettingToggle(
@@ -325,6 +340,43 @@ internal fun SwapEmojiLanguageToggle(settings: LayoutSettings, layoutPreferences
     )
 }
 
+/** Which of the bar's swipeable pages are shown (GitHub issue #10). The last one shown can't be
+ * turned off — see [dev.omakey.app.keyboard.TopStripSettings]. */
+@Composable
+internal fun TopStripPagesSection(topStripPreferences: dev.omakey.app.keyboard.TopStripTabPreferences) {
+    val settings by topStripPreferences.settings.collectAsState()
+    val pages = settings.pages
+    @Composable
+    fun PageToggle(page: dev.omakey.app.keyboard.TopStripTab, title: String, description: String) {
+        val shown = page in pages
+        SettingToggle(
+            title = title,
+            description = if (shown && pages.size == 1) "$description At least one page stays on." else description,
+            checked = shown,
+            onCheckedChange = { topStripPreferences.setPageShown(page, it) },
+        )
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = "The bar above the keys has pages you swipe between. Turn off the ones you " +
+                "don't use; with one left, it stays put.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        PageToggle(
+            dev.omakey.app.keyboard.TopStripTab.SUGGESTIONS,
+            "Suggestions",
+            "Word suggestions, quick access and the language button. Off hides all three; " +
+                "autocorrect, swiping up or down through suggestions and learning new words still work.",
+        )
+        PageToggle(dev.omakey.app.keyboard.TopStripTab.NUMBERS, "Numbers", "A row of digits.")
+        PageToggle(
+            dev.omakey.app.keyboard.TopStripTab.TOOLS,
+            "Text tools",
+            "Undo, redo, select all, copy, cut, paste and clipboard history.",
+        )
+    }
+}
+
 @Composable
 internal fun EdgePaddingToggle(settings: LayoutSettings, layoutPreferences: LayoutPreferences) {
     SettingToggle(
@@ -372,7 +424,8 @@ internal fun SecondarySymbolsToggle(settings: LayoutSettings, layoutPreferences:
     SettingToggle(
         title = "Show secondary symbols",
         description = "Show the digit or symbol a key types when held, small above its letter. " +
-            "Holding a key and letting go then types that symbol; slide to pick its other characters.",
+            "Holding a key and letting go then types that symbol; slide to pick its other characters. " +
+            "Not shown while your own long-press symbols are set.",
         checked = settings.showSecondarySymbols,
         onCheckedChange = layoutPreferences::setShowSecondarySymbols,
     )
@@ -387,6 +440,41 @@ internal fun FleksySymbolsToggle(settings: LayoutSettings, layoutPreferences: La
         checked = settings.fleksySymbols,
         onCheckedChange = layoutPreferences::setFleksySymbols,
     )
+}
+
+/** The user's own long-press symbols. Saved on every edit, since the keyboard typing into this
+ * field is the one that shows the result; the field keeps what was typed (spaces included) while
+ * the stored value is the parsed symbols. */
+@Composable
+internal fun PopupSymbolsField(settings: LayoutSettings, layoutPreferences: LayoutPreferences) {
+    var text by remember { mutableStateOf(settings.popupSymbols.joinToString(" ")) }
+    Column(Modifier.fillMaxWidth()) {
+        Text(text = "Long-press symbols", style = MaterialTheme.typography.bodyLarge)
+        Text(
+            text = "The symbols you use most, e.g. @ # \$ _ &. When set, holding any letter shows " +
+                "exactly these, in this order, instead of its own accents and symbols. Leave empty " +
+                "for each key's own.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(
+            value = text,
+            onValueChange = {
+                // An 11th symbol or a repeat is refused here rather than dropped on save, so the
+                // field never shows symbols the keyboard won't offer.
+                if (popupSymbolsAsTyped(it) != null) {
+                    text = it
+                    layoutPreferences.setPopupSymbols(it)
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = { Text(text = "Each key's own") },
+            supportingText = {
+                Text(text = "${popupSymbolsAsTyped(text)?.size ?: 0} / $MAX_POPUP_SYMBOLS · no repeats")
+            },
+            singleLine = true,
+        )
+    }
 }
 
 @Composable

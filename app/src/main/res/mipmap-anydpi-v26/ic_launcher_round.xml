@@ -1,11 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The source design (rounded-square card, radial gradient, drop shadow, corner glows) is a
-     fully pre-rendered image, not a foreground/background pair meant to be re-masked into a
-     circle/squircle by the OS — so the whole bitmap is the background layer and the foreground is
-     left empty, same technique used for any pre-baked icon adapted into the adaptive-icon system.
-     The OS's own mask still clips it to whatever shape the launcher uses, same as it would any
-     other regular icon. -->
+<!-- Two layers, so the launcher can mask, move and animate them as it would any adaptive icon:
+     the gradient as the background and the white keyboard glyph, with its soft shadow, as the
+     foreground. Both are 108dp renders of the Figma design (iambishistha.com, "android-chrome-
+     192x192") with the design's 192px frame mapped onto the 72dp safe zone, and the gradient
+     carried on past it so a launcher that shows more than the safe zone sees no edge. The glyph
+     alone doubles as the monochrome layer for Android 13+ themed icons. -->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
     <background android:drawable="@drawable/ic_launcher_adaptive" />
-    <foreground android:drawable="@android:color/transparent" />
+    <foreground android:drawable="@drawable/ic_launcher_foreground" />
+    <monochrome android:drawable="@drawable/ic_launcher_foreground" />
 </adaptive-icon>

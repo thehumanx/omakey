@@ -91,6 +91,7 @@ class SettingsActivity : ComponentActivity() {
         val predictionPreferences = PredictionPreferences(applicationContext)
         val incognitoPreferences = IncognitoPreferences(applicationContext)
         val emojiSkinTonePreferences = EmojiSkinTonePreferences(applicationContext)
+        val topStripPreferences = dev.omakey.app.keyboard.TopStripTabPreferences(applicationContext)
         val updatePreferences = dev.omakey.core.update.UpdatePreferences(applicationContext)
         val feedback = VibratorKeyboardFeedback(applicationContext, hapticSoundPreferences)
         // Each Activity instance owns its own SoundPool; free it with the Activity (rotation
@@ -127,6 +128,7 @@ class SettingsActivity : ComponentActivity() {
                         predictionPreferences = predictionPreferences,
                         incognitoPreferences = incognitoPreferences,
                         emojiSkinTonePreferences = emojiSkinTonePreferences,
+                        topStripPreferences = topStripPreferences,
                         updatePreferences = updatePreferences,
                         wordDao = wordDao,
                         clipboardPreferences = clipboardPreferences,
@@ -266,6 +268,7 @@ private fun SettingsScreen(
     predictionPreferences: PredictionPreferences,
     incognitoPreferences: IncognitoPreferences,
     emojiSkinTonePreferences: EmojiSkinTonePreferences,
+    topStripPreferences: dev.omakey.app.keyboard.TopStripTabPreferences,
     updatePreferences: dev.omakey.core.update.UpdatePreferences,
     wordDao: WordDao,
     clipboardPreferences: ClipboardPreferences,
@@ -336,7 +339,7 @@ private fun SettingsScreen(
                             homeRowTinted = layoutSettings.showMiddleRowStripe,
                             alwaysShowUppercaseLetters = layoutSettings.alwaysShowUppercaseLetters,
                             edgePadding = layoutSettings.edgePadding,
-                            showSecondarySymbols = layoutSettings.showSecondarySymbols,
+                            showSecondarySymbols = layoutSettings.secondarySymbolsShown,
                             fleksySymbols = layoutSettings.fleksySymbols,
                             interactive = true,
                         )
@@ -395,6 +398,11 @@ private fun SettingsScreen(
                     }
                 }
                 item {
+                    SettingsSection(title = "Suggestion bar") {
+                        TopStripPagesSection(topStripPreferences)
+                    }
+                }
+                item {
                     SettingsSection(title = "Buttons") {
                         SwapEmojiLanguageToggle(layoutSettings, layoutPreferences)
                         TapPreviewToggle(layoutSettings, layoutPreferences)
@@ -403,6 +411,7 @@ private fun SettingsScreen(
                 item {
                     SettingsSection(title = "Symbols") {
                         FleksySymbolsToggle(layoutSettings, layoutPreferences)
+                        PopupSymbolsField(layoutSettings, layoutPreferences)
                     }
                 }
                 item {
@@ -431,6 +440,7 @@ private fun SettingsScreen(
                     SettingsSection(title = "Punctuation & capitals") {
                         AutoCapitalizeToggle(autocorrectSettings, autocorrectPreferences)
                         DoubleTapSpaceForPeriodToggle(autocorrectSettings, autocorrectPreferences)
+                        AutoSpaceAfterPunctuationToggle(autocorrectSettings, autocorrectPreferences)
                     }
                 }
             }

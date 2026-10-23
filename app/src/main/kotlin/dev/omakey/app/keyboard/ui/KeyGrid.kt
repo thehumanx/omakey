@@ -196,7 +196,7 @@ internal fun KeyGrid(
                     // sensitivity/showKeyPopup are keys here (not just captured) so a change made
                     // in Settings while the keyboard is open takes effect on the very next gesture,
                     // not only after the layout itself changes.
-                    base.pointerInput(uiState.layout.id, touchSlopPx, gestureSettings.swipeSensitivity, gestureSettings.showKeyPopup, layoutSettings.showSecondarySymbols) {
+                    base.pointerInput(uiState.layout.id, touchSlopPx, gestureSettings.swipeSensitivity, gestureSettings.showKeyPopup, layoutSettings.secondarySymbolsShown, layoutSettings.popupSymbols) {
                         val thresholds = GestureThresholds(
                             // Was previously hardcoded to 12f — smaller than the system's real
                             // touch slop, which meant ordinary finger movement during normal
@@ -276,7 +276,7 @@ internal fun KeyGrid(
                                         // hint — the symbol the key advertises — as on keyboards
                                         // that draw these; sliding still reaches the others.
                                         val hintIndex = heldKey.secondarySymbol
-                                            ?.takeIf { layoutSettings.showSecondarySymbols }
+                                            ?.takeIf { layoutSettings.secondarySymbolsShown }
                                             ?.let { heldKey.popupChars.indexOf(it) + 1 }
                                             ?.takeIf { it > 0 }
                                         accentMoved = false
@@ -412,8 +412,11 @@ internal fun KeyGrid(
                                         // options[0] is the plain letter, which has no cell.
                                         var geometry = dev.omakey.core.layout.PopupStripGeometry.of(widthPx, paddingPx, options.size - 1, minCellPx, maxCellPx)
                                         // Sliding on past the last cell reveals more symbols beyond
-                                        // the key's own set, one per half-cell, while there is room.
-                                        while (change.position.x > geometry.endPx + geometry.cellPx / 2 && options.size - 1 < maxCells) {
+                                        // the key's own set, one per half-cell, while there is room —
+                                        // unless the user set their own symbols, which are the whole
+                                        // popup ("exact", see LayoutSettings.popupSymbols).
+                                        val overflow = layoutSettings.popupSymbols.isEmpty()
+                                        while (overflow && change.position.x > geometry.endPx + geometry.cellPx / 2 && options.size - 1 < maxCells) {
                                             val next = EXTENDED_POPUP_SYMBOLS.firstOrNull { it !in options } ?: break
                                             options = options + next
                                             geometry = dev.omakey.core.layout.PopupStripGeometry.of(widthPx, paddingPx, options.size - 1, minCellPx, maxCellPx)
@@ -511,7 +514,7 @@ internal fun KeyGrid(
                     enterAction = uiState.enterAction,
                     shimmerProgress = shimmerProgress.value,
                     alwaysShowUppercaseLetters = layoutSettings.alwaysShowUppercaseLetters,
-                    showSecondarySymbols = layoutSettings.showSecondarySymbols,
+                    showSecondarySymbols = layoutSettings.secondarySymbolsShown,
                 )
             }
         }

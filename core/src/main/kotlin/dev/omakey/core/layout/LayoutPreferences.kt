@@ -64,7 +64,14 @@ data class LayoutSettings(
      * following it (`withSymbolsPage`). On by default; off gives omakey's original page
      * ([Layouts.ClassicSymbols1]). */
     val fleksySymbols: Boolean = true,
+    /** The user's own long-press symbols ([parsePopupSymbols]); empty, the default, means each
+     * key's own. When set, every letter's popup is exactly these ([withPopupSymbols]), the drag-on
+     * overflow row is gone, and so are the corner hints — the same symbol on every key is no hint. */
+    val popupSymbols: List<String> = emptyList(),
 ) {
+    /** Whether corner hints are drawn and preselected: see [popupSymbols]. */
+    val secondarySymbolsShown: Boolean get() = showSecondarySymbols && popupSymbols.isEmpty()
+
     companion object {
         const val DEFAULT_HEIGHT_DP = 260
         const val MIN_HEIGHT_DP = 180
@@ -103,6 +110,7 @@ class LayoutPreferences(context: Context) {
     fun setSwapEmojiAndLanguage(swap: Boolean) = update { it.copy(swapEmojiAndLanguage = swap) }
     fun setShowSecondarySymbols(show: Boolean) = update { it.copy(showSecondarySymbols = show) }
     fun setFleksySymbols(enabled: Boolean) = update { it.copy(fleksySymbols = enabled) }
+    fun setPopupSymbols(input: String) = update { it.copy(popupSymbols = parsePopupSymbols(input)) }
 
     fun setPlacement(placement: KeyboardPlacement) = update { it.copy(placement = placement) }
 
@@ -137,6 +145,8 @@ class LayoutPreferences(context: Context) {
             putBoolean(KEY_SWAP_EMOJI_LANGUAGE, next.swapEmojiAndLanguage)
             putBoolean(KEY_SECONDARY_SYMBOLS, next.showSecondarySymbols)
             putBoolean(KEY_FLEKSY_SYMBOLS, next.fleksySymbols)
+            // Stored as typed-back text: parsePopupSymbols splits it into the same symbols again.
+            putString(KEY_POPUP_SYMBOLS, next.popupSymbols.joinToString(""))
         }
     }
 
@@ -162,6 +172,7 @@ class LayoutPreferences(context: Context) {
         swapEmojiAndLanguage = prefs.getBoolean(KEY_SWAP_EMOJI_LANGUAGE, false),
         showSecondarySymbols = prefs.getBoolean(KEY_SECONDARY_SYMBOLS, false),
         fleksySymbols = prefs.getBoolean(KEY_FLEKSY_SYMBOLS, true),
+        popupSymbols = parsePopupSymbols(prefs.getString(KEY_POPUP_SYMBOLS, null).orEmpty()),
     )
 
     private companion object {
@@ -169,6 +180,7 @@ class LayoutPreferences(context: Context) {
         const val KEY_SWAP_EMOJI_LANGUAGE = "swap_emoji_and_language"
         const val KEY_SECONDARY_SYMBOLS = "show_secondary_symbols"
         const val KEY_FLEKSY_SYMBOLS = "fleksy_symbols"
+        const val KEY_POPUP_SYMBOLS = "popup_symbols"
         const val KEY_HEIGHT = "keyboard_height_dp"
         const val KEY_KEY_BACKGROUNDS = "show_key_backgrounds"
         const val KEY_MIDDLE_STRIPE = "show_middle_row_stripe"
