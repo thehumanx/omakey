@@ -6,8 +6,7 @@ All notable changes to omakey are documented here. Format loosely follows
 ## [5.4.0] — 2026-10-23
 
 Your own long-press symbols, a space after punctuation, a choice of what the bar above the keys
-shows, and a new icon. Thanks to @sebsebseb9b for all three ideas (GitHub issue #10 and their
-follow-up feedback).
+shows, and a new icon. Thanks to @sebsebseb9b for feature request on GitHub issue #10.
 
 ### Added
 - **Your own long-press symbols** (Settings → Keyboard → Symbols → "Long-press symbols"): type up
