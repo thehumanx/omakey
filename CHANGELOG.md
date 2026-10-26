@@ -5,29 +5,26 @@ All notable changes to omakey are documented here. Format loosely follows
 
 ## [5.5.0] — 2026-10-26
 
-A number pad for number, phone and date boxes, password-manager logins in the suggestion bar,
-and a fix for the keyboard leaving the symbols page. Thanks to Konstantin for reporting all three,
-with a screen recording that showed exactly where it went wrong.
+A number pad for number, phone and date boxes, password-manager logins in the suggestion bar, and a fix for the keyboard leaving the symbols page. Thanks to Konstantin for reporting the numpad issue, with a screen recording that showed exactly where it went wrong  + autofill suggestion.
 
 ### Added
 - **Number pad** (Settings → Keyboard → Number pad, on by default): boxes that only take numbers
   open on a number pad instead of letters. Prices, PINs and text-message codes get digits with
   `- + * / % , .`, phone numbers get `* #` and `+ ( )`, and dates and times get `. : / -`. Delete
-  and Enter sit at the ends of the rows where they are on your letter keyboard. The keys type
-  0–9 in every language, since number boxes only accept those; Nepali digits are a long-press
-  away. With "Show secondary symbols" on, the phone pad shows the letters on each digit. Each kind
+  and Enter sit at the ends of the rows where they are on your letter keyboard. With "Show secondary symbols" on, the phone pad shows the letters on each digit. Each kind
   of box can be turned off on its own.
 - **Password manager logins in the suggestion bar** (Android 11 and newer): with Google's autofill
   or a password manager like Bitwarden set up for autofill (and its inline option on, where it has
   one), your saved logins show on the Suggestions page when you tap a login box, ready to fill
   with one tap. More than fit at once? Swipe the row or tap › for the next ones. omakey only shows
   them: what they contain stays with the password manager. Settings → Keyboard → Suggestion bar →
-  "Autofill suggestions" (on by default).
+  "Autofill suggestions" (on by default). (Note: it currenly shows one account at a time, you'd need to press > to move to next. This is due to omakey's implementation limitation, will fix in another release.)
 
 ### Fixed
 - **Staying on the symbols page while an app reformats what you type.** Price boxes that add a
-  thousands space ("5 823") and code boxes that rewrite themselves used to throw you back to the
+  thousands space ("5 823" in Russian lang) and code boxes that rewrite themselves used to throw you back to the
   letters every few digits. The keyboard now stays on the page you are on.
+
 
 ## [5.4.0] — 2026-10-23
 
