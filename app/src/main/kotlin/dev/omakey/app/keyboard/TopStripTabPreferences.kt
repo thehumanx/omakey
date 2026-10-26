@@ -16,6 +16,10 @@ import kotlinx.coroutines.flow.StateFlow
 data class TopStripSettings(
     val tab: TopStripTab = TopStripTab.SUGGESTIONS,
     val hidden: Set<TopStripTab> = emptySet(),
+    /** A password manager's login suggestions on the Suggestions page (Android 11+ inline
+     * autofill). On by default; off, omakey doesn't ask for them and the manager falls back to
+     * its own popup. */
+    val autofillSuggestions: Boolean = true,
 ) {
     /** The pages shown, in swipe order. Never empty. */
     val pages: List<TopStripTab>
@@ -45,6 +49,10 @@ class TopStripTabPreferences(context: Context) {
         store.edit { putStringSet(KEY_HIDDEN, hidden.map { it.name }.toSet()) }
     }
 
+    fun setAutofillSuggestions(enabled: Boolean) {
+        store.edit { putBoolean(KEY_AUTOFILL, enabled) }
+    }
+
     fun close() = store.close()
 
     private fun load(prefs: SharedPreferences): TopStripSettings {
@@ -55,12 +63,13 @@ class TopStripTabPreferences(context: Context) {
         val hidden = prefs.getStringSet(KEY_HIDDEN, null).orEmpty()
             .mapNotNull { name -> runCatching { TopStripTab.valueOf(name) }.getOrNull() }
             .toSet()
-        return TopStripSettings(tab, hidden)
+        return TopStripSettings(tab, hidden, autofillSuggestions = prefs.getBoolean(KEY_AUTOFILL, true))
     }
 
     private companion object {
         const val PREFS_NAME = "omakey_top_strip_tab_prefs"
         const val KEY_TAB = "top_strip_tab"
         const val KEY_HIDDEN = "hidden_pages"
+        const val KEY_AUTOFILL = "autofill_suggestions"
     }
 }

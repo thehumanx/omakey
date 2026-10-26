@@ -28,8 +28,8 @@ android {
         // refuses same-or-lower versionCode as a downgrade and uninstalling first would wipe local
         // app data (learned words, settings, clipboard history). Bump versionName only when
         // actually cutting a release.
-        versionCode = 35
-        versionName = "5.4.0"
+        versionCode = 43
+        versionName = "5.5.0"
     }
 
     androidResources {
@@ -104,6 +104,8 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.androidx.work.runtime.ktx)
+    // Inline autofill's style bundle (UiVersions / InlineSuggestionUi): the format password managers read.
+    implementation(libs.androidx.autofill)
 
     debugImplementation(libs.androidx.ui.tooling)
 

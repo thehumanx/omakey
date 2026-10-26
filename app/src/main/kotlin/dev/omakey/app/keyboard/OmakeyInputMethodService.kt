@@ -29,6 +29,8 @@ import dev.omakey.core.emoji.EmojiRecentsPreferences
 import dev.omakey.core.emoji.EmojiSkinTonePreferences
 import dev.omakey.core.feedback.HapticSoundPreferences
 import dev.omakey.core.gesture.GesturePreferences
+import dev.omakey.core.input.InlineAutofill
+import dev.omakey.core.input.InlineChipCollector
 import dev.omakey.core.input.TextEditor
 import dev.omakey.core.layout.KeyboardPlacement
 import dev.omakey.core.locale.LocalePreferences
@@ -42,6 +44,8 @@ import dev.omakey.core.predict.PredictionPreferences
 import dev.omakey.core.theme.AccessibilityPreferences
 import dev.omakey.core.theme.FontPreferences
 import dev.omakey.core.theme.LocalOmakeyTheme
+import dev.omakey.core.theme.OmakeyTheme
+import dev.omakey.core.theme.Presets
 import dev.omakey.core.theme.ThemeRepository
 import dev.omakey.extapi.ClipboardItem
 import dev.omakey.extapi.ClipboardRepository
@@ -367,6 +371,14 @@ class OmakeyInputMethodService :
         }
     }
 
+    /** The theme the keyboard last drew with, after Follow-system and system-accent resolution —
+     * which only Compose can do — so a password manager's chips can be asked for in the same
+     * colours. Written from the composition. */
+    @Volatile private var drawnTheme: OmakeyTheme? = null
+
+    /** Gathers each autofill response's chips as they inflate; see [InlineChipCollector]. */
+    private val inlineChips = InlineChipCollector<View> { chips -> keyboardViewModel?.setInlineChips(chips) }
+
     override fun onCreateInputView(): View {
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_START)
 
@@ -407,8 +419,10 @@ class OmakeyInputMethodService :
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
             setContent {
                 val uiState by viewModel.uiState.collectAsState()
+                val effectiveTheme = resolveEffectiveTheme(uiState.theme, uiState.useSystemAccent)
+                androidx.compose.runtime.SideEffect { drawnTheme = effectiveTheme }
                 androidx.compose.runtime.CompositionLocalProvider(
-                    LocalOmakeyTheme provides resolveEffectiveTheme(uiState.theme, uiState.useSystemAccent),
+                    LocalOmakeyTheme provides effectiveTheme,
                     dev.omakey.core.theme.LocalKeyboardLayoutMode provides uiState.layoutMode,
                 ) {
                     KeyboardRoot(
@@ -430,7 +444,7 @@ class OmakeyInputMethodService :
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
-        keyboardViewModel?.resetForNewField(info)
+        keyboardViewModel?.resetForNewField(info, restarting)
         // Only listens for clipboard changes while the keyboard is actually on screen — see the
         // comment in onCreate() for why this isn't registered for the whole service lifetime.
         // onStartInputView can fire again without a matching onFinishInputView in between (e.g.
@@ -448,6 +462,72 @@ class OmakeyInputMethodService :
         // keyboard on screen, the same situation the listener reads in, and after
         // resetForNewField so a password field's incognito gate already applies.
         serviceScope.launch { captureCurrentClipboardIfNew() }
+    }
+
+    /**
+     * Asks for a password manager's login chips (Android 11+ inline autofill), unless the setting
+     * is off or the Suggestions page — their only home — is hidden. Returning null is what lets the
+     * manager fall back to its own popup.
+     */
+    @androidx.annotation.RequiresApi(android.os.Build.VERSION_CODES.R)
+    override fun onCreateInlineSuggestionsRequest(uiExtras: android.os.Bundle): android.view.inputmethod.InlineSuggestionsRequest? {
+        val strip = topStripTabPreferences.settings.value
+        val ask = InlineAutofill.shouldRequest(
+            android.os.Build.VERSION.SDK_INT,
+            enabled = strip.autofillSuggestions,
+            suggestionsPageShown = TopStripTab.SUGGESTIONS in strip.pages,
+        )
+        if (!ask) return null
+        // Before the keyboard has drawn once there is no resolved theme yet; the system's own
+        // light/dark is the closest guess.
+        val theme = drawnTheme ?: if (isNightMode()) Presets.Dark else Presets.Light
+        // Quick access always; the language (or swapped-in emoji) button only with two or more
+        // languages — see KeyboardTopStrip's SuggestionBar.
+        val buttons = if ((keyboardViewModel?.uiState?.value?.languages?.size ?: 0) > 1) 2 else 1
+        return InlineAutofillStyle.request(this, theme, stripWidthPx(), buttons)
+    }
+
+    /** The chips for the focused field, inflated in the response's order with pinned ones last.
+     * An empty response clears them. */
+    @androidx.annotation.RequiresApi(android.os.Build.VERSION_CODES.R)
+    override fun onInlineSuggestionsResponse(response: android.view.inputmethod.InlineSuggestionsResponse): Boolean {
+        val suggestions = InlineAutofill.pinnedLast(response.inlineSuggestions) { it.info.isPinned }
+        val batch = inlineChips.start(suggestions.size)
+        val size = InlineAutofillStyle.chipSize(this)
+        suggestions.forEachIndexed { index, suggestion ->
+            try {
+                suggestion.inflate(this, size, mainExecutor) { view -> batch.deliver(index, view) }
+            } catch (e: IllegalArgumentException) {
+                // A size the service's spec doesn't allow: that chip is left out, not the rest.
+                batch.deliver(index, null)
+            }
+        }
+        return true
+    }
+
+    /** How wide the suggestion strip is, in px on this phone: the keyboard as last laid out
+     * (floating and one-handed are narrower than the screen), less the edge gutters when those are
+     * on. Never wider than the screen is now: right after a rotation to portrait the last layout
+     * can still be the landscape one. Before the first layout, the screen width. */
+    private fun stripWidthPx(): Int {
+        val screen = resources.displayMetrics.widthPixels
+        val width = keyboardBounds?.width()?.takeIf { it > 0 }?.coerceAtMost(screen) ?: screen
+        val gutters = if (layoutPreferences.settings.value.edgePadding) {
+            (2 * dev.omakey.core.layout.LayoutSettings.EDGE_PADDING_DP * resources.displayMetrics.density).toInt()
+        } else {
+            0
+        }
+        return width - gutters
+    }
+
+    private fun isNightMode(): Boolean =
+        (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+            android.content.res.Configuration.UI_MODE_NIGHT_YES
+
+    override fun onFinishInput() {
+        super.onFinishInput()
+        // The chips belonged to the field being left; a new field gets its own response.
+        inlineChips.clear()
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
