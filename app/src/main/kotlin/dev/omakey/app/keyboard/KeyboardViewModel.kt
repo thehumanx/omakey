@@ -33,6 +33,8 @@ import dev.omakey.core.layout.LayoutSettings
 import dev.omakey.core.layout.withLanguageKeyInsteadOfEmoji
 import dev.omakey.core.layout.withSpaceLabel
 import dev.omakey.core.layout.Layouts
+import dev.omakey.core.layout.NumberPadKind
+import dev.omakey.core.layout.NumberPads
 import dev.omakey.core.layout.withDigits
 import dev.omakey.core.layout.withSymbolsPage
 import dev.omakey.core.layout.withPopupSymbols
@@ -129,6 +131,16 @@ class KeyboardViewModel(
     )
     val uiState: StateFlow<KeyboardUiState> = _uiState.asStateFlow()
 
+    /** A password manager's inline autofill chips for the focused field (Android 11+), ready to
+     * host on the Suggestions page. Views drawn by the autofill service: omakey shows them and
+     * never reads them. Kept out of [KeyboardUiState], which is plain data. */
+    private val _inlineChips = MutableStateFlow<List<android.view.View>>(emptyList())
+    val inlineChips: StateFlow<List<android.view.View>> = _inlineChips.asStateFlow()
+
+    fun setInlineChips(chips: List<android.view.View>) {
+        _inlineChips.value = chips
+    }
+
     /**
      * The word being typed and the two finished before it — see [WordTracker], which owns the
      * three-field invariant these used to maintain by hand at eight separate call sites.
@@ -152,6 +164,14 @@ class KeyboardViewModel(
      * punctuation. Reset on entering symbols mode fresh or leaving it (see [onKeyTap]'s
      * `SYMBOLS`/`LETTERS` branches) so a plain page-switch with nothing typed doesn't trigger it. */
     private var symbolTypedInSymbolsMode = false
+
+    /** The number pad the focused field opens on ([NumberPads.kindFor]), or null for letters. Set
+     * per field in [resetForNewField]; a language switch rebuilds the same pad in the new language
+     * rather than dropping to letters, since the field still only takes numbers. */
+    private var fieldNumberPad: NumberPadKind? = null
+
+    /** Which field [resetForNewField] last started: package, field id, input type. */
+    private var lastField: Triple<String?, Int, Int>? = null
 
     /** -1 = not currently cycling (buffer holds what was actually typed, or nothing's been
      * cycled yet); >=0 = index into the frozen suggestions snapshot currently applied, via swipe
@@ -377,7 +397,18 @@ class KeyboardViewModel(
      * ([EditorInfo.IME_FLAG_NO_ENTER_ACTION]) or simply doesn't declare one always gets a plain
      * newline; anything else (Go/Search/Send/Next/Done/Previous, e.g. a URL bar's "Go") is passed
      * straight through to [TextEditor.sendEditorAction] instead. */
-    fun resetForNewField(info: EditorInfo? = null) {
+    /**
+     * [restarting] is the framework's "same field as before": an app that replaces its own text
+     * (formatting "5823" as "5 823", a masked SMS-code box) restarts input without the user going
+     * anywhere. The page they are typing on stays — resetting it here is what used to throw them
+     * off the symbols page after every fourth digit (real bug report). Everything else still
+     * resets, since the text under the word tracker and undo history was just rewritten.
+     *
+     * [restarting] alone isn't trusted: moving between fields of one app can arrive with it set
+     * too (see the service's onStartInputView), and a different field must start fresh. So the
+     * field also has to match the last one by package, id and input type.
+     */
+    fun resetForNewField(info: EditorInfo? = null, restarting: Boolean = false) {
         // Engaged before anything else, so no word from this field can be learned even if the very
         // first keystroke arrives immediately. This is the case that actually matters: a user
         // typing a password or a recovery phrase will never think to reach for a toggle, and words
@@ -397,9 +428,16 @@ class KeyboardViewModel(
         val capitalizeFieldStart = autocorrectPreferences.settings.value.autoCapitalizeEnabled &&
             AutoCapitalization.shouldCapitalize(textEditor.textBeforeCursor(AUTO_CAP_CONTEXT_CHARS), profile, fieldCapsMode)
         shiftFromAutoCapitalize = capitalizeFieldStart
+        fieldNumberPad = NumberPads.kindFor(info?.inputType ?: android.text.InputType.TYPE_NULL, layoutPreferences.settings.value)
+        // A pad is rebuilt rather than kept, so a field that changed class on restart gets the
+        // right one; there is no page to lose on a pad.
+        val field = info?.let { Triple(it.packageName, it.fieldId, it.inputType) }
+        val sameField = restarting && field != null && field == lastField
+        lastField = field
+        val keepLayout = sameField && fieldNumberPad == null && _uiState.value.layout.id !in NumberPads.IDS
         _uiState.update {
             it.copy(
-                layout = display(locale().letterLayout),
+                layout = if (keepLayout) it.layout else fieldLayout(locale()),
                 baseRowCount = locale().letterLayout.rows.size,
                 shiftOn = capitalizeFieldStart,
                 capsLockOn = false,
@@ -423,7 +461,7 @@ class KeyboardViewModel(
         selectionActive = false
         // The word being composed belonged to the field being left; it is gone with it.
         translit.clear()
-        symbolTypedInSymbolsMode = false
+        if (!keepLayout) symbolTypedInSymbolsMode = false
         suggestionCycleIndex = -1
         lastAutocorrect = null
         revertedWord = null
@@ -1812,7 +1850,7 @@ class KeyboardViewModel(
         symbolTypedInSymbolsMode = false
         _uiState.update {
             it.copy(
-                layout = display(locale.letterLayout),
+                layout = fieldLayout(locale),
                 baseRowCount = locale.letterLayout.rows.size,
                 activeLanguageId = locale.id,
                 activeLetterLayoutId = locale.letterLayout.id,
@@ -1887,6 +1925,11 @@ class KeyboardViewModel(
      * where the emoji key was. Stored layouts never carry either, so a single-language keyboard is
      * exactly as it was.
      */
+    /** What a field opens on in [locale]: its number pad, or the letters. */
+    private fun fieldLayout(locale: KeyboardLocale): KeyboardLayout =
+        fieldNumberPad?.let { NumberPads.build(it, locale.letterLayout, locale.profile.digits) }
+            ?: display(locale.letterLayout)
+
     private fun display(layout: KeyboardLayout): KeyboardLayout {
         val locale = locale()
         val fleksy = layoutPreferences.settings.value.fleksySymbols

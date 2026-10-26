@@ -44,6 +44,10 @@ data class KeyDefinition(
      * text needs a [code] unique within its layout, since taps are identified by code; see
      * [KeyboardLayout.validate]. */
     val text: String? = null,
+    /** Drawn in the key's corner in place of [secondarySymbol]'s usual pick, under the same
+     * "Show secondary symbols" setting — the letters on a phone pad's digits ("ABC" on 2). A label
+     * only: what the key types and long-presses is unchanged. */
+    val hint: String? = null,
 ) {
     /** The string a tap on this key commits. */
     val committedText: String get() = text ?: String(Character.toChars(code))
@@ -60,6 +64,7 @@ data class KeyDefinition(
     val secondarySymbol: String?
         get() {
             if (keyType != KeyType.CHARACTER) return null
+            if (hint != null) return hint
             val visible = popupChars.filter { option -> option.any { !it.isFormatChar() && !it.isWhitespace() } }
             return visible.firstOrNull { option -> option.none { it.isLetter() || LanguageProfile.isCombiningMark(it) } }
                 ?: visible.firstOrNull()

@@ -1,6 +1,12 @@
 package dev.omakey.app.keyboard.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.runtime.collectAsState
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -33,6 +39,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.omakey.app.keyboard.KeyboardFeedback
+import dev.omakey.core.input.InlineAutofill
 import dev.omakey.app.keyboard.KeyboardViewModel
 import dev.omakey.core.theme.toComposeColor
 import dev.omakey.core.theme.toDp
@@ -157,6 +164,103 @@ internal fun TopStrip(
     }
 }
 
+/**
+ * A password manager's inline autofill chips (Android 11+). Each is a view the autofill service
+ * draws and handles — tapping one fills the login — so omakey only gives it a place: it never reads
+ * one.
+ *
+ * Only whole chips are ever on screen, a page at a time ([InlineAutofill.chipPages]); swiping the
+ * row or tapping its "›" button moves to the next page. A chip is the service's own surface above
+ * the keyboard window — that is what makes it tappable — and nothing of omakey's can clip it, so a
+ * chip half outside the row covered the quick-access or language button. Four builds tried to crop
+ * it (`setClipBounds`, applied on some later frame or not at all) or draw it beneath the window
+ * (clipped, but no longer tappable). A chip that isn't on the current page isn't composed at all,
+ * so it isn't attached and draws nowhere; widths are known before that, from the layout params the
+ * framework sets to the chip's real size.
+ */
+@Composable
+private fun InlineAutofillChips(
+    chips: List<android.view.View>,
+    edgeInset: androidx.compose.ui.unit.Dp,
+    theme: OmakeyTheme,
+    feedback: KeyboardFeedback,
+) {
+    var page by androidx.compose.runtime.remember(chips) { androidx.compose.runtime.mutableIntStateOf(0) }
+    // Inset by the grid border the middle box draws on its own edge, so the chips stop short of it
+    // rather than covering the language key's border (phone test).
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize().padding(horizontal = edgeInset)) {
+        val density = androidx.compose.ui.platform.LocalDensity.current
+        val gap = with(density) { INLINE_CHIP_GAP_DP.dp.roundToPx() }
+        val padding = with(density) { INLINE_CHIP_ROW_PADDING_DP.dp.roundToPx() }
+        val pagerButton = with(density) { STRIP_BUTTON_WIDTH_DP.dp.roundToPx() }
+        val pages = InlineAutofill.chipPages(
+            widths = chips.map { chip -> chip.layoutParams?.width?.takeIf { it > 0 } ?: chip.width },
+            available = constraints.maxWidth - 2 * padding,
+            gap = gap,
+            pagerButton = pagerButton,
+        )
+        if (pages.isEmpty()) return@BoxWithConstraints
+        val current = page.coerceIn(pages.indices)
+        val turnPage = { to: Int ->
+            if (to in pages.indices && to != current) {
+                feedback.onKeyPress()
+                page = to
+            }
+        }
+        Row(
+            Modifier
+                .fillMaxSize()
+                .pointerInput(pages.size, current) {
+                    // A sideways swipe turns the page. Taken on the way in, before the strip's own
+                    // pager (which would swipe to the number row), once past touch slop; a drag that
+                    // starts on a chip arrives here too, handed back by the chip once it moves.
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                        var dragged = 0f
+                        var swiping = false
+                        while (true) {
+                            val change = awaitPointerEvent(PointerEventPass.Initial).changes.firstOrNull { it.id == down.id } ?: break
+                            if (!change.pressed) break
+                            dragged += change.position.x - change.previousPosition.x
+                            if (!swiping) swiping = kotlin.math.abs(dragged) > viewConfiguration.touchSlop
+                            if (swiping) change.consume()
+                        }
+                        if (swiping) turnPage(if (dragged < 0) current + 1 else current - 1)
+                    }
+                }
+                .padding(horizontal = INLINE_CHIP_ROW_PADDING_DP.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(INLINE_CHIP_GAP_DP.dp),
+        ) {
+            for (index in pages[current]) {
+                val chip = chips[index]
+                androidx.compose.runtime.key(chip) {
+                    androidx.compose.ui.viewinterop.AndroidView(
+                        factory = {
+                            // A page turn or the Suggestions page coming back rebuilds this row, and a
+                            // view can only have one parent.
+                            (chip.parent as? android.view.ViewGroup)?.removeView(chip)
+                            chip
+                        },
+                        modifier = Modifier.height(INLINE_CHIP_HEIGHT_DP.dp),
+                    )
+                }
+            }
+            if (pages.size > 1) {
+                androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
+                val last = current == pages.lastIndex
+                StripButton(
+                    theme = theme,
+                    active = false,
+                    // The last page's button goes back to the first, so every chip is one tap away.
+                    description = if (last) "First autofill suggestions" else "More autofill suggestions",
+                    onClick = { turnPage(if (last) 0 else current + 1) },
+                ) { tint -> Text(text = if (last) "‹" else "›", color = tint, fontSize = 22.sp) }
+            }
+        }
+    }
+}
+
 /** Page one of the strip: quick access, then suggestions, then the language (or emoji) button. */
 @Composable
 private fun SuggestionBar(
@@ -191,7 +295,17 @@ private fun SuggestionBar(
                 }
             },
         ) {
-            SuggestionsTabContent(
+            val autofillChips by viewModel.inlineChips.collectAsState()
+            // A login field's password-manager chips take the word suggestions' place while they
+            // are there; the buttons either side stay.
+            if (autofillChips.isNotEmpty()) {
+                InlineAutofillChips(
+                    autofillChips,
+                    edgeInset = if (isGridMode) theme.gridBorderWidth.toDp() else 0.dp,
+                    theme = theme,
+                    feedback = feedback,
+                )
+            } else SuggestionsTabContent(
                 suggestions = uiState.suggestions,
                 emojiSuggestions = uiState.emojiSuggestions,
                 loading = uiState.suggestionsLoading,
@@ -256,7 +370,7 @@ private fun StripButton(
     Box(
         Modifier
             .fillMaxHeight()
-            .width(44.dp)
+            .width(STRIP_BUTTON_WIDTH_DP.dp)
             .padding(if (isGridMode) 0.dp else 6.dp)
             .let { m ->
                 when {
@@ -654,7 +768,10 @@ internal fun NumbersTabContent(
     // Digits are already the Symbols grid's own first row, so repeating them here while a Symbols
     // layout is active is redundant — extra special characters are more useful in that slot,
     // reverting to plain digits the instant the user switches back to letters.
-    val rowKeys = if (currentLayoutId == Layouts.Symbols1.id || currentLayoutId == Layouts.Symbols2.id) {
+    // The number pad has its digits too, so it gets the same extra symbols.
+    val rowKeys = if (currentLayoutId == Layouts.Symbols1.id || currentLayoutId == Layouts.Symbols2.id ||
+        currentLayoutId in dev.omakey.core.layout.NumberPads.IDS
+    ) {
         Layouts.SymbolsExtraRow.keys
     } else {
         remember(digits) { Layouts.NumberRow.withDigits(digits).keys }

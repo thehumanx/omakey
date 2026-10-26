@@ -32,6 +32,17 @@ import dev.omakey.core.theme.OmakeyTheme
 
 internal const val SUGGESTION_STRIP_HEIGHT_DP = 44
 
+/** Height of a password manager's autofill chip in the strip: the size omakey asks the autofill
+ * service to draw at, and the slot it hosts the chip in. */
+internal const val INLINE_CHIP_HEIGHT_DP = 34
+
+/** Width of a button at either end of the strip (quick access, language). */
+internal const val STRIP_BUTTON_WIDTH_DP = 44
+
+/** Spacing in the autofill chip row: between chips, and at its two ends. */
+internal const val INLINE_CHIP_GAP_DP = 6
+internal const val INLINE_CHIP_ROW_PADDING_DP = 4
+
 /** Height of the floating keyboard's move handle. Only floating keyboards have one, so it is added
  * to the placement container's height in that mode alone — see [FloatingMoveHandle]. */
 internal const val FLOATING_HANDLE_HEIGHT_DP = 22

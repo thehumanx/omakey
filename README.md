@@ -110,6 +110,10 @@ ever leaves your phone.
   shows exactly those, in your order. Settings → Keyboard → Symbols.
 - Type a symbol, then hit space — it drops you straight back into letters, no manual switch back
   needed.
+- A number pad opens by itself in boxes that only take numbers: prices, codes from a text
+  message, phone numbers, dates and times. Delete and Enter stay right where they are on the
+  letters. You can switch it off, or switch it off for just one kind of box, in Settings → Keyboard
+  → Number pad.
 - The Enter key adapts to what you're typing into — "Go," "Search," "Send," "Next," "Done" —
   instead of always being a plain return key.
 - A small preview bubble shows above your finger on every keypress, so you always know what
@@ -118,6 +122,9 @@ ever leaves your phone.
 - Optional double-tap (or double-swipe-right) space for a period, off by default.
 - Optional space after punctuation, off by default: `. , ! ? ; :` add the space for you. Type a
   space anyway and you still get one; "?!", "..." and numbers like 3.14 come out right.
+- Logins from Google's autofill or your password manager (Bitwarden and others) right in the
+  suggestion bar when you tap a login box, on Android 11 and newer. Swipe or tap › when there are
+  more than fit. The keyboard only shows them; it never sees what they contain.
 - Choose what the bar above the keys shows — suggestions, a row of numbers, text tools, or any mix.
   Hide suggestions and tools and you have a fixed number row. Settings → Keyboard.
 - Keyboard height and position, adjustable in one screen: drag to resize, drag to lift it off the

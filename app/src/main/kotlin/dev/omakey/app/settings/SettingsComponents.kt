@@ -374,6 +374,16 @@ internal fun TopStripPagesSection(topStripPreferences: dev.omakey.app.keyboard.T
             "Text tools",
             "Undo, redo, select all, copy, cut, paste and clipboard history.",
         )
+        // Shown on every Android version; below 11 there is nothing for it to ask for, which the
+        // description says rather than hiding a setting people read about.
+        SettingToggle(
+            title = "Autofill suggestions",
+            description = "Logins from your password manager, like Bitwarden, on the Suggestions " +
+                "page. Android 11 and newer, with the manager's inline autofill turned on. omakey " +
+                "only shows them: it never sees what they contain.",
+            checked = settings.autofillSuggestions,
+            onCheckedChange = topStripPreferences::setAutofillSuggestions,
+        )
     }
 }
 
@@ -429,6 +439,40 @@ internal fun SecondarySymbolsToggle(settings: LayoutSettings, layoutPreferences:
         checked = settings.showSecondarySymbols,
         onCheckedChange = layoutPreferences::setShowSecondarySymbols,
     )
+}
+
+/** The number pad, with a switch per kind of field under it — shown only while the pad is on,
+ * since they mean nothing without it. */
+@Composable
+internal fun NumberPadSection(settings: LayoutSettings, layoutPreferences: LayoutPreferences) {
+    SettingToggle(
+        title = "Number pad",
+        description = "Open a number pad in fields that only take numbers, like prices, codes " +
+            "and phone numbers. Turn a kind of field off if an app's text box gets numbers by mistake.",
+        checked = settings.numberPad,
+        onCheckedChange = layoutPreferences::setNumberPad,
+    )
+    if (!settings.numberPad) return
+    Column(Modifier.padding(start = 16.dp)) {
+        SettingToggle(
+            title = "Number fields",
+            description = "Prices, PINs and SMS codes.",
+            checked = settings.numberPadNumber,
+            onCheckedChange = { layoutPreferences.setNumberPadFor(dev.omakey.core.layout.NumberPadKind.NUMBER, it) },
+        )
+        SettingToggle(
+            title = "Phone fields",
+            description = "With letters on the digits while \"Show secondary symbols\" is on.",
+            checked = settings.numberPadPhone,
+            onCheckedChange = { layoutPreferences.setNumberPadFor(dev.omakey.core.layout.NumberPadKind.PHONE, it) },
+        )
+        SettingToggle(
+            title = "Date and time fields",
+            description = "Dates like 26.10.2026 and times like 18:30.",
+            checked = settings.numberPadDateTime,
+            onCheckedChange = { layoutPreferences.setNumberPadFor(dev.omakey.core.layout.NumberPadKind.DATETIME, it) },
+        )
+    }
 }
 
 @Composable

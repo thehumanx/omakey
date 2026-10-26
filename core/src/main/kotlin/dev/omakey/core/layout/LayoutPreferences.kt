@@ -68,6 +68,13 @@ data class LayoutSettings(
      * key's own. When set, every letter's popup is exactly these ([withPopupSymbols]), the drag-on
      * overflow row is gone, and so are the corner hints — the same symbol on every key is no hint. */
     val popupSymbols: List<String> = emptyList(),
+    /** A number pad ([NumberPads]) instead of letters in fields that only take numbers. On by
+     * default, with each kind of field switchable on its own below it — an app that tags a text
+     * field as a number field is the reason to be able to turn one off. */
+    val numberPad: Boolean = true,
+    val numberPadNumber: Boolean = true,
+    val numberPadPhone: Boolean = true,
+    val numberPadDateTime: Boolean = true,
 ) {
     /** Whether corner hints are drawn and preselected: see [popupSymbols]. */
     val secondarySymbolsShown: Boolean get() = showSecondarySymbols && popupSymbols.isEmpty()
@@ -111,6 +118,14 @@ class LayoutPreferences(context: Context) {
     fun setShowSecondarySymbols(show: Boolean) = update { it.copy(showSecondarySymbols = show) }
     fun setFleksySymbols(enabled: Boolean) = update { it.copy(fleksySymbols = enabled) }
     fun setPopupSymbols(input: String) = update { it.copy(popupSymbols = parsePopupSymbols(input)) }
+    fun setNumberPad(enabled: Boolean) = update { it.copy(numberPad = enabled) }
+    fun setNumberPadFor(kind: NumberPadKind, enabled: Boolean) = update {
+        when (kind) {
+            NumberPadKind.NUMBER -> it.copy(numberPadNumber = enabled)
+            NumberPadKind.PHONE -> it.copy(numberPadPhone = enabled)
+            NumberPadKind.DATETIME -> it.copy(numberPadDateTime = enabled)
+        }
+    }
 
     fun setPlacement(placement: KeyboardPlacement) = update { it.copy(placement = placement) }
 
@@ -147,6 +162,10 @@ class LayoutPreferences(context: Context) {
             putBoolean(KEY_FLEKSY_SYMBOLS, next.fleksySymbols)
             // Stored as typed-back text: parsePopupSymbols splits it into the same symbols again.
             putString(KEY_POPUP_SYMBOLS, next.popupSymbols.joinToString(""))
+            putBoolean(KEY_NUMBER_PAD, next.numberPad)
+            putBoolean(KEY_NUMBER_PAD_NUMBER, next.numberPadNumber)
+            putBoolean(KEY_NUMBER_PAD_PHONE, next.numberPadPhone)
+            putBoolean(KEY_NUMBER_PAD_DATETIME, next.numberPadDateTime)
         }
     }
 
@@ -173,6 +192,10 @@ class LayoutPreferences(context: Context) {
         showSecondarySymbols = prefs.getBoolean(KEY_SECONDARY_SYMBOLS, false),
         fleksySymbols = prefs.getBoolean(KEY_FLEKSY_SYMBOLS, true),
         popupSymbols = parsePopupSymbols(prefs.getString(KEY_POPUP_SYMBOLS, null).orEmpty()),
+        numberPad = prefs.getBoolean(KEY_NUMBER_PAD, true),
+        numberPadNumber = prefs.getBoolean(KEY_NUMBER_PAD_NUMBER, true),
+        numberPadPhone = prefs.getBoolean(KEY_NUMBER_PAD_PHONE, true),
+        numberPadDateTime = prefs.getBoolean(KEY_NUMBER_PAD_DATETIME, true),
     )
 
     private companion object {
@@ -181,6 +204,10 @@ class LayoutPreferences(context: Context) {
         const val KEY_SECONDARY_SYMBOLS = "show_secondary_symbols"
         const val KEY_FLEKSY_SYMBOLS = "fleksy_symbols"
         const val KEY_POPUP_SYMBOLS = "popup_symbols"
+        const val KEY_NUMBER_PAD = "number_pad"
+        const val KEY_NUMBER_PAD_NUMBER = "number_pad_number"
+        const val KEY_NUMBER_PAD_PHONE = "number_pad_phone"
+        const val KEY_NUMBER_PAD_DATETIME = "number_pad_datetime"
         const val KEY_HEIGHT = "keyboard_height_dp"
         const val KEY_KEY_BACKGROUNDS = "show_key_backgrounds"
         const val KEY_MIDDLE_STRIPE = "show_middle_row_stripe"

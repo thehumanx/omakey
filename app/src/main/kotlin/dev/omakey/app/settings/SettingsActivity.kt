@@ -415,6 +415,11 @@ private fun SettingsScreen(
                     }
                 }
                 item {
+                    SettingsSection(title = "Number pad") {
+                        NumberPadSection(layoutSettings, layoutPreferences)
+                    }
+                }
+                item {
                     SettingsSection(title = "Emoji") {
                         EmojiSkinTonePicker(emojiSkinTonePreferences)
                     }

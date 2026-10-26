@@ -737,7 +737,8 @@ private fun describeKey(key: KeyDefinition, enterAction: Int = android.view.inpu
     SpecialKeyCode.SETTINGS -> "Settings"
     SpecialKeyCode.LANGUAGE -> "Switch language"
     // The spacebar carries the language name while several are enabled; say both.
-    SpecialKeyCode.SPACE -> if (key.label.isBlank()) "Space" else "Space, ${key.label}"
+    // The number pad's small space key is drawn as "␣", which is no name to read out.
+    SpecialKeyCode.SPACE -> if (key.label.isBlank() || key.label == dev.omakey.core.layout.NumberPads.SPACE_LABEL) "Space" else "Space, ${key.label}"
     else -> key.label
 }
 

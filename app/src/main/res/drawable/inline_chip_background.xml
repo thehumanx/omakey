@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Fill for password-manager autofill chips; tinted with the theme's key colour at request time
+     (InlineAutofillStyle), since the autofill service draws the chip and only gets an Icon.
+     A plain rectangle, like a key cell (developer's pick after seeing it on the phone). -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="#FFFFFFFF" />
+</shape>
