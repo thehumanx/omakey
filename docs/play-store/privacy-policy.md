@@ -35,4 +35,5 @@ omakey does not knowingly collect any data from anyone, including children.
 Changes will be posted here and in the app's release notes.
 
 ## Contact
-thehumanx on GitHub: https://github.com/thehumanx/omakey/issues
+Email: iambishistha@gmail.com
+Issues: https://github.com/thehumanx/omakey/issues

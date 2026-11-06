@@ -2,7 +2,7 @@
 
 **App name (≤30):** omakey Keyboard
 **Short description (≤80):** Fast, gesture-driven, private keyboard. Nothing you type leaves your phone.
-**Category:** Tools · **Contact:** (your email) · **Privacy policy URL:** host docs/play-store/privacy-policy.md (e.g. GitHub Pages)
+**Category:** Tools · **Contact:** iambishistha@gmail.com · **Privacy policy URL:** https://github.com/thehumanx/omakey/blob/main/docs/play-store/privacy-policy.md (or the GitHub Pages URL, see RELEASE.md)
 
 ## Full description (≤4000)
 omakey is the keyboard for people who type like they mean it. Fast, gesture-driven, and private:
@@ -21,7 +21,7 @@ nothing you type ever leaves your phone.
 After installing, enable omakey in Settings → System → Languages & input → On-screen keyboard.
 
 ## Assets to prepare
-Icon 512×512 PNG · Feature graphic 1024×500 · ≥2 phone screenshots (portrait, 16:9–9:16)
+Done: `assets/icon-512.png`, `assets/feature-graphic-1024x500.png`. Still needed: ≥2 real phone screenshots taken on a device.
 
 ## Data safety form answers
 - Data collected: **None** · Data shared: **None**
