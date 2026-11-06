@@ -52,6 +52,22 @@ android {
         }
     }
 
+    // Two distributions of the same code. "github" is the sideloaded APK with the opt-in GitHub
+    // release check; "play" is the Play Store build, which must not check for or point to updates
+    // outside Play (Device and Network Abuse policy) — it drops the update UI, the 12h worker and
+    // the POST_NOTIFICATIONS permission. Language-pack downloads are data-only and stay in both.
+    flavorDimensions += "dist"
+    productFlavors {
+        create("github") {
+            dimension = "dist"
+            buildConfigField("boolean", "SELF_UPDATE", "true")
+        }
+        create("play") {
+            dimension = "dist"
+            buildConfigField("boolean", "SELF_UPDATE", "false")
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false

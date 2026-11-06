@@ -357,7 +357,7 @@ full history.
 
 ## Getting started
 
-Not on the Play Store yet. In the meantime:
+Play Store release is in preparation (see [docs/play-store](docs/play-store/RELEASE.md)). In the meantime:
 
 1. Grab the latest APK from the **[latest release](https://github.com/thehumanx/omakey/releases/latest)**
    (always points to the newest build), or build it yourself from source with Gradle.

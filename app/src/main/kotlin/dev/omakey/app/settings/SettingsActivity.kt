@@ -110,7 +110,7 @@ class SettingsActivity : ComponentActivity() {
         val clipboardHistory = ClipboardHistoryStore(applicationContext, clipboardDao)
         // Idempotent (see UpdateWorkScheduler's own doc) — also scheduled from the IME service,
         // this covers the case where Settings is opened before the keyboard has ever been enabled.
-        if (updatePreferences.settings.value.autoCheckEnabled) {
+        if (dev.omakey.app.BuildConfig.SELF_UPDATE && updatePreferences.settings.value.autoCheckEnabled) {
             dev.omakey.app.update.UpdateWorkScheduler.schedule(applicationContext)
         }
         setContent {
@@ -506,7 +506,7 @@ private fun SettingsScreen(
 
             SettingsPage.ABOUT -> SettingsSubPage(SettingsPage.ABOUT.title, onBack = { page = null }) {
                 item {
-                    SettingsSection(title = "Updates") {
+                    SettingsSection(title = if (dev.omakey.app.BuildConfig.SELF_UPDATE) "Updates" else "About") {
                         Text(
                             // Build number alongside the version name, because they can legitimately
                             // disagree: versionName is held fixed across dev installs within a release
@@ -518,7 +518,7 @@ private fun SettingsScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         val autoCheckEnabled by updatePreferences.settings.collectAsState()
-                        Row(
+                        if (dev.omakey.app.BuildConfig.SELF_UPDATE) Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -536,7 +536,7 @@ private fun SettingsScreen(
                                 onCheckedChange = onAutoUpdateCheckToggled,
                             )
                         }
-                        UpdateCheckRow()
+                        if (dev.omakey.app.BuildConfig.SELF_UPDATE) UpdateCheckRow()
                     }
                 }
             }

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Play build: no update checks (Play handles updates). Overrides main's privacy_notice. -->
+    <string name="privacy_notice">
+        omakey works offline. It sends no typed text anywhere, and includes no analytics or ad
+        SDKs. Your personal dictionary, clipboard history, and theme choices are stored only on this
+        device. The only thing that uses the network is downloading language packs, which happens
+        only when you tap \"Get more languages\" and choose one in Settings → Languages. Packs are
+        data only, and nothing you type or any other data is ever sent.
+    </string>
+</resources>

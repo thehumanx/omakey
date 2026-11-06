@@ -280,7 +280,7 @@ class OmakeyInputMethodService :
         // nothing else in the service holds it. Left open it would sit registered as a change
         // listener on a preference it will never read again.
         val updatePreferences = dev.omakey.core.update.UpdatePreferences(applicationContext)
-        if (updatePreferences.settings.value.autoCheckEnabled) {
+        if (dev.omakey.app.BuildConfig.SELF_UPDATE && updatePreferences.settings.value.autoCheckEnabled) {
             dev.omakey.app.update.UpdateWorkScheduler.schedule(applicationContext)
         }
         updatePreferences.close()
