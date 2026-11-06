@@ -1,5 +1,10 @@
 # Releasing to Google Play
 
+## Package IDs
+- Play build: `com.iambishistha.omakey` (matches the Play Console app).
+- GitHub/sideload build: `dev.omakey.app`, unchanged, so existing installs keep updating.
+  The two are separate apps to Android and can be installed side by side.
+
 ## Build
 CI builds the bundle (`.github/workflows/play-bundle.yml`, run it from the Actions tab). Locally:
 ```bash

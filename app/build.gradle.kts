@@ -64,6 +64,10 @@ android {
         }
         create("play") {
             dimension = "dist"
+            // The ID the Play Console app was created with — permanent once uploaded. The github
+            // flavor keeps dev.omakey.app (defaultConfig) so sideloaded installs still upgrade.
+            // `namespace` (the code's package) is unrelated to this and stays dev.omakey.app.
+            applicationId = "com.iambishistha.omakey"
             buildConfigField("boolean", "SELF_UPDATE", "false")
         }
     }
