@@ -12,7 +12,6 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: 17 }
-      - uses: android-actions/setup-android@v3
       - uses: gradle/actions/setup-gradle@v4
       # Optional: if the UPLOAD_KEYSTORE_B64 secret exists the bundle is signed; otherwise it is
       # built unsigned (still proves the build compiles).
