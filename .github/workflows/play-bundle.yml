@@ -28,7 +28,7 @@ jobs:
             printf 'storeFileName=release.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
               "$KS_PASS" "$KEY_ALIAS" "$KEY_PASS" > keystore/keystore.properties
           fi
-      - run: ./gradlew :core:test :app:bundlePlayRelease :app:assembleGithubRelease --no-daemon
+      - run: ./gradlew -Dorg.gradle.java.home="$JAVA_HOME" :core:test :app:bundlePlayRelease :app:assembleGithubRelease --no-daemon
       - uses: actions/upload-artifact@v4
         with:
           name: omakey-play-bundle
