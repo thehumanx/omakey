@@ -358,6 +358,7 @@ class AutocorrectIndex(
         if (!profile.isWord(lower)) return emptySet()
         val neighbours = mutableSetOf<String>()
         forEachCandidate(languageModel, lower) { id, _ ->
+            if (languageModel.isFragment(id)) return@forEachCandidate
             val distance = editDistance(languageModel, lower, id, 1)
             if (distance != null && distance > 0) neighbours += languageModel.wordAt(id)
         }
@@ -392,6 +393,7 @@ class AutocorrectIndex(
         forEachCandidate(languageModel, typed) { id, offFirstLetter ->
             val prior = languageModel.unigramLogProbability(id)
             if (prior < (if (offFirstLetter) offFirstLetterFloor else floor)) return@forEachCandidate
+            if (languageModel.isFragment(id)) return@forEachCandidate
             val distance = editDistance(languageModel, typed, id, editBound) ?: return@forEachCandidate
             if (distance == 0) return@forEachCandidate
             val cost = channelCost(languageModel, typed, id, taps)

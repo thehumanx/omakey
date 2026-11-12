@@ -55,6 +55,30 @@ interface LocaleController {
         nextLanguage.letterLayoutChoices.firstOrNull()?.let { chooseLayout(nextLanguage.id, it.id) }
         switchTo(nextLanguage.id)
     }
+
+    /**
+     * [next] run backwards, for a swipe left on the spacebar: the previous layout of this language,
+     * else the previous language entered at its *last* layout, so swiping right then left always
+     * comes back to where it started.
+     */
+    fun previous() {
+        val languages = enabled.value
+        val current = active.value
+        val layouts = current.letterLayoutChoices
+        val layoutIndex = layouts.indexOfFirst { it.id == current.letterLayout.id }
+        if (layouts.size > 1 && layoutIndex > 0) {
+            chooseLayout(current.id, layouts[layoutIndex - 1].id)
+            return
+        }
+        if (languages.size < 2) {
+            if (layouts.size > 1) chooseLayout(current.id, layouts.last().id)
+            return
+        }
+        val index = languages.indexOfFirst { it.id == current.id }
+        val previousLanguage = languages[(index - 1).mod(languages.size)]
+        previousLanguage.letterLayoutChoices.lastOrNull()?.let { chooseLayout(previousLanguage.id, it.id) }
+        switchTo(previousLanguage.id)
+    }
 }
 
 /** One language, never switching — the default where no real controller is supplied. */

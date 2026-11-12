@@ -101,8 +101,11 @@ class ClipboardHistoryExtension : OmakeyExtension {
         // Same fix as EmojiPanelExtension: Text() with no explicit color defaults to black outside
         // a Material theming ancestor, invisible against the dark keyboard background.
         val theme = LocalOmakeyTheme.current
-        val textColor = theme.keyTextColor.toComposeColor()
         val isGridMode = LocalKeyboardLayoutMode.current == LayoutMode.GRID
+        // Against the panel's own fill (see EmojiPanelExtension), not assumed from the keys.
+        val textColor = theme.labelOn(theme.stripSurface(isGridMode)).toComposeColor()
+        val pressedTextColor = theme.labelOn(theme.keyBackgroundPressed).toComposeColor()
+        val mutedTextColor = theme.fadedLabelOn(theme.stripSurface(isGridMode), 0.6f).toComposeColor()
         val gridBorderColor = theme.gridBorderColor.toComposeColor()
         val gridBorderWidth = theme.gridBorderWidth.toDp()
 
@@ -120,6 +123,8 @@ class ClipboardHistoryExtension : OmakeyExtension {
                             ClipboardGridCell(
                                 item = item,
                                 textColor = textColor,
+                                pressedTextColor = pressedTextColor,
+                                mutedTextColor = mutedTextColor,
                                 gridBorderColor = gridBorderColor,
                                 gridBorderWidth = gridBorderWidth,
                                 keyBackground = theme.keyboardBackground.toComposeColor(),
@@ -135,6 +140,7 @@ class ClipboardHistoryExtension : OmakeyExtension {
                             ClipboardListRow(
                                 item = item,
                                 textColor = textColor,
+                                mutedTextColor = mutedTextColor,
                                 onClick = { if (item.contentType == ClipboardContentType.TEXT) host.insertText(item.content) },
                                 onLongClick = { actionsFor = item },
                             )
@@ -172,7 +178,7 @@ class ClipboardHistoryExtension : OmakeyExtension {
                     ) {
                         Text(
                             text = if (item.pinned) "Pinned item" else "Clipboard item",
-                            color = textColor,
+                            color = theme.labelOn(theme.keyboardBackground).toComposeColor(),
                         )
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                             OutlinedButton(
@@ -184,6 +190,12 @@ class ClipboardHistoryExtension : OmakeyExtension {
                                     }
                                 },
                                 modifier = Modifier.weight(1f),
+                                // The keyboard has no MaterialTheme, so unstyled buttons fell back
+                                // to Material's stock purple on every theme.
+                                colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
+                                    contentColor = theme.labelOn(theme.keyboardBackground).toComposeColor(),
+                                ),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, theme.accentOn(theme.keyboardBackground).toComposeColor()),
                             ) { Text(if (item.pinned) "Unpin" else "Pin") }
                             Button(
                                 onClick = {
@@ -194,9 +206,20 @@ class ClipboardHistoryExtension : OmakeyExtension {
                                     }
                                 },
                                 modifier = Modifier.weight(1f),
+                                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                                    containerColor = theme.accent.toComposeColor(),
+                                    contentColor = theme.onAccent.toComposeColor(),
+                                ),
                             ) { Text("Remove") }
                         }
-                        OutlinedButton(onClick = { actionsFor = null }, modifier = Modifier.fillMaxWidth()) {
+                        OutlinedButton(
+                            onClick = { actionsFor = null },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
+                                contentColor = theme.labelOn(theme.keyboardBackground).toComposeColor(),
+                            ),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, theme.accentOn(theme.keyboardBackground).toComposeColor()),
+                        ) {
                             Text("Cancel")
                         }
                     }
@@ -211,6 +234,7 @@ class ClipboardHistoryExtension : OmakeyExtension {
 private fun ClipboardListRow(
     item: ClipboardItem,
     textColor: Color,
+    mutedTextColor: Color,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
 ) {
@@ -225,7 +249,7 @@ private fun ClipboardListRow(
         if (item.contentType == ClipboardContentType.IMAGE && imagePath != null) {
             ClipboardImageOrPlaceholder(
                 imagePath = imagePath,
-                textColor = textColor,
+                mutedTextColor = mutedTextColor,
                 modifier = Modifier
                     .weight(1f)
                     .height(80.dp)
@@ -250,6 +274,8 @@ private fun PinMarker(textColor: Color) {
 private fun ClipboardGridCell(
     item: ClipboardItem,
     textColor: Color,
+    pressedTextColor: Color,
+    mutedTextColor: Color,
     gridBorderColor: Color,
     gridBorderWidth: androidx.compose.ui.unit.Dp,
     keyBackground: Color,
@@ -269,14 +295,16 @@ private fun ClipboardGridCell(
             .padding(8.dp),
         contentAlignment = Alignment.Center,
     ) {
+        // Held cells fill with the tap colour, so their text is picked against that instead.
+        val cellText = if (isPressed) pressedTextColor else textColor
         val imagePath = item.imagePath
         if (item.contentType == ClipboardContentType.IMAGE && imagePath != null) {
-            ClipboardImageOrPlaceholder(imagePath = imagePath, textColor = textColor, modifier = Modifier.fillMaxSize())
+            ClipboardImageOrPlaceholder(imagePath = imagePath, mutedTextColor = if (isPressed) pressedTextColor else mutedTextColor, modifier = Modifier.fillMaxSize())
         } else {
-            Text(text = item.content, color = textColor, maxLines = 4)
+            Text(text = item.content, color = cellText, maxLines = 4)
         }
         if (item.pinned) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopEnd) { PinMarker(textColor) }
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopEnd) { PinMarker(cellText) }
         }
     }
 }
@@ -287,7 +315,7 @@ private fun ClipboardGridCell(
  * from the image just not being in the list — reported as "copied images don't show up." A
  * decode failure is now a visible, diagnosable placeholder instead of an invisible no-op. */
 @Composable
-private fun ClipboardImageOrPlaceholder(imagePath: String, textColor: Color, modifier: Modifier = Modifier) {
+private fun ClipboardImageOrPlaceholder(imagePath: String, mutedTextColor: Color, modifier: Modifier = Modifier) {
     val bitmap = remember(imagePath) { runCatching { android.graphics.BitmapFactory.decodeFile(imagePath) }.getOrNull() }
     if (bitmap != null) {
         Image(
@@ -298,7 +326,8 @@ private fun ClipboardImageOrPlaceholder(imagePath: String, textColor: Color, mod
         )
     } else {
         Box(modifier, contentAlignment = Alignment.Center) {
-            Text(text = "Image unavailable", color = textColor.copy(alpha = 0.6f))
+            // Already faded by the caller, down to WCAG's 4.5:1 at most (OmakeyTheme.fadedLabelOn).
+            Text(text = "Image unavailable", color = mutedTextColor)
         }
     }
 }

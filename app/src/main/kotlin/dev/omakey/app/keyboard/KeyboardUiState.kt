@@ -58,13 +58,18 @@ data class KeyboardUiState(
      * to the word rather than replacing/cycling it, so it never interacts with [firstSuggestionKind]
      * / [activeSuggestionIndex] / correction-cycling state at all. */
     val emojiSuggestions: List<String> = emptyList(),
-    val theme: OmakeyTheme = Presets.Dark,
-    /** Mirrors [ThemeRepository.useSystemAccent] — kept alongside [theme] rather than inside it
+    /** What the user *picked*, mirroring [ThemeRepository.currentTheme] — **not something to draw**.
+     * It can be the `Auto`/`Accent` sentinel, whose own colours are only fallbacks. The service
+     * resolves it (`resolveEffectiveTheme`) and provides the result as `LocalOmakeyTheme`; keyboard
+     * UI reads that. Named this way after rendering it directly left the emoji panel dark on light
+     * phones; `ThemeProvisionGuardTest` keeps it out of keyboard UI. */
+    val storedTheme: OmakeyTheme = Presets.Dark,
+    /** Mirrors [ThemeRepository.useSystemAccent] — kept alongside [storedTheme] rather than inside it
      * since it's an orthogonal flag (see `resolveEffectiveTheme`, which is what actually applies
      * it), not a property of the theme data itself. */
     val useSystemAccent: Boolean = false,
     /** Mirrors [ThemeRepository.layoutMode] — Normal vs. Grid keyboard structure, orthogonal to
-     * [theme]'s color. See [dev.omakey.core.theme.LayoutMode]'s doc. */
+     * [storedTheme]'s color. See [dev.omakey.core.theme.LayoutMode]'s doc. */
     val layoutMode: dev.omakey.core.theme.LayoutMode = dev.omakey.core.theme.LayoutMode.NORMAL,
     val activeExtensionId: String? = null,
     val layoutSettings: LayoutSettings = LayoutSettings(),

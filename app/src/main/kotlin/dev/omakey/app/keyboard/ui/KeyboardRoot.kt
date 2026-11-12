@@ -46,7 +46,6 @@ import androidx.compose.ui.unit.sp
 import dev.omakey.app.keyboard.KeyboardFeedback
 import dev.omakey.app.keyboard.KeyboardViewModel
 import dev.omakey.app.keyboard.NoOpKeyboardFeedback
-import dev.omakey.app.keyboard.resolveEffectiveTheme
 import dev.omakey.core.theme.toComposeColor
 import dev.omakey.core.theme.toDp
 import dev.omakey.core.theme.gridCellBorder
@@ -84,7 +83,9 @@ fun KeyboardRoot(
     onKeyboardBoundsChanged: (androidx.compose.ui.geometry.Rect) -> Unit,
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val theme = resolveEffectiveTheme(uiState.theme, uiState.useSystemAccent)
+    // Resolved once, by the service, and provided — reading it here keeps every part of the
+    // keyboard (including ExtensionPanelSlot's panels) on the same theme.
+    val theme = dev.omakey.core.theme.LocalOmakeyTheme.current
     val scope = rememberCoroutineScope()
     val fontFamily = remember(uiState.fontId) { FontCatalog.resolve(uiState.fontId) }
 
@@ -369,16 +370,16 @@ fun KeyboardRoot(
                 // its bottom, so the extension switcher's own header row (clipboard/emoji/
                 // keyboard icons) is redundant here — keep the normal suggestions/tools/numbers
                 // top strip instead, exactly like the regular typing view.
-                "emoji" -> TopStrip(viewModel = viewModel, uiState = uiState, theme = theme, fontFamily = fontFamily, feedback = feedback, quickAccessOpen = uiState.quickAccessOpen)
+                "emoji" -> TopStrip(viewModel = viewModel, uiState = uiState, theme = theme, fontFamily = fontFamily, feedback = feedback, quickAccessOpen = uiState.quickAccessOpen, gesturesActive = !accessibleMode)
                 // Locked to the Tools page with everything except Clipboard dimmed and swiping
                 // between pages disabled — the top strip becomes a single-purpose "you're in
                 // clipboard mode" bar. Tapping the (still enabled) Clipboard icon again exits.
                 "clipboard" -> TopStrip(
                     viewModel = viewModel, uiState = uiState, theme = theme, fontFamily = fontFamily,
                     feedback = feedback, clipboardModeActive = true,
-                    quickAccessOpen = uiState.quickAccessOpen,
+                    quickAccessOpen = uiState.quickAccessOpen, gesturesActive = !accessibleMode,
                 )
-                else -> TopStrip(viewModel = viewModel, uiState = uiState, theme = theme, fontFamily = fontFamily, feedback = feedback, quickAccessOpen = uiState.quickAccessOpen)
+                else -> TopStrip(viewModel = viewModel, uiState = uiState, theme = theme, fontFamily = fontFamily, feedback = feedback, quickAccessOpen = uiState.quickAccessOpen, gesturesActive = !accessibleMode)
             }
             // A short directional slide for the region below the top strip when switching between
             // the normal keyboard and the emoji/clipboard panels — entering a panel slides up,
@@ -503,7 +504,7 @@ fun KeyboardRoot(
                     .background(theme.suggestionBarBackground.toComposeColor()),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(text = banner, color = theme.keyTextColor.toComposeColor(), fontFamily = fontFamily, fontSize = 14.sp)
+                Text(text = banner, color = theme.labelOn(theme.suggestionBarBackground).toComposeColor(), fontFamily = fontFamily, fontSize = 14.sp)
             }
         }
         }
@@ -575,29 +576,31 @@ internal fun ExtensionPanelSlot(viewModel: KeyboardViewModel, heightDp: Int, sho
     val extension = runCatching { viewModel.extensionRegistry.getById(activeId) }.getOrNull() ?: return
     val allExtensions = runCatching { viewModel.extensionRegistry.all() }.getOrDefault(emptyList())
 
-    androidx.compose.runtime.CompositionLocalProvider(
-        dev.omakey.core.theme.LocalOmakeyTheme provides uiState.theme,
-    ) {
+    // The resolved theme the service provides — never the stored one from uiState. This slot used to
+    // re-provide the stored one here, so under Auto (stored as Dark's colours) and Accent (a fixed
+    // dark indigo) every panel below it stayed dark on a light phone. See resolveEffectiveTheme.
+    val theme = dev.omakey.core.theme.LocalOmakeyTheme.current
+    run {
         val isGridMode = dev.omakey.core.theme.LocalKeyboardLayoutMode.current == dev.omakey.core.theme.LayoutMode.GRID
         Column(
             Modifier
                 .fillMaxWidth()
                 .height(heightDp.dp)
-                .background(if (isGridMode) uiState.theme.keyboardBackground.toComposeColor() else uiState.theme.suggestionBarBackground.toComposeColor())
+                .background(if (isGridMode) theme.keyboardBackground.toComposeColor() else theme.suggestionBarBackground.toComposeColor())
                 // Directly on this same element as its own background — see KeyGrid's identical
                 // fix/doc in KeyboardRoot for why a border on an ancestor kept getting silently
                 // covered by this element's own descendants' opaque fills.
-                .let { m -> if (isGridMode) m.border(uiState.theme.gridBorderWidth.toDp(), uiState.theme.gridBorderColor.toComposeColor()) else m },
+                .let { m -> if (isGridMode) m.border(theme.gridBorderWidth.toDp(), theme.gridBorderColor.toComposeColor()) else m },
         ) {
             if (showHeaderRow) {
-                val gridBorderColor = uiState.theme.gridBorderColor.toComposeColor()
+                val gridBorderColor = theme.gridBorderColor.toComposeColor()
                 Row(
                     Modifier
                         .fillMaxWidth()
                         .height(36.dp)
                         // Plain border() directly on this Row, same fix/reasoning as KeyGrid's own
                         // doc — its own tab cells already draw right+bottom only.
-                        .let { m -> if (isGridMode) m.border(uiState.theme.gridBorderWidth.toDp(), gridBorderColor) else m },
+                        .let { m -> if (isGridMode) m.border(theme.gridBorderWidth.toDp(), gridBorderColor) else m },
                 ) {
                     allExtensions.forEach { ext ->
                         val glyph = (ext.icon as? dev.omakey.extapi.ExtensionIcon.Emoji)?.glyph ?: "•"
@@ -615,21 +618,31 @@ internal fun ExtensionPanelSlot(viewModel: KeyboardViewModel, heightDp: Int, sho
                                     when {
                                         // Selected = accent, held = key tap colour: the same two
                                         // rules every tappable surface on the keyboard follows.
-                                        ext.id == activeId -> uiState.theme.accent.toComposeColor()
-                                        isPressed -> uiState.theme.keyBackgroundPressed.toComposeColor()
+                                        ext.id == activeId -> theme.accent.toComposeColor()
+                                        isPressed -> theme.keyBackgroundPressed.toComposeColor()
                                         // Real bug, fixed: inactive tabs fell through to
                                         // Color.Transparent in Grid mode too, same as every other
                                         // unfilled grid-mode cell — showing the header row's own
                                         // (potentially very different, on a custom theme)
                                         // background through instead of keyboardBackground.
-                                        isGridMode -> uiState.theme.keyboardBackground.toComposeColor()
+                                        isGridMode -> theme.keyboardBackground.toComposeColor()
                                         else -> Color.Transparent
                                     },
                                 )
-                                .let { m -> if (isGridMode) m.gridCellBorder(gridBorderColor, uiState.theme.gridBorderWidth.toDp()) else m },
+                                .let { m -> if (isGridMode) m.gridCellBorder(gridBorderColor, theme.gridBorderWidth.toDp()) else m },
                             contentAlignment = Alignment.Center,
                         ) {
-                            Text(text = glyph, fontSize = 18.sp)
+                            // Emoji carry their own colours; the "•" fallback does not, and
+                            // drew black on every theme without one.
+                            Text(
+                                text = glyph,
+                                color = when {
+                                    ext.id == activeId -> theme.onAccent
+                                    isPressed -> theme.labelOn(theme.keyBackgroundPressed)
+                                    else -> theme.labelOn(theme.stripSurface(isGridMode))
+                                }.toComposeColor(),
+                                fontSize = 18.sp,
+                            )
                         }
                     }
                     // Returns to the normal keyboard — lives in the panel's own header row rather
@@ -646,16 +659,16 @@ internal fun ExtensionPanelSlot(viewModel: KeyboardViewModel, heightDp: Int, sho
                             ) { viewModel.extensionHost.close() }
                             .let { m ->
                                 if (isGridMode) {
-                                    m.background(if (closeIsPressed) uiState.theme.keyBackgroundPressed.toComposeColor() else uiState.theme.keyboardBackground.toComposeColor())
-                                        .gridCellBorder(gridBorderColor, uiState.theme.gridBorderWidth.toDp())
+                                    m.background(if (closeIsPressed) theme.keyBackgroundPressed.toComposeColor() else theme.keyboardBackground.toComposeColor())
+                                        .gridCellBorder(gridBorderColor, theme.gridBorderWidth.toDp())
                                 } else {
-                                    m.background(if (closeIsPressed) uiState.theme.keyBackgroundPressed.toComposeColor() else Color.Transparent)
+                                    m.background(if (closeIsPressed) theme.keyBackgroundPressed.toComposeColor() else Color.Transparent)
                                 }
                             }
                             .padding(horizontal = 14.dp),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Text(text = "⌨", color = uiState.theme.labelOn(if (closeIsPressed) uiState.theme.keyBackgroundPressed else uiState.theme.keyboardBackground).toComposeColor(), fontSize = 18.sp)
+                        Text(text = "⌨", color = theme.labelOn(if (closeIsPressed) theme.keyBackgroundPressed else theme.keyboardBackground).toComposeColor(), fontSize = 18.sp)
                     }
                 }
             }
@@ -664,7 +677,7 @@ internal fun ExtensionPanelSlot(viewModel: KeyboardViewModel, heightDp: Int, sho
                 if (failed) {
                     Text(
                         text = "This extension couldn't be loaded.",
-                        color = uiState.theme.keyTextColor.toComposeColor(),
+                        color = theme.labelOn(theme.stripSurface(isGridMode)).toComposeColor(),
                         modifier = Modifier.padding(12.dp),
                     )
                 } else {

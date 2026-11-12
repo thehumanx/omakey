@@ -94,6 +94,8 @@ internal fun TopStrip(
     feedback: KeyboardFeedback,
     clipboardModeActive: Boolean = false,
     quickAccessOpen: Boolean = false,
+    /** False in accessible mode, where swipes are off (see SuggestionBarButtons). */
+    gesturesActive: Boolean = true,
 ) {
     val pages = if (clipboardModeActive && dev.omakey.app.keyboard.TopStripTab.TOOLS !in uiState.topStripPages) {
         uiState.topStripPages + dev.omakey.app.keyboard.TopStripTab.TOOLS
@@ -152,7 +154,7 @@ internal fun TopStrip(
             // legible on a theme whose suggestion-bar and text colours are close.
             val showKeyBackgrounds = uiState.layoutSettings.showKeyBackgrounds
             when (pages[page]) {
-                dev.omakey.app.keyboard.TopStripTab.SUGGESTIONS -> SuggestionBar(viewModel, uiState, theme, fontFamily, feedback, quickAccessOpen, showKeyBackgrounds)
+                dev.omakey.app.keyboard.TopStripTab.SUGGESTIONS -> SuggestionBar(viewModel, uiState, theme, fontFamily, feedback, quickAccessOpen, showKeyBackgrounds, gesturesActive)
                 dev.omakey.app.keyboard.TopStripTab.NUMBERS -> NumbersTabContent(theme, fontFamily, viewModel, feedback, uiState.layout.id, uiState.digits, showKeyBackgrounds)
                 dev.omakey.app.keyboard.TopStripTab.TOOLS -> ToolsTabContent(
                     theme, fontFamily, viewModel, feedback, uiState.canUndo, uiState.canRedo,
@@ -271,9 +273,15 @@ private fun SuggestionBar(
     feedback: KeyboardFeedback,
     quickAccessOpen: Boolean,
     showKeyBackgrounds: Boolean,
+    gesturesActive: Boolean,
 ) {
-    val multilingual = uiState.languages.size > 1
-    val swapped = uiState.layoutSettings.swapEmojiAndLanguage
+    val trailing = dev.omakey.core.layout.SuggestionBarButtons.trailing(
+        languageCount = uiState.languages.size,
+        swapEmojiAndLanguage = uiState.layoutSettings.swapEmojiAndLanguage,
+        swipeSpacebarForLanguage = uiState.gestureSettings.swipeSpacebarForLanguage,
+        gesturesActive = gesturesActive,
+    )
+    val hasTrailing = trailing != dev.omakey.core.layout.SuggestionBarButtons.Trailing.NONE
     Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
         StripButton(
             theme = theme,
@@ -288,7 +296,7 @@ private fun SuggestionBar(
         val isGridMode = dev.omakey.core.theme.LocalKeyboardLayoutMode.current == dev.omakey.core.theme.LayoutMode.GRID
         Box(
             Modifier.weight(1f).fillMaxHeight().let { m ->
-                if (isGridMode && multilingual) {
+                if (isGridMode && hasTrailing) {
                     m.gridCellBorder(theme.gridBorderColor.toComposeColor(), theme.gridBorderWidth.toDp(), includeBottom = false)
                 } else {
                     m
@@ -318,9 +326,9 @@ private fun SuggestionBar(
                 onAcceptEmoji = viewModel::onEmojiSuggestionAccepted,
             )
         }
-        // With one language there is no language button, and the emoji key stays in the bottom row
-        // whichever way round the setting is, so there is nothing to put here.
-        if (multilingual && !swapped) {
+        // Which button (if any) goes here is SuggestionBarButtons' rule, shared with the autofill
+        // request so its chips are sized to the room left.
+        if (trailing == dev.omakey.core.layout.SuggestionBarButtons.Trailing.LANGUAGE) {
             StripButton(
                 theme = theme,
                 active = uiState.languagePickerOpen,
@@ -328,7 +336,7 @@ private fun SuggestionBar(
                 onClick = { feedback.onKeyPress(); viewModel.nextLanguage() },
                 onLongClick = { feedback.onKeyPress(); viewModel.openLanguagePicker() },
             ) { tint -> Icon(PhosphorGlobe, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp)) }
-        } else if (multilingual) {
+        } else if (trailing == dev.omakey.core.layout.SuggestionBarButtons.Trailing.EMOJI) {
             StripButton(
                 theme = theme,
                 active = uiState.activeExtensionId != null,
@@ -364,8 +372,7 @@ private fun StripButton(
     }
     val tint = when {
         active -> theme.onAccent
-        background != null -> theme.labelOn(background)
-        else -> theme.keyTextColor
+        else -> theme.labelOn(background ?: theme.stripSurface(isGridMode))
     }.toComposeColor()
     Box(
         Modifier
@@ -428,7 +435,7 @@ internal fun SuggestionsTabContent(
                 text = "Loading suggestions…",
                 // Faded to the same degree as an inactive candidate: this is a status note, not
                 // something to read or tap, and it occupies a row the eye is trained to scan.
-                color = theme.keyTextColor.toComposeColor().copy(alpha = SUGGESTION_FADED_ALPHA),
+                color = theme.fadedLabelOn(theme.stripSurface(isGridMode), SUGGESTION_FADED_ALPHA).toComposeColor(),
                 fontFamily = fontFamily,
                 maxLines = 1,
             )
@@ -455,12 +462,15 @@ internal fun SuggestionsTabContent(
             // would actually commit — renders at full opacity while the rest fade, letting the
             // user see at a glance what's about to be typed as they cycle instead of every
             // candidate looking equally "selected."
-            val itemColor = theme.keyTextColor.toComposeColor().let { if (isActive) it else it.copy(alpha = SUGGESTION_FADED_ALPHA) }
             // Tracked so a tap fills the whole cell solid (keyBackgroundPressed), same as tapping
             // a letter key in the main grid — real user feedback: without this, tapping a
             // suggestion/tool/tab cell showed no press feedback at all next to keys that do.
             val interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
             val isPressed by interactionSource.collectIsPressedAsState()
+            // Picked against the cell's real fill and faded only as far as WCAG's 4.5:1 allows —
+            // a flat 45% alpha left the other candidates at about 2.9:1 on Light.
+            val cellSurface = theme.stripCellSurface(isGridMode, showKeyBackgrounds, isPressed)
+            val itemColor = (if (isActive) theme.labelOn(cellSurface) else theme.fadedLabelOn(cellSurface, SUGGESTION_FADED_ALPHA)).toComposeColor()
             Box(
                 Modifier
                     .weight(1f)
@@ -743,7 +753,9 @@ private fun ToolButton(
             .semantics { contentDescription = description },
         contentAlignment = Alignment.Center,
     ) {
-        val tint = theme.keyTextColor.toComposeColor().let { if (enabled) it else it.copy(alpha = 0.35f) }
+        // Disabled icons are exempt from WCAG's contrast minimum and stay deliberately faint.
+        val surface = theme.stripCellSurface(isGridMode, showKeyBackgrounds, isPressed)
+        val tint = theme.labelOn(surface).toComposeColor().let { if (enabled) it else it.copy(alpha = 0.35f) }
         Icon(imageVector = icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
     }
 }

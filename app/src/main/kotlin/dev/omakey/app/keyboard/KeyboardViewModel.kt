@@ -119,7 +119,7 @@ class KeyboardViewModel(
 
     private val _uiState = MutableStateFlow(
         KeyboardUiState(
-            theme = themeRepository.currentTheme.value,
+            storedTheme = themeRepository.currentTheme.value,
             useSystemAccent = themeRepository.useSystemAccent.value,
             layoutMode = themeRepository.layoutMode.value,
             layoutSettings = layoutPreferences.settings.value,
@@ -311,7 +311,7 @@ class KeyboardViewModel(
         // Keeps an already-open keyboard in sync if the user changes theme/layout settings from
         // Settings while the IME view is alive (same process, different Activity).
         themeRepository.currentTheme
-            .onEach { theme -> _uiState.update { it.copy(theme = theme) } }
+            .onEach { theme -> _uiState.update { it.copy(storedTheme = theme) } }
             .launchIn(scope)
         themeRepository.useSystemAccent
             .onEach { enabled -> _uiState.update { it.copy(useSystemAccent = enabled) } }
@@ -1866,6 +1866,26 @@ class KeyboardViewModel(
     }
 
     fun nextLanguage() = localeController.next()
+
+    /**
+     * A swipe on the keys, offered here first: when it started on the spacebar and the "swipe the
+     * spacebar to change language" setting is on (with two or more languages), it steps through
+     * languages and returns true. Otherwise false, and the swipe does its usual job.
+     */
+    fun onSpacebarLanguageSwipe(direction: dev.omakey.core.gesture.SwipeDirection, downKeyCode: Int): Boolean {
+        val state = _uiState.value
+        val step = dev.omakey.core.gesture.SpacebarLanguageSwipe.step(
+            direction = direction,
+            downKeyCode = downKeyCode,
+            enabled = state.gestureSettings.swipeSpacebarForLanguage,
+            languageCount = state.languages.size,
+        ) ?: return false
+        when (step) {
+            dev.omakey.core.gesture.SpacebarLanguageSwipe.Step.NEXT -> localeController.next()
+            dev.omakey.core.gesture.SpacebarLanguageSwipe.Step.PREVIOUS -> localeController.previous()
+        }
+        return true
+    }
 
     fun selectLanguage(id: String) {
         languagePickerReturnsToQuickAccess = false

@@ -63,13 +63,76 @@ object ThemeDerivation {
             key = key,
             keyTap = keyTap,
             // A translucent tint, like the presets', so it reads on whatever key colour is under it.
-            homeRowStripe = if (dark) ColorSpec(0x1FFFFFFF) else ColorSpec(0x14000000),
+            homeRowStripe = homeRowStripe(dark),
             // Neutral like every preset's spacebar; colour is the user's to add.
             spacebar = key,
             accent = accentFor(background, key, keyDark),
             gridBorder = untilContrast(if (dark) mix(background, WHITE, 0.75) else mix(background, BLACK, 0.75), background, MIN_UI_CONTRAST, towardsLight = dark),
         )
     }
+
+    /** The home-row tint for a light or dark keyboard: the label's own direction (white on dark,
+     * black on light) at low alpha, so it shades whatever key colour sits under it rather than
+     * being a fixed colour that only suits one. Shared by the presets, the device palette and
+     * derived custom themes so they cannot drift apart. */
+    fun homeRowStripe(isDark: Boolean): ColorSpec = if (isDark) ColorSpec(0x1FFFFFFF) else ColorSpec(0x14000000)
+
+    /**
+     * A whole [OmakeyTheme] from a background and its [palette] (derived, with any of the user's
+     * overrides already copied in). The colours the editor does not expose follow from those:
+     *
+     *  - label text by WCAG contrast against the keys;
+     *  - special keys a step off the key colour, away from the label so it stays readable;
+     *  - the suggestion bar a step off the background, the same way the presets do it (darker on a
+     *    dark keyboard, lighter on a light one);
+     *  - [OmakeyTheme.isDark] from the *background*, which is the surface in Grid mode and decides
+     *    the system-accent tone — not from the key, which a user can set to the opposite.
+     *
+     * Text drawn on any of these goes through [OmakeyTheme.labelOn], so a combination the user
+     * forces (a dark key on a light background) still gets readable labels on every surface.
+     */
+    fun buildTheme(
+        id: String,
+        name: String,
+        background: ColorSpec,
+        palette: Palette,
+        gridBorderWidth: GridBorderWidth = GridBorderWidth.MD,
+        designedForLayoutMode: LayoutMode? = null,
+    ): OmakeyTheme {
+        val text = textOn(palette.key)
+        val keyIsDark = text == LIGHT_TEXT
+        return OmakeyTheme(
+            id = id,
+            name = name,
+            isDark = palette.isDark,
+            keyboardBackground = background,
+            keyBackground = palette.key,
+            keyBackgroundPressed = palette.keyTap,
+            keyTextColor = text,
+            keySpecialBackground = if (keyIsDark) mix(palette.key, WHITE, 0.08) else mix(palette.key, BLACK, 0.08),
+            suggestionBarBackground = if (palette.isDark) mix(background, BLACK, 0.25) else mix(background, WHITE, 0.6),
+            spacebarAccentColor = palette.spacebar,
+            accentColor = palette.accent,
+            middleRowStripeColor = palette.homeRowStripe,
+            gridBorderColor = palette.gridBorder,
+            gridBorderWidth = gridBorderWidth,
+            designedForLayoutMode = designedForLayoutMode,
+        )
+    }
+
+    /** The most readable label for [surface] when the theme's own colours are not: the presets'
+     * off-white/off-black pair if one reaches [MIN_TEXT_CONTRAST], else pure white or black,
+     * whichever contrasts more (one of them always reaches at least 4.58:1). */
+    fun readableOn(surface: ColorSpec): ColorSpec {
+        val soft = textOn(surface)
+        if (contrast(soft, surface) >= MIN_TEXT_CONTRAST) return soft
+        return if (contrast(WHITE, surface) >= contrast(BLACK, surface)) WHITE else BLACK
+    }
+
+    /** [color] moved toward white or black — whichever [against] contrasts with more, so the
+     * floor is always reachable — until it reaches [floor] against [against]. Keeps the hue. */
+    fun towardContrast(color: ColorSpec, against: ColorSpec, floor: Double): ColorSpec =
+        untilContrast(color, against, floor, towardsLight = contrast(WHITE, against) >= contrast(BLACK, against))
 
     /** Light or dark label text, whichever contrasts more with [surface]. */
     fun textOn(surface: ColorSpec): ColorSpec =
@@ -86,11 +149,12 @@ object ThemeDerivation {
 
     private fun untilContrast(color: ColorSpec, against: ColorSpec, floor: Double, towardsLight: Boolean): ColorSpec {
         var c = color
-        repeat(40) {
+        repeat(60) {
             if (contrast(c, against) >= floor) return c
             c = mix(c, if (towardsLight) WHITE else BLACK, 0.1)
         }
-        return c
+        // Integer rounding in mix() can stall a step short of pure white/black.
+        return if (towardsLight) WHITE else BLACK
     }
 
     /** WCAG contrast ratio, 1 to 21. */

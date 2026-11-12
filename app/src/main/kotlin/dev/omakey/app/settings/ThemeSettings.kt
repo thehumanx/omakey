@@ -62,7 +62,7 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import dev.omakey.core.locale.KeyboardLocale
-import dev.omakey.core.icons.PhosphorCopy
+import dev.omakey.core.icons.PhosphorLineCopy
 import dev.omakey.core.layout.LayoutPreferences
 import dev.omakey.core.layout.LayoutSettings
 import dev.omakey.app.keyboard.ui.gridBorderExceptBottom
@@ -294,7 +294,7 @@ private fun KeyboardSwatch(theme: OmakeyTheme) {
 /** "Build your own theme" — full-screen editor for exactly the 4 colors requested (background,
  * key, home-row stripe, spacebar), matching [LearnedWordsOverlay]'s full-screen-overlay pattern.
  * Every other [OmakeyTheme] field (text color, pressed/special key backgrounds, suggestion bar,
- * `isDark`) is derived automatically from those 4 via simple luminance rules in
+ * `isDark`) is derived automatically from those 4 by WCAG contrast rules in
  * [buildCustomTheme] — a 9-field form would defeat the point of scoping this to "the 4 colors a
  * user actually thinks about." [initialTheme] non-null means editing an existing custom theme
  * (keeps its id); null means creating a new one. */
@@ -922,7 +922,7 @@ private fun HsvColorPicker(color: Color, onColorChange: (Color) -> Unit) {
                 modifier = Modifier.weight(1f),
             )
             IconButton(onClick = { clipboardManager.setText(AnnotatedString(hexText)) }) {
-                Icon(imageVector = PhosphorCopy, contentDescription = "Copy hex code")
+                Icon(imageVector = PhosphorLineCopy, contentDescription = "Copy hex code")
             }
         }
     }
@@ -930,18 +930,16 @@ private fun HsvColorPicker(color: Color, onColorChange: (Color) -> Unit) {
 
 private fun colorToHexString(color: Color): String = "#%06X".format(0xFFFFFF and color.toArgb())
 
-/** Derives a complete [OmakeyTheme] from just the 4 colors the editor exposes — text color picks
- * black/white by the key color's relative luminance (light key → dark text, and vice versa);
- * pressed/special key backgrounds are the base key color nudged lighter (dark themes) or darker
- * (light themes); the suggestion bar is the background color nudged the same way. Keeps the
- * editor's UI to exactly 4 fields instead of exposing all 9 of [OmakeyTheme]'s color fields. */
+/** The editor's colours as a theme. Everything it does not expose (label text, special keys,
+ * the suggestion bar, light/dark) is worked out by [ThemeDerivation.buildTheme] in `core`, where
+ * `WcagContrastTest` checks it across a sweep of colours. This used to derive those here with raw
+ * RGB nudges, judged light/dark by the key rather than the background, and was untested. */
 internal fun buildCustomTheme(
     id: String,
     name: String,
     backgroundColor: Color,
     keyColor: Color,
-    /** Null derives it from [keyColor]; see the editor's `keyTapColor`. */
-    keyTapColor: Color?,
+    keyTapColor: Color,
     stripeColor: Color,
     spacebarColor: Color,
     accentColor: Color,
@@ -949,38 +947,17 @@ internal fun buildCustomTheme(
     gridBorderWidth: dev.omakey.core.theme.GridBorderWidth,
     designedForLayoutMode: dev.omakey.core.theme.LayoutMode,
 ): OmakeyTheme {
-    // Label colour by WCAG contrast against the keys, not by a brightness cut-off: mid-tone keys
-    // are exactly where a cut-off picks the less readable one.
-    val textSpec = ThemeDerivation.textOn(keyColor.toColorSpec())
-    val isDark = textSpec == ThemeDerivation.LIGHT_TEXT
-    val textColor = textSpec.toComposeColor()
-    val nudge = if (isDark) 0.15f else -0.15f
-    val smallNudge = if (isDark) 0.08f else -0.08f
-    return OmakeyTheme(
-        id = id,
-        name = name,
-        isDark = isDark,
-        keyboardBackground = backgroundColor.toColorSpec(),
-        keyBackground = keyColor.toColorSpec(),
-        keyBackgroundPressed = (keyTapColor ?: nudgeColor(keyColor, nudge)).toColorSpec(),
-        keyTextColor = textColor.toColorSpec(),
-        keySpecialBackground = nudgeColor(keyColor, smallNudge).toColorSpec(),
-        suggestionBarBackground = nudgeColor(backgroundColor, smallNudge).toColorSpec(),
-        spacebarAccentColor = spacebarColor.toColorSpec(),
-        accentColor = accentColor.toColorSpec(),
-        middleRowStripeColor = stripeColor.toColorSpec(),
-        gridBorderColor = gridBorderColor.toColorSpec(),
-        gridBorderWidth = gridBorderWidth,
-        designedForLayoutMode = designedForLayoutMode,
+    val background = backgroundColor.toColorSpec()
+    val palette = ThemeDerivation.Palette(
+        isDark = ThemeDerivation.isDark(background),
+        key = keyColor.toColorSpec(),
+        keyTap = keyTapColor.toColorSpec(),
+        homeRowStripe = stripeColor.toColorSpec(),
+        spacebar = spacebarColor.toColorSpec(),
+        accent = accentColor.toColorSpec(),
+        gridBorder = gridBorderColor.toColorSpec(),
     )
+    return ThemeDerivation.buildTheme(id, name, background, palette, gridBorderWidth, designedForLayoutMode)
 }
-
-
-private fun nudgeColor(color: Color, amount: Float): Color = Color(
-    red = (color.red + amount).coerceIn(0f, 1f),
-    green = (color.green + amount).coerceIn(0f, 1f),
-    blue = (color.blue + amount).coerceIn(0f, 1f),
-    alpha = color.alpha,
-)
 
 private fun Color.toColorSpec(): ColorSpec = ColorSpec.fromArgbInt(this.toArgb())

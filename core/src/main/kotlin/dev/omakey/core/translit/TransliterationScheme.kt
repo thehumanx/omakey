@@ -23,6 +23,29 @@ interface TransliterationScheme {
      * offered, so names and words the model has never seen can still be typed. */
     fun literal(latin: String): String
 
+    /** Whether vocabulary [word] can be a candidate at all. False for fragments a corpus split
+     * produced that are not words (see [Devanagari.isWellFormed]). */
+    fun isCandidate(word: String): Boolean = true
+
+    /**
+     * How far [typed] is from a word whose romanization is [romanized]; with [prefix], from as
+     * much of it as has been typed (the word is a completion). Lower is closer; 1 is one ordinary
+     * typo. The default is plain edit distance between the [light] forms.
+     */
+    fun distance(typed: String, romanized: String, prefix: Boolean): Float {
+        val typedLight = light(typed)
+        val romanLight = light(romanized)
+        return Transliterator.editDistance(typedLight, if (prefix) romanLight.take(typedLight.length + 1) else romanLight).toFloat()
+    }
+
+    /** Further retrieval keys to look [typed] up under besides its [skeleton], for spellings the
+     * skeleton keeps apart but a speaker would not. */
+    fun alternativeKeys(typed: String): List<String> = emptyList()
+
+    /** A chat shorthand [typed] stands for as a whole ("k" for के), offered first; null if none.
+     * Spelling rules cannot get there: the letters are simply not in the word. */
+    fun shorthand(typed: String): String? = null
+
     /** Ways [typed] could be a known stem plus regular suffixes the vocabulary is too small to
      * list, longest suffix first. Empty for languages that don't need it. */
     fun inflections(typed: String): List<Inflection> = emptyList()
@@ -47,6 +70,20 @@ object NepaliScheme : TransliterationScheme {
     override fun light(latin: String) = Romanization.light(latin)
     override fun skeleton(latin: String) = Romanization.skeleton(latin)
     override fun literal(latin: String) = LiteralTransliterator.transliterate(latin)
+    override fun isCandidate(word: String) = Devanagari.isWellFormed(word)
+
+    /** Kept to what is near-universal in Nepali chat; anything longer is spelled out. */
+    private val SHORTHANDS = mapOf("k" to "के")
+    override fun shorthand(typed: String) = SHORTHANDS[typed]
+    override fun distance(typed: String, romanized: String, prefix: Boolean) = Romanization.distance(typed, romanized, prefix)
+
+    /** The typing with an "n" or "m" before a consonant (or an "n" at the end) left out: that
+     * letter is often a chandrabindu or anusvara (जाँदै "jandai", संसार "samsar", कहाँ "kahan"),
+     * which a skeleton leaves out. */
+    override fun alternativeKeys(typed: String): List<String> {
+        val withoutNasal = Regex("n(?=[^aeiouy]|$)|m(?=[^aeiouy])").replace(typed, "")
+        return if (withoutNasal != typed && withoutNasal.isNotEmpty()) listOf(skeleton(withoutNasal)) else emptyList()
+    }
 
     /** The plural marker, written joined to its noun. */
     private val PLURAL = "haru" to "हरू"

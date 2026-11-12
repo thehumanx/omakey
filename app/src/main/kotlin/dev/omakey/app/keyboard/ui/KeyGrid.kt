@@ -73,7 +73,9 @@ import dev.omakey.core.layout.SpecialKeyCode
 import dev.omakey.core.layout.computeKeyWidthsPx
 import dev.omakey.core.theme.ColorSpec
 import dev.omakey.core.theme.OmakeyTheme
+import dev.omakey.core.theme.ThemeDerivation
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -210,6 +212,15 @@ internal fun KeyGrid(
                             minSwipeDistancePxVertical = size.height * 0.18f * gestureSettings.swipeSensitivity,
                         )
                         val machine = GestureStateMachine(thresholds, hitTester)
+                        // Parent of the jobs a touch starts (held-Backspace repeat, swipe-and-hold
+                        // delete), made a child of this handler's own coroutine. A touch's
+                        // finger-up cancels them, but a touch can also end without one: this
+                        // handler restarts whenever a key above changes (the long-press symbols
+                        // field changes popupSymbols on every edit, so swipe-deleting in it did
+                        // exactly that) or leaves composition. Launched in the outer `scope`
+                        // alone, they kept deleting and vibrating forever, even with the
+                        // keyboard closed; parented here they end with the handler.
+                        val touchJobsParent = Job(currentCoroutineContext()[Job])
 
                         awaitEachGesture {
                             val down = awaitFirstDown(requireUnconsumed = false)
@@ -239,7 +250,7 @@ internal fun KeyGrid(
                             // under the spot the finger is already resting on.
                             var accentMoved = false
 
-                            val longPressJob: Job = scope.launch {
+                            val longPressJob: Job = scope.launch(touchJobsParent) {
                                 delay(400)
                                 if (isActive) {
                                     val event = machine.onLongPressTimerFired(down.position.x, down.position.y)
@@ -446,7 +457,7 @@ internal fun KeyGrid(
                                         gestureEvent.direction == SwipeDirection.LEFT &&
                                         gestureEvent.downKeyCode != SpecialKeyCode.SPACE
                                     ) {
-                                        swipeDeleteHoldJob = scope.launch {
+                                        swipeDeleteHoldJob = scope.launch(touchJobsParent) {
                                             delay(400)
                                             while (isActive) {
                                                 feedback.onSwipeDelete()
@@ -769,6 +780,13 @@ private fun handleGestureEvent(
             }
         }
         is GestureEvent.Swipe -> {
+            // A quick swipe that starts on the spacebar switches language when that setting is on
+            // (see SpacebarLanguageSwipe). Checked first: it takes the spacebar's left/right swipes
+            // ahead of swipe-right-for-space and the spacebar's reserved swipe-left below.
+            if (viewModel.onSpacebarLanguageSwipe(event.direction, event.downKeyCode)) {
+                feedback.onSwipe()
+                return
+            }
             // Off by default (see GestureSettings.swipeRightForSpace) — a disabled swipe-right is
             // a full no-op, not just a suppressed action, so it doesn't fire haptic/popup-dismiss
             // feedback for a gesture that visibly did nothing.
@@ -1048,17 +1066,23 @@ internal fun KeyRowView(
                     // system accent colour that theme.keyTextColor was never chosen against, and
                     // drawing the label in it regardless is how a label ends up invisible. For
                     // every preset this returns keyTextColor unchanged — see OmakeyTheme.labelOn.
-                    val labelColor = theme.labelOn(keyBackgroundSpec ?: theme.keyboardBackground).toComposeColor()
+                    val labelSurface = keyBackgroundSpec ?: theme.keyboardBackground
+                    val labelSpec = theme.labelOn(labelSurface)
+                    val labelColor = labelSpec.toComposeColor()
+                    // Fades are worked out against the real surface and stop at the WCAG floor
+                    // (3:1 for the control-key icons, 4.5:1 for text) — flat alphas fell well
+                    // below it on light themes. See OmakeyTheme.fadedLabelOn.
                     val tint = when {
                         // Caps lock sits on the accent fill, so its icon takes the on-accent colour.
                         // Checked before active shift, which is also true while caps lock is on:
                         // the old order drew the icon in the same colour as its own background.
                         isCapsLockKey -> theme.onAccent.toComposeColor()
-                        isActiveShift -> theme.accent.toComposeColor()
-                        isDimmable && !isPressed -> labelColor.copy(alpha = 0.5f)
+                        // The accent as a tint on this key, lifted to 3:1 against it if needed.
+                        isActiveShift -> theme.accentOn(labelSurface).toComposeColor()
+                        isDimmable && !isPressed -> theme.fadedLabelOn(labelSurface, 0.5f, ThemeDerivation.MIN_UI_CONTRAST).toComposeColor()
                         // The language name on the spacebar is a quiet reminder, not a label to
                         // read on every keystroke — faded so it doesn't compete with the letters.
-                        isSpace -> labelColor.copy(alpha = SPACEBAR_LABEL_ALPHA)
+                        isSpace -> theme.fadedLabelOn(labelSurface, SPACEBAR_LABEL_ALPHA).toComposeColor()
                         else -> labelColor
                     }
                     val icon = keyIcon(key, capsLockOn, enterAction)
@@ -1079,7 +1103,9 @@ internal fun KeyRowView(
                         Text(
                             // A letter hint (ъ on х) follows the keycaps' case, like the label does.
                             text = if (hint.length == 1 && (alwaysShowUppercaseLetters || shiftOn || capsLockOn)) hint.uppercase() else hint,
-                            color = tint.copy(alpha = SECONDARY_SYMBOL_ALPHA),
+                            // Faded from the key's label, but never below 4.5:1 (hints only
+                            // appear on keys without an icon, so labelSpec is what it sits beside).
+                            color = theme.fadedLabelOn(labelSurface, SECONDARY_SYMBOL_ALPHA).toComposeColor(),
                             fontFamily = fontFamily,
                             fontSize = 10.sp,
                             maxLines = 1,

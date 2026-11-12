@@ -34,7 +34,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import dev.omakey.app.BuildConfig
 import dev.omakey.app.languages.LanguagePacks
-import dev.omakey.core.icons.PhosphorCheck
+import dev.omakey.core.icons.PhosphorLineCheck
 import dev.omakey.core.locale.KeyboardLocale
 import dev.omakey.core.locale.flagEmoji
 import dev.omakey.core.locale.LocalePreferences
@@ -107,7 +107,7 @@ internal fun LanguagesSection(localePreferences: LocalePreferences, languagePack
         val enabled = locale.id in settings.enabledIds
         val isLastEnabled = enabled && settings.enabledIds.count { id -> available.any { it.id == id } } == 1
         val installed = installedVersions[locale.id]
-        SettingToggle(
+        UnindexedSettingToggle(
             title = listOfNotNull(flagEmoji(locale.id), locale.nativeName).joinToString(" "),
             description = buildString {
                 append(locale.displayName)
@@ -116,7 +116,7 @@ internal fun LanguagesSection(localePreferences: LocalePreferences, languagePack
             },
             checked = enabled,
             onCheckedChange = { on ->
-                if (!on && isLastEnabled) return@SettingToggle
+                if (!on && isLastEnabled) return@UnindexedSettingToggle
                 localePreferences.setEnabled(if (on) settings.enabledIds + locale.id else settings.enabledIds - locale.id)
             },
         )
@@ -147,7 +147,7 @@ internal fun LanguagesSection(localePreferences: LocalePreferences, languagePack
                         // A check as well as the fill: the selected tint alone was too close to the
                         // unselected chip to tell on/off apart at a glance.
                         leadingIcon = if (on) {
-                            { Icon(PhosphorCheck, contentDescription = null, modifier = Modifier.size(FilterChipDefaults.IconSize)) }
+                            { Icon(PhosphorLineCheck, contentDescription = null, modifier = Modifier.size(FilterChipDefaults.IconSize)) }
                         } else {
                             null
                         },
@@ -177,7 +177,7 @@ internal fun LanguagesSection(localePreferences: LocalePreferences, languagePack
 
     // --- Downloadable packs -------------------------------------------------------------------
     when (indexState) {
-        IndexState.NOT_FETCHED, IndexState.FAILED -> ClickableSettingRow(
+        IndexState.NOT_FETCHED, IndexState.FAILED -> UnindexedClickableSettingRow(
             title = "Get more languages",
             description = if (indexState == IndexState.FAILED) {
                 "Couldn't reach the language list. Tap to try again."
@@ -237,7 +237,7 @@ internal fun LanguagesSection(localePreferences: LocalePreferences, languagePack
     }
 
     ClickableSettingRow(
-        title = "Install from file",
+        key = SettingKey.INSTALL_FROM_FILE,
         description = "Install a language pack (.zip) you already have — for example one you built yourself.",
         onClick = { filePicker.launch(arrayOf("application/zip", "application/octet-stream")) },
     )

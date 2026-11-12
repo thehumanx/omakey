@@ -3,6 +3,42 @@
 All notable changes to omakey are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [5.6.0] — 2026-11-12
+
+Search for any setting, switch language with a swipe on the spacebar, colours that stay readable
+on every theme, and romanized Nepali that puts what you typed first. Thanks to Denis for reporting
+the emoji panel bug in dark mode and for suggesting the spacebar swipe.
+
+The next build will also be released on the Google Play Store. If you'd like to help test it,
+reach out to omakey@iambishistha.com.
+
+### Added
+- **Search in Settings.** Tap the magnifier next to the Settings title and type what you're after,
+  like "vibrate", "dark" or "autocap", to find a setting on any page. Each result shows the page
+  and section it's in; tap one to go straight there, with the setting briefly lit up. Back takes
+  you to your results, then out of search. Works with TalkBack.
+- **Swipe the spacebar to change language** (Settings → Gestures, off by default): with two or
+  more languages, swipe right on the spacebar for the next language and left for the one before.
+  The language button in the suggestion bar is hidden while this is on. Holding the spacebar and
+  dragging still moves the cursor.
+
+### Changed
+- **Readable colours on every theme.** Text and icons on the keys, the suggestion bar and the emoji
+  and clipboard panels are now checked against whatever they're drawn on, so custom themes and the
+  Auto and Accent themes stay easy to read. The emoji and clipboard panels now follow the Auto and
+  Accent themes instead of staying dark.
+- **Romanized Nepali puts what you typed first.** The word that matches your spelling, h's and
+  long vowels included, now comes first, with the dictionary's guess next to it. Stray marks like
+  ः no longer win over real words, and "k" gives के.
+- **Softer emoji category highlight.** The open category in the emoji panel is now a rounded,
+  lightly tinted pill instead of a solid black or white box.
+- **Lighter icons in Settings.** Back, search, and the rest are now thin line icons.
+
+### Fixed
+- **Swipe-and-hold delete that wouldn't stop.** Swipe-deleting in the Long-press symbols box could
+  leave the keyboard deleting and vibrating on its own, even after it closed. It now stops the
+  moment you lift your finger. Holding Backspace there had the same problem, and is fixed too.
+
 ## [5.5.0] — 2026-10-26
 
 A number pad for number, phone and date boxes, password-manager logins in the suggestion bar,

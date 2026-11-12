@@ -56,6 +56,8 @@ class Lang:
     sources: list[dict]
     #: Whether words may contain an internal apostrophe ("aujourd'hui").
     apostrophes: bool = False
+    #: Extra check a token must pass to be a word, beyond its letters (Devanagari's sign order).
+    well_formed: Callable[[str], bool] | None = None
     #: Whether a word may also *end* in one — Italian truncation ("po'", "va'"). Needs [apostrophes].
     trailing_apostrophe: bool = False
     #: Combining marks treated as accents by the accent-typo rule in `build` (None = all of them).
@@ -80,7 +82,9 @@ class Lang:
         self.word_re = re.compile(f"^{body}(?:'{body})*{tail}$" if self.apostrophes else f"^{body}$")
 
     def accept(self, word: str) -> bool:
-        return bool(word) and len(word) <= build_lm.MAX_WORD_LEN and (word in self.clitics or bool(self.word_re.match(word)))
+        return (bool(word) and len(word) <= build_lm.MAX_WORD_LEN
+                and (word in self.clitics or bool(self.word_re.match(word)))
+                and (self.well_formed is None or self.well_formed(word)))
 
     def tokens(self, text: str) -> list[str]:
         """Lowercase NFC tokens of [text], clitics split off, non-words dropped."""
@@ -403,6 +407,40 @@ def russian_probes(model: dict) -> None:
         raise ValidationError("unigram probabilities are not frequency-ordered")
 
 
+def devanagari_well_formed(word: str) -> bool:
+    """Whether [word] is written the way Devanagari is written: it starts with a consonant or an
+    independent vowel, and every dependent sign follows what it belongs to. The same rule as the
+    keyboard's `core/.../translit/Devanagari.isWellFormed` — keep the two in step.
+
+    Without it, Wikipedia's editing debris became "words": a lone visarga ः, a bare vowel sign ा,
+    a chandrabindu ँ, हो् — 26 in pack 1.0.1. Rare, but ः outranked the real words sharing its
+    romanization ("haha" → ः), and 31 were next-word predictions (after अँ, ँ).
+    """
+    def consonant(c): return "\u0915" <= c <= "\u0939" or "\u0958" <= c <= "\u095F" or "\u0978" <= c <= "\u097F"
+    def independent(c): return "\u0904" <= c <= "\u0914" or "\u0960" <= c <= "\u0961" or "\u0972" <= c <= "\u0977"
+    def vowel_sign(c): return ("\u093A" <= c <= "\u093B" or "\u093E" <= c <= "\u094C" or "\u094E" <= c <= "\u094F"
+                               or "\u0955" <= c <= "\u0957" or "\u0962" <= c <= "\u0963")
+    virama, nukta, joiners = "\u094D", "\u093C", "\u200C\u200D"
+    if not word or not (consonant(word[0]) or independent(word[0])) or word[-1] in joiners:
+        return False
+    for before, c in zip(word, word[1:]):
+        if consonant(c) or independent(c):
+            continue
+        if c == nukta:
+            ok = consonant(before)
+        elif vowel_sign(c) or c == virama:
+            ok = consonant(before) or before == nukta
+        elif "\u0900" <= c <= "\u0903":
+            ok = consonant(before) or independent(before) or vowel_sign(before) or before == nukta
+        elif c in joiners:
+            ok = before == virama or consonant(before)
+        else:
+            ok = False
+        if not ok:
+            return False
+    return True
+
+
 #: Every Devanagari letter, vowel sign, virama and nasal sign Nepali uses (U+0900–0963, U+0971–097F),
 #: plus ZWNJ/ZWJ, which control conjunct rendering inside a word. Not digits, not the danda.
 DEVANAGARI = "".join(chr(c) for c in list(range(0x0900, 0x0964)) + list(range(0x0971, 0x0980))) + "‌‍"
@@ -431,6 +469,7 @@ LANGS = {
         code="ne_NP",
         name="Nepali",
         letters=DEVANAGARI,
+        well_formed=devanagari_well_formed,
         tatoeba=None,
         wikipedia="https://dumps.wikimedia.org/newiki/latest/newiki-latest-pages-articles.xml.bz2",
         hunspell=(

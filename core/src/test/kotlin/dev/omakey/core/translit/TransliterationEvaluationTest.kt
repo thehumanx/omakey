@@ -20,6 +20,9 @@ import java.io.File
  *   all 4,101 pairs      top-1 43.0 %   top-3 49.5 %
  *   in-vocabulary 2,306  top-1 66 %     top-3 76 %
  *   index build ~0.3 s on the JVM (once per install); candidates() ~30 µs
+ * 2026-11-12, after the everyday-typing pass (see NepaliEverydayWordsTest): all top-1 41.0 %,
+ * top-3 49.3 %; in-vocabulary top-1 62.6 %, top-3 76.1 %. Top-1 fell because the literal spelling
+ * now goes first when no dictionary word is a close match; top-3 held.
  * Most remaining misses are English loanwords (public, administration), inflections whose stem
  * isn't known either, and spellings the skeleton can't merge (the exonym "kathmandu").
  */

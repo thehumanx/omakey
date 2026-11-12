@@ -16,15 +16,22 @@ import java.nio.channels.FileChannel
  * be a second implementation to keep in step. Building takes a second or two, once, on first use;
  * the result is written next to the model and memory-mapped from then on, like the model itself.
  *
- * File layout (little-endian): "OMTI", version, count, blob bytes; u32 key offsets[count + 1];
- * ASCII key blob (4-byte padded); u32 word ids[count]. Within one key, ids are in descending
- * probability order.
+ * File layout (little-endian): "OMTI", version, count, blob bytes, model vocabulary size;
+ * u32 key offsets[count + 1]; ASCII key blob (4-byte padded); u32 word ids[count]. Within one key,
+ * ids are in descending probability order.
+ *
+ * Only words the scheme accepts ([TransliterationScheme.isCandidate]) are indexed, so `count` can be
+ * smaller than the vocabulary; the vocabulary size is stored to tell when the model has changed.
+ * Version 2 added that, the filter, and the nasal marker in romanizations: a version-1 file on a
+ * phone fails to open and is rebuilt.
  */
 class TransliterationIndex private constructor(
     private val offsets: ByteBuffer,
     private val blob: ByteBuffer,
     private val ids: ByteBuffer,
     val size: Int,
+    /** The vocabulary size of the model this was built from. */
+    val vocabularySize: Int,
 ) {
 
     fun wordId(entry: Int): Int = ids.getInt(entry * 4)
@@ -75,12 +82,13 @@ class TransliterationIndex private constructor(
 
     companion object {
         private val MAGIC = byteArrayOf('O'.code.toByte(), 'M'.code.toByte(), 'T'.code.toByte(), 'I'.code.toByte())
-        private const val VERSION = 1
+        private const val VERSION = 2
+        private const val HEADER = 20
 
         /** Opens [file], building it from [model] first if it is missing or out of date. */
         fun openOrBuild(file: File, model: LanguageModel, scheme: TransliterationScheme): TransliterationIndex {
             val existing = runCatching { open(file) }.getOrNull()
-            if (existing != null && existing.size == model.vocabularySize) return existing
+            if (existing != null && existing.vocabularySize == model.vocabularySize) return existing
             val temp = File(file.parentFile, file.name + ".tmp")
             temp.writeBytes(build(model, scheme))
             if (!temp.renameTo(file)) {
@@ -95,10 +103,11 @@ class TransliterationIndex private constructor(
 
         /** Builds the index in memory; [openOrBuild] writes it to disk. */
         fun build(model: LanguageModel, scheme: TransliterationScheme): ByteArray {
-            val count = model.vocabularySize
-            val keys = arrayOfNulls<String>(count)
-            for (id in 0 until count) keys[id] = scheme.skeleton(scheme.romanize(model.wordAt(id)))
-            val order = (0 until count).sortedWith(
+            val keys = arrayOfNulls<String>(model.vocabularySize)
+            val indexed = (0 until model.vocabularySize).filter { scheme.isCandidate(model.wordAt(it)) }
+            for (id in indexed) keys[id] = scheme.skeleton(scheme.romanize(model.wordAt(id)))
+            val count = indexed.size
+            val order = indexed.sortedWith(
                 compareBy<Int> { keys[it] }.thenByDescending { model.unigramLogProbability(it) },
             )
             val blob = java.io.ByteArrayOutputStream()
@@ -110,8 +119,8 @@ class TransliterationIndex private constructor(
             offsets[count] = blob.size()
             while (blob.size() % 4 != 0) blob.write(0)
             val blobBytes = blob.toByteArray()
-            val buffer = ByteBuffer.allocate(16 + (count + 1) * 4 + blobBytes.size + count * 4).order(ByteOrder.LITTLE_ENDIAN)
-            buffer.put(MAGIC).putInt(VERSION).putInt(count).putInt(blobBytes.size)
+            val buffer = ByteBuffer.allocate(HEADER + (count + 1) * 4 + blobBytes.size + count * 4).order(ByteOrder.LITTLE_ENDIAN)
+            buffer.put(MAGIC).putInt(VERSION).putInt(count).putInt(blobBytes.size).putInt(model.vocabularySize)
             offsets.forEach { buffer.putInt(it) }
             buffer.put(blobBytes)
             order.forEach { buffer.putInt(it) }
@@ -124,15 +133,16 @@ class TransliterationIndex private constructor(
             require(buffer.getInt(4) == VERSION) { "transliteration index version ${buffer.getInt(4)}" }
             val count = buffer.getInt(8)
             val blobBytes = buffer.getInt(12)
+            val vocabularySize = buffer.getInt(16)
             fun slice(offset: Int, length: Int): ByteBuffer {
                 val s = buffer.duplicate().order(ByteOrder.LITTLE_ENDIAN)
                 s.position(offset).limit(offset + length)
                 return s.slice().order(ByteOrder.LITTLE_ENDIAN)
             }
-            val offsetsStart = 16
+            val offsetsStart = HEADER
             val blobStart = offsetsStart + (count + 1) * 4
             val idsStart = blobStart + blobBytes
-            return TransliterationIndex(slice(offsetsStart, (count + 1) * 4), slice(blobStart, blobBytes), slice(idsStart, count * 4), count)
+            return TransliterationIndex(slice(offsetsStart, (count + 1) * 4), slice(blobStart, blobBytes), slice(idsStart, count * 4), count, vocabularySize)
         }
     }
 }

@@ -56,11 +56,17 @@ class LabelContrastTest {
     }
 
     @Test
-    fun `an inferred label is picked off the background's own brightness`() {
+    fun `an inferred label is the soft text pair when it reaches 4,5 to 1`() {
         val noOnAccent = Presets.Dark.copy(keyTextOnAccentColor = null)
 
-        assertEquals(ColorSpec(0xFF000000), noOnAccent.labelOn(ColorSpec(0xFFF0F0F0)))
-        assertEquals(ColorSpec(0xFFFFFFFF), Presets.Light.copy(keyTextOnAccentColor = null).labelOn(ColorSpec(0xFF101010)))
+        assertEquals(ThemeDerivation.DARK_TEXT, noOnAccent.labelOn(ColorSpec(0xFFF0F0F0)))
+        assertEquals(ThemeDerivation.LIGHT_TEXT, Presets.Light.copy(keyTextOnAccentColor = null).labelOn(ColorSpec(0xFF101010)))
+    }
+
+    @Test
+    fun `a mid-tone falls back to whichever of black and white contrasts more`() {
+        // Pure red: the old brightness cut-off picked white (4.0:1); black is 5.3:1.
+        assertEquals(ColorSpec(0xFF000000), Presets.Dark.copy(keyTextOnAccentColor = null).labelOn(ColorSpec(0xFFFF0000)))
     }
 
     @Test

@@ -45,7 +45,6 @@ import dev.omakey.core.theme.AccessibilityPreferences
 import dev.omakey.core.theme.FontPreferences
 import dev.omakey.core.theme.LocalOmakeyTheme
 import dev.omakey.core.theme.OmakeyTheme
-import dev.omakey.core.theme.Presets
 import dev.omakey.core.theme.ThemeRepository
 import dev.omakey.extapi.ClipboardItem
 import dev.omakey.extapi.ClipboardRepository
@@ -419,7 +418,7 @@ class OmakeyInputMethodService :
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
             setContent {
                 val uiState by viewModel.uiState.collectAsState()
-                val effectiveTheme = resolveEffectiveTheme(uiState.theme, uiState.useSystemAccent)
+                val effectiveTheme = resolveEffectiveTheme(uiState.storedTheme, uiState.useSystemAccent)
                 androidx.compose.runtime.SideEffect { drawnTheme = effectiveTheme }
                 androidx.compose.runtime.CompositionLocalProvider(
                     LocalOmakeyTheme provides effectiveTheme,
@@ -478,12 +477,27 @@ class OmakeyInputMethodService :
             suggestionsPageShown = TopStripTab.SUGGESTIONS in strip.pages,
         )
         if (!ask) return null
-        // Before the keyboard has drawn once there is no resolved theme yet; the system's own
-        // light/dark is the closest guess.
-        val theme = drawnTheme ?: if (isNightMode()) Presets.Dark else Presets.Light
-        // Quick access always; the language (or swapped-in emoji) button only with two or more
-        // languages — see KeyboardTopStrip's SuggestionBar.
-        val buttons = if ((keyboardViewModel?.uiState?.value?.languages?.size ?: 0) > 1) 2 else 1
+        // Before the keyboard has drawn once there is no resolved theme yet, so resolve the user's
+        // choice here the same way the keyboard will. This used to fall back to plain Light/Dark
+        // by system mode, which styled the chips for the wrong theme whenever the user had picked
+        // a fixed preset against the system (Dark on a light phone), Accent, or a custom theme.
+        val theme = drawnTheme ?: resolveTheme(
+            context = this,
+            stored = themeRepository.currentTheme.value,
+            useSystemAccent = themeRepository.useSystemAccent.value,
+            systemDark = isNightMode(),
+        )
+        // The same rule the suggestion bar draws its buttons by (SuggestionBarButtons), so the
+        // chips get exactly the room the buttons leave.
+        val state = keyboardViewModel?.uiState?.value
+        val buttons = dev.omakey.core.layout.SuggestionBarButtons.count(
+            languageCount = state?.languages?.size ?: 0,
+            swapEmojiAndLanguage = state?.layoutSettings?.swapEmojiAndLanguage ?: false,
+            swipeSpacebarForLanguage = state?.gestureSettings?.swipeSpacebarForLanguage ?: false,
+            // Same test KeyboardRoot uses for accessible mode, where swipes are off.
+            gesturesActive = !accessibilityPreferences.forceAccessibleMode.value &&
+                getSystemService(android.view.accessibility.AccessibilityManager::class.java)?.isTouchExplorationEnabled != true,
+        )
         return InlineAutofillStyle.request(this, theme, stripWidthPx(), buttons)
     }
 

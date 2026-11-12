@@ -93,6 +93,25 @@ class LanguageModel private constructor(
         return String(chars)
     }
 
+    /**
+     * Whether word [id] is a fragment rather than a word: it starts with a combining mark (a vowel
+     * sign, virama, nasal sign or visarga in Devanagari; an accent on its own elsewhere) or a
+     * formatting character (ZWJ/ZWNJ). No language writes a word that way.
+     *
+     * The Nepali pack's vocabulary came from Wikipedia and, until its builder learned to refuse
+     * them, kept 26 such fragments. Rare, but 31 are bigram continuations (after अँ the next-word
+     * prediction was ँ), and in Romanized typing ः was how "haha" came out. Checked wherever a
+     * model word becomes a suggestion or a correction, so a pack already on a phone cannot offer
+     * one.
+     */
+    fun isFragment(id: Int): Boolean {
+        if (wordLength(id) == 0) return true
+        return when (Character.getType(charAt(id, 0)).toByte()) {
+            Character.NON_SPACING_MARK, Character.COMBINING_SPACING_MARK, Character.ENCLOSING_MARK, Character.FORMAT -> true
+            else -> false
+        }
+    }
+
     fun wordLength(id: Int): Int = wordOffset.getInt((id + 1) * 4) - wordOffset.getInt(id * 4)
 
     /** Character [index] of word [id] without materialising the word. The edit-distance search
