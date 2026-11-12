@@ -96,9 +96,13 @@ class EmojiPanelExtension : OmakeyExtension {
         // outside of a Material theming ancestor — invisible against the dark keyboard background.
         // ExtensionPanelSlot provides LocalOmakeyTheme around every extension's content, so this
         // is always available here.
-        val textColor = LocalOmakeyTheme.current.keyTextColor.toComposeColor()
         val theme = LocalOmakeyTheme.current
         val isGridMode = dev.omakey.core.theme.LocalKeyboardLayoutMode.current == dev.omakey.core.theme.LayoutMode.GRID
+        // Picked against the panel's own fill, not assumed from the keys: a custom theme can pair
+        // a light key with a dark background, and keyTextColor is only chosen against the key.
+        val panelSurface = theme.stripSurface(isGridMode)
+        val textColor = theme.labelOn(panelSurface).toComposeColor()
+        val pressedTextColor = theme.labelOn(theme.keyBackgroundPressed).toComposeColor()
         // Theme-editable (see OmakeyTheme.gridBorderColor) — same single color every other
         // grid-mode screen uses, not a locally-derived alpha tint.
         val gridBorderColor = theme.gridBorderColor.toComposeColor()
@@ -230,7 +234,7 @@ class EmojiPanelExtension : OmakeyExtension {
                                     // actual symbols, which — unlike emoji — have no built-in color
                                     // of their own) rendered in the platform default (black),
                                     // invisible against a dark theme.
-                                    color = textColor,
+                                    color = if (isPressed) pressedTextColor else textColor,
                                     fontSize = if (isEmoticons) 14.sp else 26.sp,
                                     maxLines = 1,
                                     textAlign = TextAlign.Center,
@@ -272,13 +276,13 @@ class EmojiPanelExtension : OmakeyExtension {
                                 m.background(if (abcIsPressed) theme.keyBackgroundPressed.toComposeColor() else theme.keyboardBackground.toComposeColor())
                                     .gridCellBorder(gridBorderColor, theme.gridBorderWidth.toDp())
                             } else {
-                                m.background(if (abcIsPressed) theme.keyBackgroundPressed.toComposeColor() else Color.Transparent)
+                                m.normalModeFill(if (abcIsPressed) theme.keyBackgroundPressed.toComposeColor() else Color.Transparent)
                             }
                         }
                         .padding(horizontal = 12.dp),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(text = "ABC", color = textColor, fontSize = 14.sp)
+                    Text(text = "ABC", color = if (abcIsPressed) pressedTextColor else textColor, fontSize = 14.sp)
                 }
                 // Scrollable, not weighted — 10 categories (9 Unicode groups + Special
                 // characters) no longer fit fixed-width in a single row without squeezing icons
@@ -304,22 +308,35 @@ class EmojiPanelExtension : OmakeyExtension {
                                     interactionSource = interactionSource,
                                     indication = null,
                                 ) { categoryIndex = categories.indexOf(cat) }
-                                .background(
-                                    when {
-                                        // The open category is "selected", so it takes the theme's
-                                        // accent — it was a fixed white tint, invisible on light themes.
-                                        isSelected -> theme.accent.toComposeColor()
+                                .let { m ->
+                                    val fill = when {
+                                        // The open category: a faint tint of the bar's own label
+                                        // colour, so it reads on light and dark themes alike. The
+                                        // theme accent was a solid black or white block.
+                                        isSelected -> textColor.copy(alpha = SELECTED_TAB_ALPHA)
                                         isPressed -> theme.keyBackgroundPressed.toComposeColor()
                                         isGridMode -> theme.keyboardBackground.toComposeColor()
                                         else -> Color.Transparent
-                                    },
-                                )
-                                .let { m -> if (isGridMode) m.gridCellBorder(gridBorderColor, theme.gridBorderWidth.toDp()) else m },
+                                    }
+                                    if (isGridMode) {
+                                        m.background(fill).gridCellBorder(gridBorderColor, theme.gridBorderWidth.toDp())
+                                    } else {
+                                        m.padding(horizontal = 2.dp).normalModeFill(fill)
+                                    }
+                                },
                             contentAlignment = Alignment.Center,
                         ) {
                             // Missing color here made every tab icon (not just "#") default to
                             // black-on-dark and effectively disappear against the panel background.
-                            Text(text = cat.icon, color = if (isSelected) theme.onAccent.toComposeColor() else textColor, fontSize = 18.sp)
+                            Text(
+                                text = cat.icon,
+                                color = when {
+                                    // Follows the fill: the selected tab keeps its tint while held.
+                                    isPressed && !isSelected -> pressedTextColor
+                                    else -> textColor
+                                },
+                                fontSize = 18.sp,
+                            )
                         }
                     }
                 }
@@ -341,7 +358,7 @@ class EmojiPanelExtension : OmakeyExtension {
                                     m.background(if (isPressed) theme.keyBackgroundPressed.toComposeColor() else theme.keyboardBackground.toComposeColor())
                                         .gridCellBorder(gridBorderColor, theme.gridBorderWidth.toDp(), includeLeft = true)
                                 } else {
-                                    m.background(if (isPressed) theme.keyBackgroundPressed.toComposeColor() else Color.Transparent)
+                                    m.normalModeFill(if (isPressed) theme.keyBackgroundPressed.toComposeColor() else Color.Transparent)
                                 }
                             }
                             .padding(horizontal = 12.dp),
@@ -350,7 +367,9 @@ class EmojiPanelExtension : OmakeyExtension {
                         Icon(
                             imageVector = PhosphorBackspace,
                             contentDescription = "Backspace",
-                            tint = if (isPressed) textColor else textColor.copy(alpha = 0.5f),
+                            // Dimmed until held, like the main backspace, but held at 3:1 (WCAG
+                            // for icons) instead of a flat 50% alpha.
+                            tint = if (isPressed) pressedTextColor else theme.fadedLabelOn(panelSurface, 0.5f, dev.omakey.core.theme.ThemeDerivation.MIN_UI_CONTRAST).toComposeColor(),
                             modifier = Modifier.size(20.dp),
                         )
                     }
@@ -636,3 +655,13 @@ private object EmojiCategories {
 
     val all = listOf(Smileys, People, Animals, Food, Travel, Activities, Objects, Symbols, Flags, Emoticons, Special)
 }
+
+/** How strongly the open category's tab is tinted with the bar's label colour. */
+private const val SELECTED_TAB_ALPHA = 0.12f
+
+/** A press or selection fill in the panel's bottom bar, Normal mode: a rounded pill inset from
+ * the bar's edges, like every other Normal-mode highlight (the emoji cells above, the suggestion
+ * bar's buttons). A plain background filled the bar's full height as a square block. Grid mode
+ * keeps its square bordered cells. */
+private fun Modifier.normalModeFill(color: Color): Modifier =
+    padding(vertical = 4.dp).background(color, androidx.compose.foundation.shape.RoundedCornerShape(8.dp))

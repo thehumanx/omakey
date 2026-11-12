@@ -95,8 +95,8 @@ fun systemDynamicTheme(context: Context, forDarkTheme: Boolean, id: String, name
                 // Neutral by default, like every other preset: the spacebar only picks up the
                 // accent if the user turns on "pick accent colour from system".
                 spacebarAccentColor = color(android.R.color.system_neutral2_700),
-                middleRowStripeColor = ColorSpec(0x1FFFFFFF),
-                gridBorderColor = color(android.R.color.system_neutral2_400),
+                middleRowStripeColor = ThemeDerivation.homeRowStripe(isDark = true),
+                gridBorderColor = gridBorderOn(color(android.R.color.system_neutral2_400), color(android.R.color.system_neutral1_800)),
             )
         } else {
             OmakeyTheme(
@@ -112,9 +112,16 @@ fun systemDynamicTheme(context: Context, forDarkTheme: Boolean, id: String, name
                 keyTextOnAccentColor = accent.onAccent,
                 accentColor = accent.accent,
                 spacebarAccentColor = color(android.R.color.system_neutral1_0),
-                middleRowStripeColor = ColorSpec(0x14000000),
-                gridBorderColor = color(android.R.color.system_neutral2_600),
+                middleRowStripeColor = ThemeDerivation.homeRowStripe(isDark = false),
+                gridBorderColor = gridBorderOn(color(android.R.color.system_neutral2_600), color(android.R.color.system_neutral1_100)),
             )
         }
     }.getOrNull()
 }
+
+/** The palette's border tone, moved along its own hue until it reaches WCAG's 3:1 against the
+ * keyboard background. The tones are chosen to suit, but they are whatever the OEM and the
+ * wallpaper produce; a border nobody can see is the failure this rules out. Key labels and the
+ * accent get the same guarantee at draw time ([OmakeyTheme.labelOn], [OmakeyTheme.accentOn]). */
+private fun gridBorderOn(border: ColorSpec, background: ColorSpec): ColorSpec =
+    ThemeDerivation.towardContrast(border, background, ThemeDerivation.MIN_UI_CONTRAST)

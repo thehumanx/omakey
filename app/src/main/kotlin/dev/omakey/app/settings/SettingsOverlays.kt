@@ -247,7 +247,7 @@ private val LEARNED_WORD_MIN_FREQUENCY =
 internal fun ClipboardHistoryToggle(clipboardPreferences: ClipboardPreferences) {
     val settings by clipboardPreferences.settings.collectAsState()
     SettingToggle(
-        title = "Save clipboard history",
+        key = SettingKey.SAVE_CLIPBOARD_HISTORY,
         description = "Keeps what you copy while the keyboard is open, so you can paste it again " +
             "from the clipboard panel. Clips an app marks as sensitive (passwords, mostly) are " +
             "never saved, and nothing is saved while incognito is on or a password field is " +

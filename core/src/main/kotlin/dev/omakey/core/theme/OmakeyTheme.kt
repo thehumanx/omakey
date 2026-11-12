@@ -102,43 +102,73 @@ data class OmakeyTheme(
      * of a colour they never chose. */
     val accent: ColorSpec get() = accentColor ?: keyTextColor
 
-    /** What to draw on top of [accent]: the palette's own on-accent tone if it has one, otherwise
-     * the key colour when that contrasts, otherwise plain black or white. */
+    /** What to draw on top of [accent]: the palette's own on-accent tone, else the key colour,
+     * else [ThemeDerivation.readableOn] — the first that reaches WCAG's 4.5:1. A supplied tone is
+     * not trusted blindly: a user's custom accent can land where it does not work. */
     val onAccent: ColorSpec
         get() {
-            keyTextOnAccentColor?.let { return it }
-            if (kotlin.math.abs(keyBackground.luminance - accent.luminance) >= MIN_LABEL_CONTRAST) return keyBackground
-            return if (accent.luminance < 0.5f) ColorSpec(0xFFFFFFFF) else ColorSpec(0xFF000000)
+            keyTextOnAccentColor?.takeIf { ThemeDerivation.contrast(it, accent) >= ThemeDerivation.MIN_TEXT_CONTRAST }?.let { return it }
+            if (ThemeDerivation.contrast(keyBackground, accent) >= ThemeDerivation.MIN_TEXT_CONTRAST) return keyBackground
+            return ThemeDerivation.readableOn(accent)
         }
 
     /**
-     * The colour to draw a label in on top of [background].
+     * The colour to draw a label in on top of [background], at WCAG's 4.5:1 for text.
      *
-     * [keyTextColor] normally, because a theme's own colours are chosen to go together. The
-     * exception is a background the theme did not choose — a system accent injected by
-     * `resolveEffectiveTheme` — where [keyTextColor] can land light-on-light or dark-on-dark. When
-     * the two are too close to tell apart, [keyTextOnAccentColor] wins if the palette supplied one,
-     * and otherwise a plain black/white is picked off [background]'s own brightness.
+     * [keyTextColor] whenever it reaches that, because a theme's own colours are chosen to go
+     * together. Otherwise — a system accent injected by `resolveEffectiveTheme`, or a custom theme
+     * whose key and background the user set to opposite brightnesses — [keyTextOnAccentColor] if
+     * the palette supplied one that passes, else [ThemeDerivation.readableOn].
      *
-     * A readability floor, not a restyling: for every preset, and for any custom theme whose text
-     * already contrasts with its keys, this returns [keyTextColor] unchanged.
+     * A readability floor, not a restyling: for every preset this returns [keyTextColor] on every
+     * surface (`WcagContrastTest` pins that). Every label and every piece of text on a keyboard
+     * surface goes through here rather than using [keyTextColor] directly.
      */
     fun labelOn(background: ColorSpec): ColorSpec {
-        val difference = kotlin.math.abs(background.luminance - keyTextColor.luminance)
-        if (difference >= MIN_LABEL_CONTRAST) return keyTextColor
-        keyTextOnAccentColor?.let { return it }
-        return if (background.luminance < 0.5f) ColorSpec(0xFFFFFFFF) else ColorSpec(0xFF000000)
+        if (ThemeDerivation.contrast(keyTextColor, background) >= ThemeDerivation.MIN_TEXT_CONTRAST) return keyTextColor
+        keyTextOnAccentColor
+            ?.takeIf { ThemeDerivation.contrast(it, background) >= ThemeDerivation.MIN_TEXT_CONTRAST }
+            ?.let { return it }
+        return ThemeDerivation.readableOn(background)
     }
-}
 
-/** Luma gap below which a label stops being comfortably legible on its background. Set by eye
- * against the presets rather than derived: WCAG's contrast ratio is defined on a different
- * (gamma-corrected) luminance than the luma weighting used here, so borrowing its 4.5:1 threshold
- * directly would be a number that looks rigorous and means nothing.
- *
- * Top-level rather than in a companion because [OmakeyTheme] is `@Serializable`, whose generated
- * `serializer()` lives on a companion that must stay public. */
-private const val MIN_LABEL_CONTRAST = 0.25f
+    /**
+     * [labelOn] dimmed toward [background] as if drawn at [alpha], but never below [floor]
+     * (WCAG 4.5:1 for text, 3:1 for a decoration). Returns an opaque colour.
+     *
+     * Fixed alphas were the bug: 45% "faded" suggestions came out at about 2.9:1 on Light, and
+     * the spacebar's language name was fainter still. Fading is a hint that something is
+     * secondary, which it can still be at 4.5:1 on a dark theme, where there is room to fade.
+     */
+    fun fadedLabelOn(background: ColorSpec, alpha: Float, floor: Double = ThemeDerivation.MIN_TEXT_CONTRAST): ColorSpec {
+        val label = labelOn(background)
+        val wanted = (1.0 - alpha).coerceIn(0.0, 1.0)
+        fun at(t: Double) = ThemeDerivation.mix(label, background, t)
+        if (ThemeDerivation.contrast(at(wanted), background) >= floor) return at(wanted)
+        // Contrast falls steadily as the label moves toward the background: find the most fade
+        // that still clears the floor.
+        var lo = 0.0
+        var hi = wanted
+        repeat(24) {
+            val mid = (lo + hi) / 2
+            if (ThemeDerivation.contrast(at(mid), background) >= floor) lo = mid else hi = mid
+        }
+        return at(lo)
+    }
+
+    /** What the suggestion strip, and a panel shown in its place (emoji, clipboard), is filled
+     * with: the keyboard background in Grid mode, where every cell shares it, and the suggestion
+     * bar's own colour otherwise. Text on those goes through [labelOn] against this. */
+    fun stripSurface(isGridMode: Boolean): ColorSpec = if (isGridMode) keyboardBackground else suggestionBarBackground
+
+    /**
+     * [accent] as a *foreground* on [surface] (the active-shift icon, a selected-tab tint, the
+     * resize handles), lifted or deepened in its own hue until it reaches WCAG's 3:1 for non-text
+     * UI. Unchanged whenever it already does, which is every preset and every derived theme.
+     */
+    fun accentOn(surface: ColorSpec): ColorSpec =
+        ThemeDerivation.towardContrast(accent, surface, ThemeDerivation.MIN_UI_CONTRAST)
+}
 
 object ThemeSerializer {
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = false }
@@ -165,7 +195,7 @@ object Presets {
         // the only thing that colors it (see resolveEffectiveTheme). It used to be a fixed blue
         // shown unconditionally, which looked like an accent color nobody asked for.
         spacebarAccentColor = ColorSpec(0xFFFFFFFF),
-        middleRowStripeColor = ColorSpec(0x14000000),
+        middleRowStripeColor = ThemeDerivation.homeRowStripe(isDark = false),
         gridBorderColor = ColorSpec(0xFF2A2A2A),
     )
 
@@ -181,7 +211,7 @@ object Presets {
         suggestionBarBackground = ColorSpec(0xFF161616),
         // Neutral (same as keyBackground) — see Light's identical comment above.
         spacebarAccentColor = ColorSpec(0xFF2C2C2C),
-        middleRowStripeColor = ColorSpec(0x1FFFFFFF),
+        middleRowStripeColor = ThemeDerivation.homeRowStripe(isDark = true),
         gridBorderColor = ColorSpec(0xFFE0E0E0),
     )
 
@@ -216,10 +246,37 @@ object Presets {
         suggestionBarBackground = ColorSpec(0xFF0C0D12),
         keyShape = KeyShape.PILL,
         spacebarAccentColor = ColorSpec(0xFF3D4EFF),
-        middleRowStripeColor = ColorSpec(0x1FFFFFFF),
+        middleRowStripeColor = ThemeDerivation.homeRowStripe(isDark = true),
         gridBorderColor = ColorSpec(0xFF6B70A8),
-        accentColor = ColorSpec(0xFF3D4EFF),
+        // The indigo lifted until it reaches WCAG's 3:1 against these keys. As a plain 0xFF3D4EFF
+        // it was 2.8:1, so caps lock and active shift read weakly on the very preset named for
+        // its accent; the old luma-gap check passed it. Pressed keys and the spacebar keep the
+        // deeper tone, where the labels drawn on them reach 4.5:1.
+        accentColor = ThemeDerivation.towardContrast(ColorSpec(0xFF3D4EFF), ColorSpec(0xFF1F2233), ThemeDerivation.MIN_UI_CONTRAST),
     )
+
+    /**
+     * What the Accent preset shows where the device publishes no Material You palette
+     * (pre-Android-12, some OEM builds), following the system's light/dark like the real thing.
+     *
+     * Dark is [Accent]'s own palette. Light used to not exist: those phones got the dark indigo
+     * keyboard on a light system. It is derived from [Accent]'s indigo the same way a custom theme
+     * is derived from its background, so its contrast is guaranteed by the same rules rather than
+     * by hand-picked hex values.
+     */
+    fun accentFallback(dark: Boolean): OmakeyTheme {
+        if (dark) return Accent
+        val indigo = Accent.accent
+        val background = ThemeDerivation.mix(indigo, ColorSpec(0xFFFFFFFF), 0.92)
+        val palette = ThemeDerivation.fromBackground(background)
+        val accent = ThemeDerivation.towardContrast(indigo, palette.key, ThemeDerivation.MIN_UI_CONTRAST)
+        return ThemeDerivation.buildTheme(
+            id = Accent.id,
+            name = Accent.name,
+            background = background,
+            palette = palette.copy(accent = accent),
+        ).copy(keyShape = Accent.keyShape)
+    }
 
     val all = listOf(Light, Dark, Auto, Accent)
 }

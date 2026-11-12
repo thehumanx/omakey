@@ -16,7 +16,9 @@ class RomanizationTest {
         assertEquals("timii", Romanization.romanize("तिमी"))
         assertEquals("gyaan", Romanization.romanize("ज्ञान"))      // ज्ञ is "gy" in Nepali
         assertEquals("raamro", Romanization.romanize("राम्रो"))
-        assertEquals("sansaar", Romanization.romanize("संसार"))   // anusvara
+        // Anusvara/chandrabindu are a marked, optional nasal: typed "n", "m" or not at all.
+        assertEquals("sa~saar", Romanization.romanize("संसार"))
+        assertEquals("kahaa~", Romanization.romanize("कहाँ"))
     }
 
     @Test

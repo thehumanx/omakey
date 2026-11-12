@@ -71,9 +71,14 @@ import kotlinx.coroutines.launch
  * text headers — the previous layout put every section at the same visual weight, which read as
  * "everything is one long list" rather than a set of related groups. */
 @Composable
-internal fun SettingsSection(title: String, content: @Composable () -> Unit) {
+internal fun SettingsSection(title: String, titleModifier: Modifier = Modifier, content: @Composable () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(text = title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = titleModifier,
+        )
         Surface(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp),
@@ -87,6 +92,18 @@ internal fun SettingsSection(title: String, content: @Composable () -> Unit) {
             }
         }
     }
+}
+
+/** A section card from the index. A picker section with no row title of its own (Theme, Font…)
+ * flashes its header when search opens it. */
+@Composable
+internal fun SettingsSection(key: SettingsSectionKey, content: @Composable () -> Unit) {
+    val headerEntry = SettingKey.entries.firstOrNull { it.sectionLevel && it.section == key }
+    SettingsSection(
+        title = key.title,
+        titleModifier = if (headerEntry != null) rememberSettingHighlight(headerEntry) else Modifier,
+        content = content,
+    )
 }
 
 /** Best-effort check via the flattened default-IME component name in Settings.Secure — good
@@ -133,20 +150,12 @@ internal fun rememberSetupStatus(): Pair<Boolean, Boolean> {
  * needs attention — quick at-a-glance status instead of having to tap each button to find out. */
 @Composable
 internal fun SetupStatusIcon(done: Boolean) {
-    if (done) {
-        Icon(
-            imageVector = dev.omakey.core.icons.PhosphorCheckmark,
-            contentDescription = null,
-            tint = androidx.compose.ui.graphics.Color(0xFF3A9D5D),
-            modifier = Modifier.size(20.dp),
-        )
-    } else {
-        Text(
-            text = "!",
-            color = androidx.compose.ui.graphics.Color(0xFFC77B00),
-            style = MaterialTheme.typography.titleMedium,
-        )
-    }
+    Icon(
+        imageVector = if (done) dev.omakey.core.icons.PhosphorLineCheckCircle else dev.omakey.core.icons.PhosphorLineWarningCircle,
+        contentDescription = if (done) "Done" else "Not done yet",
+        tint = androidx.compose.ui.graphics.Color(if (done) 0xFF3A9D5D else 0xFFC77B00),
+        modifier = Modifier.size(22.dp),
+    )
 }
 
 @Composable
@@ -187,8 +196,8 @@ internal fun FontPicker(fontPreferences: FontPreferences, currentFontId: String)
 @Composable
 internal fun EmojiSkinTonePicker(preferences: EmojiSkinTonePreferences) {
     val current by preferences.skinTone.collectAsState()
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(text = "Emoji skin tone", style = MaterialTheme.typography.bodyLarge)
+    Column(rememberSettingHighlight(SettingKey.EMOJI_SKIN_TONE), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(text = SettingKey.EMOJI_SKIN_TONE.title, style = MaterialTheme.typography.bodyLarge)
         Text(
             text = "Applied to emoji that support it — hands, faces and people. Everything else " +
                 "is unaffected.",
@@ -233,7 +242,7 @@ internal fun EmojiSkinTonePicker(preferences: EmojiSkinTonePreferences) {
 @Composable
 internal fun AutocorrectToggle(settings: AutocorrectSettings, autocorrectPreferences: AutocorrectPreferences) {
     SettingToggle(
-        title = "Autocorrect",
+        key = SettingKey.AUTOCORRECT,
         description = "Automatically fixes likely typos the moment you finish a word, without " +
             "asking. Backspacing right after reverts to what you actually typed. Turning this " +
             "off only disables the silent auto-fix — correction suggestions in the strip " +
@@ -246,7 +255,7 @@ internal fun AutocorrectToggle(settings: AutocorrectSettings, autocorrectPrefere
 @Composable
 internal fun AutoCapitalizeToggle(settings: AutocorrectSettings, autocorrectPreferences: AutocorrectPreferences) {
     SettingToggle(
-        title = "Auto-capitalize",
+        key = SettingKey.AUTO_CAPITALIZE,
         description = "Capitalizes the first letter of a new field and after sentence-ending " +
             "punctuation (. ! ?). Off by default.",
         checked = settings.autoCapitalizeEnabled,
@@ -257,7 +266,7 @@ internal fun AutoCapitalizeToggle(settings: AutocorrectSettings, autocorrectPref
 @Composable
 internal fun DoubleTapSpaceForPeriodToggle(settings: AutocorrectSettings, autocorrectPreferences: AutocorrectPreferences) {
     SettingToggle(
-        title = "Double-tap space for period",
+        key = SettingKey.DOUBLE_TAP_PERIOD,
         description = "Tap (or swipe right, if that's enabled) space twice quickly to insert " +
             "a period instead of two spaces. Off by default.",
         checked = settings.doubleTapSpaceForPeriod,
@@ -268,7 +277,7 @@ internal fun DoubleTapSpaceForPeriodToggle(settings: AutocorrectSettings, autoco
 @Composable
 internal fun AutoSpaceAfterPunctuationToggle(settings: AutocorrectSettings, autocorrectPreferences: AutocorrectPreferences) {
     SettingToggle(
-        title = "Space after punctuation",
+        key = SettingKey.SPACE_AFTER_PUNCTUATION,
         description = "Adds a space after . , ! ? ; and : so you can go straight on to the next " +
             "word. Typing a space yourself, more punctuation, or a number like 3.14 takes it " +
             "back. Not in web address, email or password fields. Off by default.",
@@ -281,7 +290,7 @@ internal fun AutoSpaceAfterPunctuationToggle(settings: AutocorrectSettings, auto
 internal fun NextWordPredictionToggle(predictionPreferences: PredictionPreferences) {
     val settings by predictionPreferences.settings.collectAsState()
     SettingToggle(
-        title = "Next-word prediction",
+        key = SettingKey.NEXT_WORD_PREDICTION,
         description = "Guesses what word comes next based on common usage and your own typing " +
             "history, shown in the suggestion strip once you finish a word. Turn off to only " +
             "ever see a suggestion there when there's an actual correction to offer.",
@@ -294,7 +303,7 @@ internal fun NextWordPredictionToggle(predictionPreferences: PredictionPreferenc
 internal fun ImplicitLearningToggle(incognitoPreferences: IncognitoPreferences) {
     val settings by incognitoPreferences.settings.collectAsState()
     SettingToggle(
-        title = "Learn from my typing",
+        key = SettingKey.LEARN_FROM_TYPING,
         description = "Remembers names, slang and jargon you type so they stop being flagged as " +
             "typos and start showing up as suggestions. A word has to be typed a few times before " +
             "it's treated as real, so an occasional slip doesn't get learned. Everything stays on " +
@@ -316,7 +325,7 @@ internal fun ImplicitLearningToggle(incognitoPreferences: IncognitoPreferences) 
 @Composable
 internal fun TapPreviewToggle(settings: LayoutSettings, layoutPreferences: LayoutPreferences) {
     SettingToggle(
-        title = "Show key press popup",
+        key = SettingKey.TAP_PREVIEW,
         description = "Briefly shows an enlarged copy of the letter above your finger on " +
             "every tap. Distinct from \"Long press for special characters\" — this one is " +
             "the ordinary per-tap preview, not the held-key accent picker.",
@@ -331,7 +340,7 @@ internal fun TapPreviewToggle(settings: LayoutSettings, layoutPreferences: Layou
 @Composable
 internal fun SwapEmojiLanguageToggle(settings: LayoutSettings, layoutPreferences: LayoutPreferences) {
     SettingToggle(
-        title = "Swap emoji and language buttons",
+        key = SettingKey.SWAP_EMOJI_LANGUAGE,
         description = "Normally the language button sits at the right of the suggestion bar and " +
             "the emoji key next to the spacebar. Turn on to put the emoji button up top and the " +
             "language key by the spacebar. Only applies with two or more languages.",
@@ -347,10 +356,10 @@ internal fun TopStripPagesSection(topStripPreferences: dev.omakey.app.keyboard.T
     val settings by topStripPreferences.settings.collectAsState()
     val pages = settings.pages
     @Composable
-    fun PageToggle(page: dev.omakey.app.keyboard.TopStripTab, title: String, description: String) {
+    fun PageToggle(page: dev.omakey.app.keyboard.TopStripTab, key: SettingKey, description: String) {
         val shown = page in pages
         SettingToggle(
-            title = title,
+            key = key,
             description = if (shown && pages.size == 1) "$description At least one page stays on." else description,
             checked = shown,
             onCheckedChange = { topStripPreferences.setPageShown(page, it) },
@@ -364,20 +373,20 @@ internal fun TopStripPagesSection(topStripPreferences: dev.omakey.app.keyboard.T
         )
         PageToggle(
             dev.omakey.app.keyboard.TopStripTab.SUGGESTIONS,
-            "Suggestions",
+            SettingKey.BAR_SUGGESTIONS,
             "Word suggestions, quick access and the language button. Off hides all three; " +
                 "autocorrect, swiping up or down through suggestions and learning new words still work.",
         )
-        PageToggle(dev.omakey.app.keyboard.TopStripTab.NUMBERS, "Numbers", "A row of digits.")
+        PageToggle(dev.omakey.app.keyboard.TopStripTab.NUMBERS, SettingKey.BAR_NUMBERS, "A row of digits.")
         PageToggle(
             dev.omakey.app.keyboard.TopStripTab.TOOLS,
-            "Text tools",
+            SettingKey.BAR_TEXT_TOOLS,
             "Undo, redo, select all, copy, cut, paste and clipboard history.",
         )
         // Shown on every Android version; below 11 there is nothing for it to ask for, which the
         // description says rather than hiding a setting people read about.
         SettingToggle(
-            title = "Autofill suggestions",
+            key = SettingKey.AUTOFILL,
             description = "Logins from your password manager, like Bitwarden, on the Suggestions " +
                 "page. Android 11 and newer, with the manager's inline autofill turned on. omakey " +
                 "only shows them: it never sees what they contain.",
@@ -390,7 +399,7 @@ internal fun TopStripPagesSection(topStripPreferences: dev.omakey.app.keyboard.T
 @Composable
 internal fun EdgePaddingToggle(settings: LayoutSettings, layoutPreferences: LayoutPreferences) {
     SettingToggle(
-        title = "Add padding",
+        key = SettingKey.EDGE_PADDING,
         description = "Leave a gap down the left and right edges, so the outer keys aren't flush " +
             "against a curved or bezel-less screen edge. Costs a little key width.",
         checked = settings.edgePadding,
@@ -402,14 +411,14 @@ internal fun EdgePaddingToggle(settings: LayoutSettings, layoutPreferences: Layo
 internal fun AppearanceLayoutToggles(settings: LayoutSettings, layoutPreferences: LayoutPreferences) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         SettingToggle(
-            title = "Key backgrounds",
+            key = SettingKey.KEY_BACKGROUNDS,
             description = "Shows a background box behind every key, instead of the flat default. " +
                 "Normal mode only — Grid mode always shows bordered keys.",
             checked = settings.showKeyBackgrounds,
             onCheckedChange = layoutPreferences::setShowKeyBackgrounds,
         )
         SettingToggle(
-            title = "Home row highlight",
+            key = SettingKey.HOME_ROW_HIGHLIGHT,
             description = "A light stripe behind the ASDF row to help find it by feel.",
             checked = settings.showMiddleRowStripe,
             onCheckedChange = layoutPreferences::setShowMiddleRowStripe,
@@ -420,7 +429,7 @@ internal fun AppearanceLayoutToggles(settings: LayoutSettings, layoutPreferences
 @Composable
 internal fun CapitalizationToggleSection(settings: LayoutSettings, layoutPreferences: LayoutPreferences) {
     SettingToggle(
-        title = "Always show capital letters",
+        key = SettingKey.ALWAYS_CAPITALS,
         description = "Keycaps always show uppercase letters, regardless of shift state " +
             "(omakey's default look). Turn off for the usual keyboard behavior — lowercase " +
             "keycaps that switch to uppercase only while shift is on.",
@@ -432,7 +441,7 @@ internal fun CapitalizationToggleSection(settings: LayoutSettings, layoutPrefere
 @Composable
 internal fun SecondarySymbolsToggle(settings: LayoutSettings, layoutPreferences: LayoutPreferences) {
     SettingToggle(
-        title = "Show secondary symbols",
+        key = SettingKey.SECONDARY_SYMBOLS,
         description = "Show the digit or symbol a key types when held, small above its letter. " +
             "Holding a key and letting go then types that symbol; slide to pick its other characters. " +
             "Not shown while your own long-press symbols are set.",
@@ -446,7 +455,7 @@ internal fun SecondarySymbolsToggle(settings: LayoutSettings, layoutPreferences:
 @Composable
 internal fun NumberPadSection(settings: LayoutSettings, layoutPreferences: LayoutPreferences) {
     SettingToggle(
-        title = "Number pad",
+        key = SettingKey.NUMBER_PAD,
         description = "Open a number pad in fields that only take numbers, like prices, codes " +
             "and phone numbers. Turn a kind of field off if an app's text box gets numbers by mistake.",
         checked = settings.numberPad,
@@ -454,19 +463,19 @@ internal fun NumberPadSection(settings: LayoutSettings, layoutPreferences: Layou
     )
     if (!settings.numberPad) return
     Column(Modifier.padding(start = 16.dp)) {
-        SettingToggle(
+        UnindexedSettingToggle(
             title = "Number fields",
             description = "Prices, PINs and SMS codes.",
             checked = settings.numberPadNumber,
             onCheckedChange = { layoutPreferences.setNumberPadFor(dev.omakey.core.layout.NumberPadKind.NUMBER, it) },
         )
-        SettingToggle(
+        UnindexedSettingToggle(
             title = "Phone fields",
             description = "With letters on the digits while \"Show secondary symbols\" is on.",
             checked = settings.numberPadPhone,
             onCheckedChange = { layoutPreferences.setNumberPadFor(dev.omakey.core.layout.NumberPadKind.PHONE, it) },
         )
-        SettingToggle(
+        UnindexedSettingToggle(
             title = "Date and time fields",
             description = "Dates like 26.10.2026 and times like 18:30.",
             checked = settings.numberPadDateTime,
@@ -478,7 +487,7 @@ internal fun NumberPadSection(settings: LayoutSettings, layoutPreferences: Layou
 @Composable
 internal fun FleksySymbolsToggle(settings: LayoutSettings, layoutPreferences: LayoutPreferences) {
     SettingToggle(
-        title = "Keep Fleksy secondary keys layout",
+        key = SettingKey.FLEKSY_SYMBOLS,
         description = "The ?123 page uses Fleksy's symbol layout, and holding a letter gives the " +
             "symbol in the same spot on that page. Turn off for omakey's original symbols page.",
         checked = settings.fleksySymbols,
@@ -492,8 +501,8 @@ internal fun FleksySymbolsToggle(settings: LayoutSettings, layoutPreferences: La
 @Composable
 internal fun PopupSymbolsField(settings: LayoutSettings, layoutPreferences: LayoutPreferences) {
     var text by remember { mutableStateOf(settings.popupSymbols.joinToString(" ")) }
-    Column(Modifier.fillMaxWidth()) {
-        Text(text = "Long-press symbols", style = MaterialTheme.typography.bodyLarge)
+    Column(rememberSettingHighlight(SettingKey.POPUP_SYMBOLS).fillMaxWidth()) {
+        Text(text = SettingKey.POPUP_SYMBOLS.title, style = MaterialTheme.typography.bodyLarge)
         Text(
             text = "The symbols you use most, e.g. @ # \$ _ &. When set, holding any letter shows " +
                 "exactly these, in this order, instead of its own accents and symbols. Leave empty " +
@@ -522,9 +531,22 @@ internal fun PopupSymbolsField(settings: LayoutSettings, layoutPreferences: Layo
 }
 
 @Composable
-internal fun SettingToggle(title: String, description: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+internal fun SettingToggle(key: SettingKey, description: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) =
+    UnindexedSettingToggle(key.title, description, checked, onCheckedChange, rememberSettingHighlight(key))
+
+/** A toggle search can't find. Only for rows that can't have a [SettingKey]: ones shown only
+ * while another setting is on (their words are keywords of the parent), and per-language rows.
+ * An always-shown setting uses the [SettingKey] overload so search finds it. */
+@Composable
+internal fun UnindexedSettingToggle(
+    title: String,
+    description: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
@@ -538,12 +560,17 @@ internal fun SettingToggle(title: String, description: String, checked: Boolean,
 
 /** A settings row that opens something (an overlay, a picker) — the whole row is the tap target,
  * not just a trailing button, per standard Android settings-list UX (Settings app itself, most
- * system preference screens). The trailing "❯" is a plain visual affordance, not itself
+ * system preference screens). The trailing caret is a plain visual affordance, not itself
  * interactive — it doesn't need to be, since the whole row already is. */
 @Composable
-internal fun ClickableSettingRow(title: String, description: String, onClick: () -> Unit) {
+internal fun ClickableSettingRow(key: SettingKey, description: String, onClick: () -> Unit) =
+    UnindexedClickableSettingRow(key.title, description, onClick, rememberSettingHighlight(key))
+
+/** A clickable row search can't find — same rule as [UnindexedSettingToggle]. */
+@Composable
+internal fun UnindexedClickableSettingRow(title: String, description: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
             .padding(vertical = 4.dp),
@@ -554,11 +581,11 @@ internal fun ClickableSettingRow(title: String, description: String, onClick: ()
             Text(text = title, style = MaterialTheme.typography.bodyLarge)
             Text(text = description, style = MaterialTheme.typography.bodySmall)
         }
-        Text(
-            text = "❯",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.bodyLarge,
-            modifier = Modifier.padding(start = 12.dp),
+        Icon(
+            imageVector = dev.omakey.core.icons.PhosphorLineCaretRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 12.dp).size(18.dp),
         )
     }
 }
@@ -567,7 +594,11 @@ internal fun ClickableSettingRow(title: String, description: String, onClick: ()
 internal fun GestureSettingsSection(gesturePreferences: GesturePreferences) {
     val settings by gesturePreferences.settings.collectAsState()
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(text = "Swipe distance", style = MaterialTheme.typography.bodyLarge)
+        Text(
+            text = SettingKey.SWIPE_DISTANCE.title,
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier.fillMaxWidth().then(rememberSettingHighlight(SettingKey.SWIPE_DISTANCE)),
+        )
         Text(
             text = "Shorter = swipes (like delete-word) trigger more easily, but taps with a " +
                 "little finger drift are more likely to be read as a swipe. Longer = the " +
@@ -586,7 +617,7 @@ internal fun GestureSettingsSection(gesturePreferences: GesturePreferences) {
         }
         Spacer(Modifier.height(12.dp))
         SettingToggle(
-            title = "Long press for special characters",
+            key = SettingKey.LONG_PRESS_SPECIAL,
             description = "Long-press a key (like e, a, or the period) to pick an accent or " +
                 "punctuation variant. Turning this off makes every long-press just repeat the tap.",
             checked = settings.showKeyPopup,
@@ -594,18 +625,27 @@ internal fun GestureSettingsSection(gesturePreferences: GesturePreferences) {
         )
         Spacer(Modifier.height(12.dp))
         SettingToggle(
-            title = "Swipe right for space",
+            key = SettingKey.SWIPE_RIGHT_FOR_SPACE,
             description = "Swipe right anywhere on the keys to insert a space. Off by default.",
             checked = settings.swipeRightForSpace,
             onCheckedChange = gesturePreferences::setSwipeRightForSpace,
         )
         SettingToggle(
-            title = "Count space as its own swipe-left delete",
+            key = SettingKey.SWIPE_LEFT_SPACE_STEP,
             description = "Off: swipe left deletes the last word together with a space after it, " +
                 "so \"hello my name is \" becomes \"hello my name \". On: a space after the word " +
                 "takes a swipe of its own, and the word goes on the next one.",
             checked = settings.swipeLeftSpaceIsOwnStep,
             onCheckedChange = gesturePreferences::setSwipeLeftSpaceIsOwnStep,
+        )
+        SettingToggle(
+            key = SettingKey.SWIPE_SPACEBAR_LANGUAGE,
+            description = "With two or more languages, swipe right on the spacebar for the next " +
+                "language and left for the one before. The language button at the right of the " +
+                "suggestion bar is hidden while this is on. Hold the spacebar and drag to move " +
+                "the cursor, as before.",
+            checked = settings.swipeSpacebarForLanguage,
+            onCheckedChange = gesturePreferences::setSwipeSpacebarForLanguage,
         )
     }
 }
@@ -615,7 +655,7 @@ internal fun FeedbackSettingsSection(preferences: HapticSoundPreferences, feedba
     val settings by preferences.settings.collectAsState()
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         SettingToggle(
-            title = "Haptic feedback",
+            key = SettingKey.HAPTIC_FEEDBACK,
             description = "A short vibration on every key press and a stronger one on swipes.",
             checked = settings.hapticEnabled,
             onCheckedChange = preferences::setHapticEnabled,
@@ -639,7 +679,7 @@ internal fun FeedbackSettingsSection(preferences: HapticSoundPreferences, feedba
         }
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         SettingToggle(
-            title = "Key sounds",
+            key = SettingKey.KEY_SOUNDS,
             description = "Plays a keypress click sound while typing.",
             checked = settings.soundEnabled,
             onCheckedChange = preferences::setSoundEnabled,
@@ -694,12 +734,12 @@ private fun SoundChoicePicker(preferences: HapticSoundPreferences, currentChoice
 internal fun AccessibleModeToggle(accessibilityPreferences: AccessibilityPreferences) {
     val enabled by accessibilityPreferences.forceAccessibleMode.collectAsState()
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = rememberSettingHighlight(SettingKey.ACCESSIBLE_MODE).fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
         Column(Modifier.weight(1f)) {
-            Text(text = "Accessible mode", style = MaterialTheme.typography.bodyLarge)
+            Text(text = SettingKey.ACCESSIBLE_MODE.title, style = MaterialTheme.typography.bodyLarge)
             Text(
                 text = "Disables swipe gestures in favor of ordinary key taps, for use with " +
                     "TalkBack. Turns on automatically when TalkBack is active.",
@@ -720,20 +760,24 @@ internal fun UpdateCheckRow() {
     var status by remember { mutableStateOf<UpdateCheckStatus>(UpdateCheckStatus.Idle) }
 
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Button(
-            onClick = {
-                status = UpdateCheckStatus.Checking
-                scope.launch {
-                    status = when (val outcome = dev.omakey.core.update.GithubReleaseUpdateChecker()
-                        .checkForUpdate(dev.omakey.app.BuildConfig.VERSION_NAME)) {
-                        is dev.omakey.core.update.UpdateCheckOutcome.Success -> UpdateCheckStatus.Checked(outcome.result)
-                        dev.omakey.core.update.UpdateCheckOutcome.Error -> UpdateCheckStatus.Failed
+        // The flash goes on a full-width strip around the button: the button's own opaque pill
+        // would hide a background drawn under it.
+        Box(rememberSettingHighlight(SettingKey.CHECK_FOR_UPDATES).fillMaxWidth().padding(6.dp)) {
+            Button(
+                onClick = {
+                    status = UpdateCheckStatus.Checking
+                    scope.launch {
+                        status = when (val outcome = dev.omakey.core.update.GithubReleaseUpdateChecker()
+                            .checkForUpdate(dev.omakey.app.BuildConfig.VERSION_NAME)) {
+                            is dev.omakey.core.update.UpdateCheckOutcome.Success -> UpdateCheckStatus.Checked(outcome.result)
+                            dev.omakey.core.update.UpdateCheckOutcome.Error -> UpdateCheckStatus.Failed
+                        }
                     }
-                }
-            },
-            enabled = status !is UpdateCheckStatus.Checking,
-        ) {
-            Text(text = if (status is UpdateCheckStatus.Checking) "Checking..." else "Check for updates")
+                },
+                enabled = status !is UpdateCheckStatus.Checking,
+            ) {
+                Text(text = if (status is UpdateCheckStatus.Checking) "Checking..." else SettingKey.CHECK_FOR_UPDATES.title)
+            }
         }
         when (val current = status) {
             UpdateCheckStatus.Idle, UpdateCheckStatus.Checking -> Unit

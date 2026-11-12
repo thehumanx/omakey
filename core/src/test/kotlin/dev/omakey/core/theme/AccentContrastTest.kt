@@ -3,7 +3,6 @@ package dev.omakey.core.theme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import kotlin.math.abs
 
 /**
  * The accent is what marks "on" (caps lock, active shift, open panel buttons, selected tiles), so
@@ -17,16 +16,16 @@ class AccentContrastTest {
     @Test
     fun `the label on the accent is readable for every preset`() {
         presets.forEach { theme ->
-            val gap = abs(theme.accent.luminance - theme.onAccent.luminance)
-            assertTrue("${theme.name}: on-accent gap $gap", gap >= 0.25f)
+            val ratio = ThemeDerivation.contrast(theme.accent, theme.onAccent)
+            assertTrue("${theme.name}: on-accent $ratio", ratio >= ThemeDerivation.MIN_TEXT_CONTRAST)
         }
     }
 
     @Test
     fun `the accent stands out from the keys it sits among`() {
         presets.forEach { theme ->
-            val gap = abs(theme.accent.luminance - theme.keyBackground.luminance)
-            assertTrue("${theme.name}: accent vs key gap $gap", gap >= 0.2f)
+            val ratio = ThemeDerivation.contrast(theme.accent, theme.keyBackground)
+            assertTrue("${theme.name}: accent vs key $ratio", ratio >= ThemeDerivation.MIN_UI_CONTRAST)
         }
     }
 

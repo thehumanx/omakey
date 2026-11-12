@@ -12,7 +12,7 @@ import androidx.compose.ui.unit.dp
  * project only needs a handful. [Icon]'s `tint` fully recolors these via `ColorFilter` regardless
  * of the placeholder fill color baked into the path data below, so the actual color doesn't
  * matter — it exists only so the path renders as solid/opaque geometry. */
-private fun pathIcon(pathData: String, evenOdd: Boolean = false): ImageVector {
+internal fun pathIcon(pathData: String, evenOdd: Boolean = false): ImageVector {
     val nodes = PathParser().parsePathString(pathData).toNodes()
     return ImageVector.Builder(
         defaultWidth = 24.dp,

@@ -51,6 +51,15 @@ internal const val FLOATING_HANDLE_HEIGHT_DP = 22
  * see [SuggestionsTabContent]. */
 internal const val SUGGESTION_FADED_ALPHA = 0.45f
 
+/** The colour actually under a strip cell's label (a suggestion, a tool icon) — so its text can be
+ * picked against what it lands on, via [OmakeyTheme.labelOn], rather than assuming the keys. */
+internal fun OmakeyTheme.stripCellSurface(isGridMode: Boolean, showKeyBackgrounds: Boolean, isPressed: Boolean): ColorSpec = when {
+    isPressed -> keyBackgroundPressed
+    isGridMode -> keyboardBackground
+    showKeyBackgrounds -> keySpecialBackground
+    else -> suggestionBarBackground
+}
+
 /** Grid mode's border thickness — same everywhere, cell-to-cell and at the true outer edges.
  *
  * History, briefly: a "double-width outer border" approach (each cell drew a full 4-sided border,

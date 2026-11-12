@@ -48,7 +48,7 @@ class NgramPredictionEngine(
         val beforePreviousId =
             beforePreviousWord?.let { model.indexOf(it.toLookupForm()) } ?: LanguageModel.NO_WORD
 
-        val best = TopCandidates(limit)
+        val best = TopCandidates(limit, model)
 
         // Strongest context first. These rows are already probability-ordered, so the prefix filter
         // is the only work; scoring still goes through the common backoff chain below so that a
@@ -144,7 +144,7 @@ class NgramPredictionEngine(
     /** Fixed-size "keep the best N" over a stream of scored ids. Insertion-ordered rather than a
      * heap because N is the suggestion-strip limit — six — where the constant factors of a heap
      * cost more than the linear shifts it saves. */
-    private class TopCandidates(private val limit: Int) {
+    private class TopCandidates(private val limit: Int, private val model: LanguageModel) {
         private val ids = IntArray(limit)
         private val scores = FloatArray(limit)
         private var size = 0
@@ -154,6 +154,8 @@ class NgramPredictionEngine(
         fun offer(id: Int, score: Float) {
             for (i in 0 until size) if (ids[i] == id) return
             if (size == limit && score <= scores[size - 1]) return
+            // Only once it would actually be kept, so the check costs nothing on most offers.
+            if (model.isFragment(id)) return
             var position = size.coerceAtMost(limit - 1)
             while (position > 0 && scores[position - 1] < score) {
                 ids[position] = ids[position - 1]

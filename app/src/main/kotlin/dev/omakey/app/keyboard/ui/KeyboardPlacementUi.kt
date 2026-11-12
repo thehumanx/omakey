@@ -392,7 +392,7 @@ private fun TilePanel(
         ) {
             Text(
                 text = title,
-                color = theme.keyTextColor.toComposeColor().copy(alpha = 0.7f),
+                color = theme.fadedLabelOn(theme.keyboardBackground, 0.7f).toComposeColor(),
                 fontFamily = fontFamily,
                 fontSize = 12.sp,
                 modifier = Modifier.padding(start = 6.dp),
@@ -502,7 +502,7 @@ internal fun OneHandedGutter(
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
-                    tint = theme.keyTextColor.toComposeColor(),
+                    tint = theme.labelOn(if (isPressed) theme.keyBackgroundPressed else theme.keyBackground).toComposeColor(),
                     modifier = Modifier
                         .size(18.dp)
                         .then(
@@ -573,17 +573,16 @@ internal fun FloatingMoveHandle(theme: OmakeyTheme, place: PlacementState) {
             .semantics { contentDescription = "Move keyboard" },
         contentAlignment = Alignment.Center,
     ) {
-        // Drawn from keyTextColor, faded — not keyBackgroundPressed, which was the first choice and
-        // is the wrong one: pressed-key colour is designed to contrast with *keyBackground*, and a
-        // custom theme is free to set it equal to keyboardBackground, which is what this sits on.
-        // The pill would then be invisible with nothing obviously wrong. keyTextColor is the one
-        // colour a theme must keep legible against the keyboard background, so deriving from it
-        // means the handle cannot disappear on any theme, including ones not written yet.
+        // The label colour for the keyboard background, faded but held at WCAG's 3:1 for UI —
+        // not keyBackgroundPressed, which is designed to contrast with *keyBackground* and a
+        // custom theme is free to set equal to keyboardBackground, which is what this sits on.
+        // Raw keyTextColor was the next attempt, but it is chosen against the keys, and a custom
+        // theme can pair a light key with a dark background; fadedLabelOn checks the real surface.
         Box(
             Modifier
                 .size(width = 40.dp, height = 5.dp)
                 .background(
-                    theme.keyTextColor.toComposeColor().copy(alpha = 0.4f),
+                    theme.fadedLabelOn(theme.keyboardBackground, 0.4f, dev.omakey.core.theme.ThemeDerivation.MIN_UI_CONTRAST).toComposeColor(),
                     androidx.compose.foundation.shape.RoundedCornerShape(2.5.dp),
                 ),
         )
@@ -650,7 +649,8 @@ internal fun androidx.compose.foundation.layout.BoxScope.ResizeOverlay(
     edgePaddingDp: Int,
 ) {
     val density = androidx.compose.ui.platform.LocalDensity.current
-    val accent = theme.accent.toComposeColor()
+    // Drawn over the keyboard, so lifted to 3:1 against it if the accent is too close.
+    val accent = theme.accentOn(theme.keyboardBackground).toComposeColor()
     // Bracket arms, drawn at the four corners of the keyboard's own rectangle.
     val bracket = 18.dp
     val stroke = 3.dp

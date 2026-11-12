@@ -19,6 +19,10 @@ data class GestureSettings(
      * "hello my name is " and "hello my name is" both become "hello my name ". On: a space after
      * the word is a swipe of its own, the word the next one (the behaviour before 5.3). */
     val swipeLeftSpaceIsOwnStep: Boolean = false,
+    /** Off by default: a quick swipe on the spacebar switches language (right = next, left =
+     * previous) with two or more languages, and the suggestion bar's language button goes away.
+     * See [SpacebarLanguageSwipe] and `SuggestionBarButtons`. */
+    val swipeSpacebarForLanguage: Boolean = false,
 ) {
     companion object {
         const val DEFAULT_SENSITIVITY = 1.0f
@@ -46,6 +50,8 @@ class GesturePreferences(context: Context) {
 
     fun setSwipeLeftSpaceIsOwnStep(enabled: Boolean) = update { it.copy(swipeLeftSpaceIsOwnStep = enabled) }
 
+    fun setSwipeSpacebarForLanguage(enabled: Boolean) = update { it.copy(swipeSpacebarForLanguage = enabled) }
+
     private fun update(transform: (GestureSettings) -> GestureSettings) {
         val next = transform(store.settings.value)
         store.edit {
@@ -53,6 +59,7 @@ class GesturePreferences(context: Context) {
             putBoolean(KEY_SHOW_POPUP, next.showKeyPopup)
             putBoolean(KEY_SWIPE_RIGHT_FOR_SPACE, next.swipeRightForSpace)
             putBoolean(KEY_SWIPE_LEFT_SPACE_OWN_STEP, next.swipeLeftSpaceIsOwnStep)
+            putBoolean(KEY_SWIPE_SPACEBAR_LANGUAGE, next.swipeSpacebarForLanguage)
         }
     }
 
@@ -63,6 +70,7 @@ class GesturePreferences(context: Context) {
         showKeyPopup = prefs.getBoolean(KEY_SHOW_POPUP, true),
         swipeRightForSpace = prefs.getBoolean(KEY_SWIPE_RIGHT_FOR_SPACE, false),
         swipeLeftSpaceIsOwnStep = prefs.getBoolean(KEY_SWIPE_LEFT_SPACE_OWN_STEP, false),
+        swipeSpacebarForLanguage = prefs.getBoolean(KEY_SWIPE_SPACEBAR_LANGUAGE, false),
     )
 
     private companion object {
@@ -71,5 +79,6 @@ class GesturePreferences(context: Context) {
         const val KEY_SHOW_POPUP = "show_key_popup"
         const val KEY_SWIPE_RIGHT_FOR_SPACE = "swipe_right_for_space"
         const val KEY_SWIPE_LEFT_SPACE_OWN_STEP = "swipe_left_space_is_own_step"
+        const val KEY_SWIPE_SPACEBAR_LANGUAGE = "swipe_spacebar_for_language"
     }
 }

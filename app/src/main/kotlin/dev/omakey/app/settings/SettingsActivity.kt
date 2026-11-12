@@ -62,6 +62,7 @@ import dev.omakey.core.theme.FontPreferences
 import dev.omakey.core.theme.OmakeyTheme
 import dev.omakey.core.theme.Presets
 import dev.omakey.core.theme.ThemeRepository
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 class SettingsActivity : ComponentActivity() {
@@ -310,247 +311,223 @@ private fun SettingsScreen(
     var showThemeEditor by remember { mutableStateOf(false) }
     var themeBeingEdited by remember { mutableStateOf<OmakeyTheme?>(null) }
 
-    // Which page is open; null is the home list. Saveable so rotating the phone doesn't throw the
-    // user back to the top.
-    var page by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<SettingsPage?>(null) }
-    androidx.activity.compose.BackHandler(enabled = page != null) { page = null }
+    // Where the user is: an open page over an optional search (see SettingsNav). Saveable so
+    // rotating the phone keeps the page, the search and its query.
+    var nav by androidx.compose.runtime.saveable.rememberSaveable(stateSaver = SettingsNavSaver) { mutableStateOf(SettingsNav()) }
+    // The setting a search result just opened. Flashed for a moment, then cleared; deliberately
+    // not saveable, a flash replayed after rotation would only confuse.
+    var highlight by remember { mutableStateOf<SettingKey?>(null) }
+    // Bumped on every result tap, so opening the same result again restarts the timer.
+    var highlightToken by remember { mutableStateOf(0) }
+    androidx.compose.runtime.LaunchedEffect(highlightToken) {
+        if (highlight != null) {
+            kotlinx.coroutines.delay(HIGHLIGHT_MILLIS)
+            highlight = null
+        }
+    }
     // Held here, above the page switch, so the home list's scroll position survives opening a page
     // and coming back. Inside SettingsHome it was created fresh each time the list re-entered
     // composition, so Back always landed at the top. Saveable for rotation too.
     val homeListState = androidx.compose.foundation.lazy.rememberLazyListState()
+    // Same for the search results, so Back from a result lands where the user left the list. A
+    // new query starts it at the top again.
+    val searchListState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val back: () -> Unit = {
+        highlight = null
+        nav = nav.back() ?: SettingsNav()
+    }
+    androidx.activity.compose.BackHandler(enabled = nav.back() != null) { back() }
 
     Box(Modifier.fillMaxSize()) {
-        when (page) {
-            null -> SettingsHome(listState = homeListState, onOpen = { page = it }, onOpenSystemSettings = onOpenSystemSettings, onSwitchKeyboard = onSwitchKeyboard)
+        androidx.compose.runtime.CompositionLocalProvider(LocalSettingHighlight provides highlight) {
+            when (val page = nav.page) {
+                null -> if (nav.searchOpen) {
+                    SettingsSearchScreen(
+                        query = nav.query,
+                        onQueryChange = {
+                            nav = nav.withQuery(it)
+                            scope.launch { searchListState.scrollToItem(0) }
+                        },
+                        listState = searchListState,
+                        onBack = back,
+                        onOpen = { key ->
+                            nav = nav.openResult(key)
+                            highlight = key
+                            highlightToken++
+                        },
+                    )
+                } else {
+                    SettingsHome(
+                        listState = homeListState,
+                        onOpen = { nav = nav.openPage(it) },
+                        onSearch = { nav = nav.openSearch() },
+                        onOpenSystemSettings = onOpenSystemSettings,
+                        onSwitchKeyboard = onSwitchKeyboard,
+                    )
+                }
 
-            SettingsPage.APPEARANCE -> SettingsSubPage(SettingsPage.APPEARANCE.title, onBack = { page = null }) {
-                item {
-                    // First, and fed the *resolved* theme plus every live appearance setting, so
-                    // each change below shows up here immediately. Normal vs. Grid is the change
-                    // it matters most for: a structural difference two words can't convey.
-                    // Must provide the layout mode — LocalKeyboardLayoutMode defaults to NORMAL.
-                    androidx.compose.runtime.CompositionLocalProvider(
-                        dev.omakey.core.theme.LocalKeyboardLayoutMode provides layoutMode,
-                    ) {
-                        ThemePreviewMock(
-                            theme = effectiveTheme,
-                            showKeyBackgrounds = layoutSettings.showKeyBackgrounds,
-                            fontFamily = previewFontFamily,
-                            homeRowTinted = layoutSettings.showMiddleRowStripe,
-                            alwaysShowUppercaseLetters = layoutSettings.alwaysShowUppercaseLetters,
-                            edgePadding = layoutSettings.edgePadding,
-                            showSecondarySymbols = layoutSettings.secondarySymbolsShown,
-                            fleksySymbols = layoutSettings.fleksySymbols,
-                            interactive = true,
-                        )
-                    }
-                }
-                item {
-                    SettingsSection(title = "Layout style") {
-                        LayoutModePicker(themeRepository)
-                    }
-                }
-                item {
-                    SettingsSection(title = "Theme") {
-                        ThemePicker(
-                            themeRepository = themeRepository,
-                            customThemePreferences = customThemePreferences,
-                            layoutMode = layoutMode,
-                            onCreateTheme = { themeBeingEdited = null; showThemeEditor = true },
-                            onEditTheme = { theme -> themeBeingEdited = theme; showThemeEditor = true },
-                        )
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                            SettingToggle(
-                                title = "Pick accent color from system",
-                                description = "Use your device's Material You accent for the " +
-                                    "spacebar, caps lock and active buttons instead of the theme's " +
-                                    "own. The Accent theme already uses your device's colors throughout.",
-                                checked = useSystemAccent,
-                                onCheckedChange = themeRepository::setUseSystemAccent,
-                            )
-                        }
-                    }
-                }
-                item {
-                    SettingsSection(title = "Keys") {
-                        AppearanceLayoutToggles(layoutSettings, layoutPreferences)
-                        SecondarySymbolsToggle(layoutSettings, layoutPreferences)
-                        CapitalizationToggleSection(layoutSettings, layoutPreferences)
-                    }
-                }
-                item {
-                    SettingsSection(title = "Font") {
-                        FontPicker(fontPreferences, currentFontId)
-                    }
-                }
-            }
-
-            SettingsPage.KEYBOARD -> SettingsSubPage(SettingsPage.KEYBOARD.title, onBack = { page = null }) {
-                item {
-                    SettingsSection(title = "Size & position") {
-                        ClickableSettingRow(
-                            title = "Keyboard size & position",
-                            description = "Resize the keyboard and raise it off the bottom edge for " +
-                                "easier one-handed thumb reach — drag to adjust both.",
-                            onClick = { showSizePositionOverlay = true },
-                        )
-                        EdgePaddingToggle(layoutSettings, layoutPreferences)
-                    }
-                }
-                item {
-                    SettingsSection(title = "Suggestion bar") {
-                        TopStripPagesSection(topStripPreferences)
-                    }
-                }
-                item {
-                    SettingsSection(title = "Buttons") {
-                        SwapEmojiLanguageToggle(layoutSettings, layoutPreferences)
-                        TapPreviewToggle(layoutSettings, layoutPreferences)
-                    }
-                }
-                item {
-                    SettingsSection(title = "Symbols") {
-                        FleksySymbolsToggle(layoutSettings, layoutPreferences)
-                        PopupSymbolsField(layoutSettings, layoutPreferences)
-                    }
-                }
-                item {
-                    SettingsSection(title = "Number pad") {
-                        NumberPadSection(layoutSettings, layoutPreferences)
-                    }
-                }
-                item {
-                    SettingsSection(title = "Emoji") {
-                        EmojiSkinTonePicker(emojiSkinTonePreferences)
-                    }
-                }
-            }
-
-            SettingsPage.LANGUAGES -> SettingsSubPage(SettingsPage.LANGUAGES.title, onBack = { page = null }) {
-                item {
-                    SettingsSection(title = "Languages") {
-                        LanguagesSection(localePreferences, languagePacks)
-                    }
-                }
-            }
-
-            SettingsPage.TYPING -> SettingsSubPage(SettingsPage.TYPING.title, onBack = { page = null }) {
-                item {
-                    SettingsSection(title = "Corrections") {
-                        AutocorrectToggle(autocorrectSettings, autocorrectPreferences)
-                        NextWordPredictionToggle(predictionPreferences)
-                    }
-                }
-                item {
-                    SettingsSection(title = "Punctuation & capitals") {
-                        AutoCapitalizeToggle(autocorrectSettings, autocorrectPreferences)
-                        DoubleTapSpaceForPeriodToggle(autocorrectSettings, autocorrectPreferences)
-                        AutoSpaceAfterPunctuationToggle(autocorrectSettings, autocorrectPreferences)
-                    }
-                }
-            }
-
-            SettingsPage.GESTURES -> SettingsSubPage(SettingsPage.GESTURES.title, onBack = { page = null }) {
-                item {
-                    SettingsSection(title = "Gestures") {
-                        GestureSettingsSection(gesturePreferences)
-                    }
-                }
-            }
-
-            SettingsPage.PRIVACY -> SettingsSubPage(SettingsPage.PRIVACY.title, onBack = { page = null }) {
-                item {
-                    SettingsSection(title = "Learning") {
-                        ImplicitLearningToggle(incognitoPreferences)
-                        ClickableSettingRow(
-                            title = "Learned words",
-                            description = "Words your own typing has taught the keyboard — view, " +
-                                "search, or remove any that shouldn't have been learned.",
-                            onClick = { showLearnedWordsOverlay = true },
-                        )
-                    }
-                }
-                item {
-                    SettingsSection(title = "Clipboard") {
-                        ClipboardHistoryToggle(clipboardPreferences)
-                        ClickableSettingRow(
-                            title = "Clipboard history",
-                            description = "Everything the keyboard has saved from your clipboard — " +
-                                "view it, unpin or remove single entries, or clear the lot.",
-                            onClick = { showClipboardHistoryOverlay = true },
-                        )
-                    }
-                }
-                item {
-                    SettingsSection(title = "What leaves your phone") {
-                        Text(text = stringResource(R.string.privacy_notice), style = MaterialTheme.typography.bodyMedium)
-                    }
-                }
-            }
-
-            SettingsPage.SOUND -> SettingsSubPage(SettingsPage.SOUND.title, onBack = { page = null }) {
-                item {
-                    SettingsSection(title = "Sound & haptics") {
-                        FeedbackSettingsSection(hapticSoundPreferences, feedback)
-                    }
-                }
-            }
-
-            SettingsPage.ACCESSIBILITY -> SettingsSubPage(SettingsPage.ACCESSIBILITY.title, onBack = { page = null }) {
-                item {
-                    SettingsSection(title = "Accessibility") {
-                        AccessibleModeToggle(accessibilityPreferences)
-                    }
-                }
-            }
-
-            SettingsPage.ABOUT -> SettingsSubPage(SettingsPage.ABOUT.title, onBack = { page = null }) {
-                item {
-                    SettingsSection(title = "Updates") {
-                        Text(
-                            // Build number alongside the version name, because they can legitimately
-                            // disagree: versionName is held fixed across dev installs within a release
-                            // cycle while versionCode increments every time, so on a dev build "up to
-                            // date" means "no newer tag", not "running the tagged code".
-                            text = "Version ${dev.omakey.app.BuildConfig.VERSION_NAME} " +
-                                "(build ${dev.omakey.app.BuildConfig.VERSION_CODE})",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        val autoCheckEnabled by updatePreferences.settings.collectAsState()
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                        ) {
-                            Column(Modifier.weight(1f)) {
-                                Text(text = "Automatic update checks", style = MaterialTheme.typography.bodyLarge)
-                                Text(
-                                    text = "Checks GitHub every 12 hours and notifies you if a new " +
-                                        "version is out. No background download or install.",
-                                    style = MaterialTheme.typography.bodySmall,
+                else -> SettingsSubPage(
+                    page = page,
+                    onBack = back,
+                    scrollTo = highlight?.section?.takeIf { it.page == page },
+                    preview = if (page != SettingsPage.APPEARANCE) null else {
+                        {
+                            // First, and fed the *resolved* theme plus every live appearance setting, so
+                            // each change below shows up here immediately. Normal vs. Grid is the change
+                            // it matters most for: a structural difference two words can't convey.
+                            // Must provide the layout mode — LocalKeyboardLayoutMode defaults to NORMAL.
+                            androidx.compose.runtime.CompositionLocalProvider(
+                                dev.omakey.core.theme.LocalKeyboardLayoutMode provides layoutMode,
+                            ) {
+                                ThemePreviewMock(
+                                    theme = effectiveTheme,
+                                    showKeyBackgrounds = layoutSettings.showKeyBackgrounds,
+                                    fontFamily = previewFontFamily,
+                                    homeRowTinted = layoutSettings.showMiddleRowStripe,
+                                    alwaysShowUppercaseLetters = layoutSettings.alwaysShowUppercaseLetters,
+                                    edgePadding = layoutSettings.edgePadding,
+                                    showSecondarySymbols = layoutSettings.secondarySymbolsShown,
+                                    fleksySymbols = layoutSettings.fleksySymbols,
+                                    interactive = true,
                                 )
                             }
-                            Switch(
-                                checked = autoCheckEnabled.autoCheckEnabled,
-                                onCheckedChange = onAutoUpdateCheckToggled,
+                        }
+                    },
+                ) { section ->
+                    when (section) {
+                        SettingsSectionKey.LAYOUT_STYLE -> LayoutModePicker(themeRepository)
+                        SettingsSectionKey.THEME -> {
+                            ThemePicker(
+                                themeRepository = themeRepository,
+                                customThemePreferences = customThemePreferences,
+                                layoutMode = layoutMode,
+                                onCreateTheme = { themeBeingEdited = null; showThemeEditor = true },
+                                onEditTheme = { theme -> themeBeingEdited = theme; showThemeEditor = true },
+                            )
+                            if (Build.VERSION.SDK_INT >= SettingKey.SYSTEM_ACCENT.minSdk) {
+                                SettingToggle(
+                                    key = SettingKey.SYSTEM_ACCENT,
+                                    description = "Use your device's Material You accent for the " +
+                                        "spacebar, caps lock and active buttons instead of the theme's " +
+                                        "own. The Accent theme already uses your device's colors throughout.",
+                                    checked = useSystemAccent,
+                                    onCheckedChange = themeRepository::setUseSystemAccent,
+                                )
+                            }
+                        }
+                        SettingsSectionKey.KEYS -> {
+                            AppearanceLayoutToggles(layoutSettings, layoutPreferences)
+                            SecondarySymbolsToggle(layoutSettings, layoutPreferences)
+                            CapitalizationToggleSection(layoutSettings, layoutPreferences)
+                        }
+                        SettingsSectionKey.FONT -> FontPicker(fontPreferences, currentFontId)
+                        SettingsSectionKey.SIZE_POSITION -> {
+                            ClickableSettingRow(
+                                key = SettingKey.SIZE_POSITION,
+                                description = "Resize the keyboard and raise it off the bottom edge for " +
+                                    "easier one-handed thumb reach — drag to adjust both.",
+                                onClick = { showSizePositionOverlay = true },
+                            )
+                            EdgePaddingToggle(layoutSettings, layoutPreferences)
+                        }
+                        SettingsSectionKey.SUGGESTION_BAR -> TopStripPagesSection(topStripPreferences)
+                        SettingsSectionKey.BUTTONS -> {
+                            SwapEmojiLanguageToggle(layoutSettings, layoutPreferences)
+                            TapPreviewToggle(layoutSettings, layoutPreferences)
+                        }
+                        SettingsSectionKey.SYMBOLS -> {
+                            FleksySymbolsToggle(layoutSettings, layoutPreferences)
+                            PopupSymbolsField(layoutSettings, layoutPreferences)
+                        }
+                        SettingsSectionKey.NUMBER_PAD -> NumberPadSection(layoutSettings, layoutPreferences)
+                        SettingsSectionKey.EMOJI -> EmojiSkinTonePicker(emojiSkinTonePreferences)
+                        SettingsSectionKey.LANGUAGES -> LanguagesSection(localePreferences, languagePacks)
+                        SettingsSectionKey.CORRECTIONS -> {
+                            AutocorrectToggle(autocorrectSettings, autocorrectPreferences)
+                            NextWordPredictionToggle(predictionPreferences)
+                        }
+                        SettingsSectionKey.PUNCTUATION -> {
+                            AutoCapitalizeToggle(autocorrectSettings, autocorrectPreferences)
+                            DoubleTapSpaceForPeriodToggle(autocorrectSettings, autocorrectPreferences)
+                            AutoSpaceAfterPunctuationToggle(autocorrectSettings, autocorrectPreferences)
+                        }
+                        SettingsSectionKey.GESTURES -> GestureSettingsSection(gesturePreferences)
+                        SettingsSectionKey.LEARNING -> {
+                            ImplicitLearningToggle(incognitoPreferences)
+                            ClickableSettingRow(
+                                key = SettingKey.LEARNED_WORDS,
+                                description = "Words your own typing has taught the keyboard — view, " +
+                                    "search, or remove any that shouldn't have been learned.",
+                                onClick = { showLearnedWordsOverlay = true },
                             )
                         }
-                        UpdateCheckRow()
+                        SettingsSectionKey.CLIPBOARD -> {
+                            ClipboardHistoryToggle(clipboardPreferences)
+                            ClickableSettingRow(
+                                key = SettingKey.CLIPBOARD_HISTORY,
+                                description = "Everything the keyboard has saved from your clipboard — " +
+                                    "view it, unpin or remove single entries, or clear the lot.",
+                                onClick = { showClipboardHistoryOverlay = true },
+                            )
+                        }
+                        SettingsSectionKey.WHAT_LEAVES ->
+                            Text(text = stringResource(R.string.privacy_notice), style = MaterialTheme.typography.bodyMedium)
+                        SettingsSectionKey.SOUND_HAPTICS -> FeedbackSettingsSection(hapticSoundPreferences, feedback)
+                        SettingsSectionKey.ACCESSIBILITY -> AccessibleModeToggle(accessibilityPreferences)
+                        SettingsSectionKey.UPDATES -> {
+                            Text(
+                                // Build number alongside the version name, because they can legitimately
+                                // disagree: versionName is held fixed across dev installs within a release
+                                // cycle while versionCode increments every time, so on a dev build "up to
+                                // date" means "no newer tag", not "running the tagged code".
+                                text = "Version ${dev.omakey.app.BuildConfig.VERSION_NAME} " +
+                                    "(build ${dev.omakey.app.BuildConfig.VERSION_CODE})",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            val autoCheckEnabled by updatePreferences.settings.collectAsState()
+                            Row(
+                                modifier = rememberSettingHighlight(SettingKey.AUTO_UPDATE_CHECKS).fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(text = SettingKey.AUTO_UPDATE_CHECKS.title, style = MaterialTheme.typography.bodyLarge)
+                                    Text(
+                                        text = "Checks GitHub every 12 hours and notifies you if a new " +
+                                            "version is out. No background download or install.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                    )
+                                }
+                                Switch(
+                                    checked = autoCheckEnabled.autoCheckEnabled,
+                                    onCheckedChange = onAutoUpdateCheckToggled,
+                                )
+                            }
+                            UpdateCheckRow()
+                        }
                     }
                 }
             }
         }
 
-        FloatingActionButton(
-            onClick = { showTestOverlay = true },
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .statusBarsPadding()
-                .navigationBarsPadding()
-                .padding(24.dp),
-        ) {
-            Text(text = "⌨", fontSize = 22.sp)
+        // Hidden while searching: it would sit over the results and the on-screen keyboard.
+        if (!(nav.searchOpen && nav.page == null)) {
+            FloatingActionButton(
+                onClick = { showTestOverlay = true },
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .statusBarsPadding()
+                    .navigationBarsPadding()
+                    .padding(24.dp),
+            ) {
+                androidx.compose.material3.Icon(
+                    imageVector = dev.omakey.core.icons.PhosphorLineKeyboard,
+                    contentDescription = "Try the keyboard",
+                    modifier = Modifier.size(24.dp),
+                )
+            }
         }
     }
 
@@ -591,27 +568,11 @@ private fun SettingsScreen(
     }
 }
 
-/**
- * The Settings pages. Settings used to be one long scroll holding every option, which had become
- * too long to find anything in; now the home screen lists these and each opens its own page.
- * Grouped by what the user is trying to do, not by which preference class stores it.
- */
-private enum class SettingsPage(val title: String, val summary: String) {
-    APPEARANCE("Appearance", "Layout style, theme, key look, font"),
-    KEYBOARD("Keyboard", "Size & position, buttons, emoji skin tone"),
-    LANGUAGES("Languages", "Languages, layouts, downloads"),
-    TYPING("Typing", "Autocorrect, prediction, capitals, punctuation"),
-    GESTURES("Gestures", "Swipes, long-press, swipe distance"),
-    PRIVACY("Privacy & data", "Learning, learned words, clipboard history"),
-    SOUND("Sound & haptics", "Key sounds, vibration"),
-    ACCESSIBILITY("Accessibility", "Screen reader mode"),
-    ABOUT("About", "Version and updates"),
-}
-
 @Composable
 private fun SettingsHome(
     listState: androidx.compose.foundation.lazy.LazyListState,
     onOpen: (SettingsPage) -> Unit,
+    onSearch: () -> Unit,
     onOpenSystemSettings: () -> Unit,
     onSwitchKeyboard: () -> Unit,
 ) {
@@ -624,7 +585,22 @@ private fun SettingsHome(
             .padding(horizontal = 24.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
-        item { Text(text = stringResource(R.string.settings_title), style = MaterialTheme.typography.headlineSmall) }
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = stringResource(R.string.settings_title),
+                    style = MaterialTheme.typography.headlineSmall,
+                    modifier = Modifier.weight(1f),
+                )
+                androidx.compose.material3.IconButton(onClick = onSearch) {
+                    androidx.compose.material3.Icon(
+                        imageVector = dev.omakey.core.icons.PhosphorLineMagnifyingGlass,
+                        contentDescription = "Search settings",
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
+            }
+        }
         item {
             SettingsSection(title = "Setup") {
                 val (isEnabled, isDefault) = rememberSetupStatus()
@@ -651,7 +627,7 @@ private fun SettingsHome(
             item {
                 SettingsSection(title = title) {
                     pages.forEach { page ->
-                        ClickableSettingRow(title = page.title, description = page.summary, onClick = { onOpen(page) })
+                        UnindexedClickableSettingRow(title = page.title, description = page.summary, onClick = { onOpen(page) })
                     }
                 }
             }
@@ -661,14 +637,47 @@ private fun SettingsHome(
     }
 }
 
-/** One Settings page: a back arrow and title over its own scrolling list of sections. */
+/** How long a setting opened from search stays highlighted. */
+private const val HIGHLIGHT_MILLIS = 1500L
+
+private val SettingsNavSaver = androidx.compose.runtime.saveable.listSaver<SettingsNav, Any?>(
+    save = { listOf(it.page?.name, it.searchOpen, it.query) },
+    restore = { SettingsNav((it[0] as String?)?.let(SettingsPage::valueOf), it[1] as Boolean, it[2] as String) },
+)
+
+/**
+ * One Settings page: a back arrow and title over its own scrolling list of section cards, built
+ * from [SettingsIndex.sectionsOf] so the order search scrolls by is the order on screen.
+ * [preview] sits above the sections (Appearance's live keyboard). When [scrollTo] is set the list
+ * scrolls that section into view; the row inside it then finishes the job (rememberSettingHighlight).
+ */
 @Composable
 private fun SettingsSubPage(
-    title: String,
+    page: SettingsPage,
     onBack: () -> Unit,
-    content: androidx.compose.foundation.lazy.LazyListScope.() -> Unit,
+    scrollTo: SettingsSectionKey?,
+    preview: (@Composable () -> Unit)?,
+    section: @Composable (SettingsSectionKey) -> Unit,
 ) {
+    val sections = SettingsIndex.sectionsOf(page)
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    androidx.compose.runtime.LaunchedEffect(scrollTo) {
+        val position = sections.indexOf(scrollTo)
+        if (position < 0) return@LaunchedEffect
+        // + 1 for the title row, + 1 more when there's a preview above the sections.
+        val index = position + 1 + (if (preview != null) 1 else 0)
+        // Wait for the first layout, then only scroll when the card's top isn't already on screen,
+        // so a page whose first card is the target keeps its title in view. The row itself then
+        // brings its own line into view (rememberSettingHighlight), which covers rows low in a tall card.
+        val layout = androidx.compose.runtime.snapshotFlow { listState.layoutInfo }
+            .first { it.visibleItemsInfo.isNotEmpty() }
+        val item = layout.visibleItemsInfo.firstOrNull { it.index == index }
+        val topShown = item != null && item.offset >= layout.viewportStartOffset &&
+            item.offset < layout.viewportEndOffset
+        if (!topShown) listState.animateScrollToItem(index)
+    }
     LazyColumn(
+        state = listState,
         modifier = Modifier
             .fillMaxSize()
             .statusBarsPadding()
@@ -680,15 +689,18 @@ private fun SettingsSubPage(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 androidx.compose.material3.IconButton(onClick = onBack, modifier = Modifier.padding(end = 4.dp)) {
                     androidx.compose.material3.Icon(
-                        imageVector = dev.omakey.core.icons.PhosphorArrowLeft,
+                        imageVector = dev.omakey.core.icons.PhosphorLineArrowLeft,
                         contentDescription = "Back",
                         modifier = Modifier.size(22.dp),
                     )
                 }
-                Text(text = title, style = MaterialTheme.typography.headlineSmall)
+                Text(text = page.title, style = MaterialTheme.typography.headlineSmall)
             }
         }
-        content()
+        if (preview != null) item { preview() }
+        sections.forEach { key ->
+            item(key = key) { SettingsSection(key) { section(key) } }
+        }
         item { Spacer(Modifier.height(72.dp)) }
     }
 }

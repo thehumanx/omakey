@@ -47,7 +47,8 @@ ever leaves your phone.
 
 ## App Updates / Plans and PSA
 - I've publicly shared this keyboard only on Reddit threads (besides my website) and few kind volunteers have tried and provided feedback on fixes/improvements and features. 
-- Languages beyond English arrived in 5.0.0: Spanish, French, Brazilian Portuguese and Nepali, each a small optional download. 5.1.0 adds Italian and Russian, 5.2.0 fixes what a Russian user reported, 5.3.0 is a round of fixes and Fleksy touches from user feedback, 5.3.1 fixes autocorrect in search boxes, and 5.4.0 adds your own long-press symbols, an optional space after punctuation, a choice of what the bar above the keys shows, and a new icon. More to come.
+- Languages beyond English arrived in 5.0.0: Spanish, French, Brazilian Portuguese and Nepali, each a small optional download. 5.1.0 adds Italian and Russian, 5.2.0 fixes what a Russian user reported, 5.3.0 is a round of fixes and Fleksy touches from user feedback, 5.3.1 fixes autocorrect in search boxes, and 5.4.0 adds your own long-press symbols, an optional space after punctuation, a choice of what the bar above the keys shows, and a new icon. 5.5.0 adds a number pad and password-manager logins in the suggestion bar, and 5.6.0 adds search in Settings, a spacebar swipe to change language, colours that stay readable on every theme, and better romanized Nepali. More to come.
+- The next build will also be released on the Google Play Store. If you'd like to help test it, reach out to omakey@iambishistha.com.
 - I am prioritizing more on optimizing the UX and autocorrection/prediction engine as its being written from the scratch.
 - The keyboard is optimized for battery usage as well. Fleksy used to take around 5-10%, while this takes just around 1%.
 - Note: Not tested for old hardwares, if you do, please test and lmk feedback.
@@ -147,6 +148,7 @@ menus involved:
 | **Swipe up/down right after a `. , ! ? ; : ' "`** | Cycles through that whole set of punctuation instead of word suggestions — turn "." into "," into "!" and so on with repeated swipes, without retyping. Works whether the cursor sits right against the mark or one space past it, so it chains naturally off double-tap-space-for-period. |
 | **Tap and hold Shift** | Locks in caps lock. A quick tap just capitalizes the next letter, then releases. |
 | **Long-press and drag the spacebar** | Moves the cursor without needing to tap precisely inside your text — fixes a typo three words back without losing your place. |
+| **Swipe left/right on the spacebar** | With two or more languages, switches to the next or previous one. Off by default; turn it on in Settings → Gestures. Holding and dragging the spacebar still moves the cursor. |
 | **Long-press a letter key** with accent variants | Fades into a full-width picker for that key's variants (à, á, â, ä...) — keep holding and slide onto the one you want, lift to type it. Slide past the end for a few extra everyday symbols. Set your own long-press symbols and every letter offers exactly those instead. |
 | **Swipe left/right in the emoji panel** | Slides between emoji categories. |
 | Adjustable swipe sensitivity | A Settings slider tunes how far a swipe has to travel before it registers. |
@@ -185,7 +187,8 @@ only carry the ones you use. Settings → Languages → "Get more languages" lis
   "l'homme" or "j'ai" are understood as two words, so the correction lands on the right one.
 - **Nepali** — type it the way you'd text it, in English letters ("namaste", "mero"), and the
   Devanagari appears as you go; tap a different choice in the strip if the first isn't right, or
-  keep the English spelling for English words. There's also a proper Devanagari keyboard if you'd
+  keep the English spelling for English words. What you typed comes first, h's and long vowels
+  included, with the dictionary's guess next to it. There's also a proper Devanagari keyboard if you'd
   rather type the script directly. Numbers come out in Nepali digits (१२३), with 123 a long-press
   away.
 - **Italian** — accents put back for you ("perche" becomes "perché", and the wrong-way "perchè"
@@ -277,7 +280,10 @@ Swipe to the Tools tab for:
   your device's own Material You palette and follows your system light/dark setting. Plus an
   option to pull just the accent from that palette on any theme.
 - One colour rule everywhere: whatever you're pressing fills with the theme's tap colour, and
-  whatever is switched on — caps lock, Shift, an open panel, the selected tile — takes its accent.
+  whatever is switched on — caps lock, Shift, an open panel — takes its accent. The open emoji
+  category gets a soft tint.
+- Text and icons are checked for contrast against whatever they sit on, on every theme including
+  your own, so nothing turns unreadable.
 - A live keyboard preview in Settings that reflects your theme, layout style, font, key
   backgrounds, home-row highlight and capitalization as you change them — and responds to touch,
   so you can see the tap colour, and the accent on Shift and caps lock.
@@ -307,6 +313,11 @@ Swipe to the Tools tab for:
 
 - Automatic fallback for TalkBack users — screen-reader touch exploration switches omakey to
   standard tap-to-type so nothing gets in the way of accessibility tools.
+
+### Finding your way around Settings
+
+- Search every setting from the magnifier at the top of Settings. Type a word like "vibrate" or
+  "dark", and a result takes you straight to the setting and lights it up. Works with TalkBack.
 
 ### Staying up to date
 
