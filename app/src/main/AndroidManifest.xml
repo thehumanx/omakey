@@ -19,7 +19,7 @@
     <!-- POST_NOTIFICATIONS (for the update-available notification) is declared only in the sideload
          flavor's manifest: src/sideload/AndroidManifest.xml. The Play build has no update check. -->
 
-    <!-- usesCleartextTraffic: targetSdk 35 already defaults this to false. Declared explicitly so
+    <!-- usesCleartextTraffic: targetSdk 35+ already defaults this to false. Declared explicitly so
          that lowering targetSdk later cannot silently re-enable plaintext HTTP for the single
          network call this app makes (the GitHub release check). -->
     <application

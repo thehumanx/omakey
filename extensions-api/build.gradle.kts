@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "dev.omakey.extapi"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         minSdk = 26

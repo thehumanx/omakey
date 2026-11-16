@@ -17,18 +17,18 @@ val keystoreProperties = Properties().apply {
 
 android {
     namespace = "dev.omakey.app"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "dev.omakey.app"
         minSdk = 26
-        targetSdk = 35
+        targetSdk = 36
         // versionName intentionally stays fixed across iterative dev-build installs within a
         // release cycle (per user preference) — only versionCode increments, since adb install -r
         // refuses same-or-lower versionCode as a downgrade and uninstalling first would wipe local
         // app data (learned words, settings, clipboard history). Bump versionName only when
         // actually cutting a release.
-        versionCode = 46
+        versionCode = 48
         versionName = "5.6.0"
     }
 
