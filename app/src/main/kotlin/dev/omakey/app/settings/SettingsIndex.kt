@@ -115,7 +115,7 @@ internal object SettingsIndex {
 
     /** Search over the entries this Android version shows. */
     fun searchFor(sdkInt: Int): SettingsSearch<SettingKey> = SettingsSearch(
-        SettingKey.entries.filter { sdkInt >= it.minSdk }.map { key ->
+        SettingKey.entries.filter { sdkInt >= it.minSdk && (dev.omakey.app.BuildConfig.SELF_UPDATE || it.section != SettingsSectionKey.UPDATES) }.map { key ->
             SearchDocument(key, key.title, key.keywords, listOf(key.section.title, key.section.page.title))
         },
     )

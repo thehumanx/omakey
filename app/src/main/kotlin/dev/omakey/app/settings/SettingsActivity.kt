@@ -111,7 +111,7 @@ class SettingsActivity : ComponentActivity() {
         val clipboardHistory = ClipboardHistoryStore(applicationContext, clipboardDao)
         // Idempotent (see UpdateWorkScheduler's own doc) — also scheduled from the IME service,
         // this covers the case where Settings is opened before the keyboard has ever been enabled.
-        if (updatePreferences.settings.value.autoCheckEnabled) {
+        if (dev.omakey.app.BuildConfig.SELF_UPDATE && updatePreferences.settings.value.autoCheckEnabled) {
             dev.omakey.app.update.UpdateWorkScheduler.schedule(applicationContext)
         }
         setContent {
@@ -486,6 +486,8 @@ private fun SettingsScreen(
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
+                            // Play build: no update UI at all (see SELF_UPDATE in app/build.gradle.kts).
+                            if (dev.omakey.app.BuildConfig.SELF_UPDATE) {
                             val autoCheckEnabled by updatePreferences.settings.collectAsState()
                             Row(
                                 modifier = rememberSettingHighlight(SettingKey.AUTO_UPDATE_CHECKS).fillMaxWidth(),
@@ -506,6 +508,7 @@ private fun SettingsScreen(
                                 )
                             }
                             UpdateCheckRow()
+                            }
                         }
                     }
                 }

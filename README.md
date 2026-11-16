@@ -321,7 +321,8 @@ Swipe to the Tools tab for:
 
 ### Staying up to date
 
-- Since omakey isn't on the Play Store (yet), Settings' About section checks GitHub for the
+- The Google Play version updates through Play, and has no update check of its own. If you
+  installed omakey from GitHub instead, Settings' About section checks GitHub for the
   latest release instead — a manual "Check for updates" button, plus an "Automatic update checks"
   toggle (on by default) that quietly checks every 12 hours and sends a notification if there's a
   newer version, without ever downloading or installing anything itself.

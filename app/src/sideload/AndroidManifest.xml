@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Runtime-prompted on Android 13+, requested only when the user turns on "Automatic update
+         checks" in Settings (see SettingsActivity's notificationPermissionLauncher) — lets the
+         periodic check actually show its "update available" notification. Sideload flavor only:
+         the Play flavor has no update check and must not declare it. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+</manifest>

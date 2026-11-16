@@ -16,10 +16,8 @@
          in Settings (UpdatePreferences.autoCheckEnabled) without affecting the manual button. -->
     <uses-permission android:name="android.permission.INTERNET" />
 
-    <!-- Runtime-prompted on Android 13+, requested only when the user turns on "Automatic update
-         checks" in Settings (see SettingsActivity's notificationPermissionLauncher) — lets the
-         periodic check above actually show its "update available" notification. -->
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- POST_NOTIFICATIONS (for the update-available notification) is declared only in the sideload
+         flavor's manifest: src/sideload/AndroidManifest.xml. The Play build has no update check. -->
 
     <!-- usesCleartextTraffic: targetSdk 35 already defaults this to false. Declared explicitly so
          that lowering targetSdk later cannot silently re-enable plaintext HTTP for the single

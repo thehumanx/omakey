@@ -32,6 +32,23 @@ android {
         versionName = "5.6.0"
     }
 
+    // Two distribution channels from one codebase. `sideload` is the GitHub Releases APK and keeps
+    // the in-app update check. `play` is the Google Play bundle: Play forbids an app updating
+    // itself, or steering users to an APK outside Play, by any route but Play, so that build has
+    // no update UI, no background worker and no POST_NOTIFICATIONS permission (declared only in
+    // src/sideload/AndroidManifest.xml). SELF_UPDATE is the single switch the code reads.
+    flavorDimensions += "dist"
+    productFlavors {
+        create("sideload") {
+            dimension = "dist"
+            buildConfigField("boolean", "SELF_UPDATE", "true")
+        }
+        create("play") {
+            dimension = "dist"
+            buildConfigField("boolean", "SELF_UPDATE", "false")
+        }
+    }
+
     androidResources {
         // The language model is read by memory-mapping it straight out of the APK
         // (LanguageModel.mapAsset). A compressed asset has no mappable file offset — AssetManager
@@ -81,7 +98,9 @@ android {
     applicationVariants.all {
         outputs.all {
             val output = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
-            output.outputFileName = "omakey-${versionName}.apk"
+            // Sideload keeps the historical name; the Play flavor is tagged so the two never mix.
+            val tag = if (flavorName == "play") "-play" else ""
+            output.outputFileName = "omakey$tag-${versionName}.apk"
         }
     }
 }
@@ -103,11 +122,22 @@ dependencies {
     implementation(libs.androidx.material3)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
-    implementation(libs.androidx.work.runtime.ktx)
+    // Only the sideload flavor runs the periodic update check; Play has no WorkManager at all.
+    "sideloadImplementation"(libs.androidx.work.runtime.ktx)
     // Inline autofill's style bundle (UiVersions / InlineSuggestionUi): the format password managers read.
     implementation(libs.androidx.autofill)
 
     debugImplementation(libs.androidx.ui.tooling)
 
     testImplementation(libs.junit)
+}
+
+// With product flavors AGP no longer creates plain `compileDebugKotlin` / `testDebugUnitTest`.
+// CI, AGENTS.md and the Stop hook all call those names, so keep them as aggregates that cover both
+// distribution flavors — a change that breaks only the Play build must still fail the check.
+tasks.register("compileDebugKotlin") {
+    dependsOn("compileSideloadDebugKotlin", "compilePlayDebugKotlin")
+}
+tasks.register("testDebugUnitTest") {
+    dependsOn("testSideloadDebugUnitTest", "testPlayDebugUnitTest")
 }
