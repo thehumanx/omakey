@@ -2,7 +2,7 @@
  "id": "it_IT",
  "displayName": "Italian",
  "nativeName": "Italiano",
- "packVersion": "1.0.0",
+ "packVersion": "1.0.1",
  "packFormat": 1,
  "letterLayout": "qwerty_it",
  "layouts": [
