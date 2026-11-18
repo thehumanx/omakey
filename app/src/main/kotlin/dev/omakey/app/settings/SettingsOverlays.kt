@@ -249,10 +249,7 @@ internal fun ClipboardHistoryToggle(clipboardPreferences: ClipboardPreferences) 
     val settings by clipboardPreferences.settings.collectAsState()
     SettingToggle(
         key = SettingKey.SAVE_CLIPBOARD_HISTORY,
-        description = "Keeps what you copy while the keyboard is open, so you can paste it again " +
-            "from the clipboard panel. Clips an app marks as sensitive (passwords, mostly) are " +
-            "never saved, and nothing is saved while incognito is on or a password field is " +
-            "focused. Turning this off stops new entries — it doesn't delete what's already there.",
+        description = "Keep what you copy so you can paste it again later. Passwords are never saved. Turning this off doesn't delete what's saved.",
         checked = settings.historyEnabled,
         onCheckedChange = clipboardPreferences::setHistoryEnabled,
     )

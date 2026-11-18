@@ -40,6 +40,13 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.unit.sp
 import dev.omakey.app.keyboard.SoundCatalog
 import dev.omakey.app.keyboard.VibratorKeyboardFeedback
@@ -77,23 +84,90 @@ internal fun SettingsSection(title: String, titleModifier: Modifier = Modifier, 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
             text = title,
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.labelLarge.copy(fontSize = 14.sp, fontWeight = FontWeight.SemiBold),
             color = MaterialTheme.colorScheme.primary,
-            modifier = titleModifier,
+            modifier = titleModifier.padding(start = 4.dp),
         )
         Surface(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp),
             color = MaterialTheme.colorScheme.surfaceVariant,
         ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                content()
-            }
+            DividedColumn(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                rowPadding = ROW_VERTICAL_PADDING,
+                divider = MaterialTheme.colorScheme.outlineVariant,
+                content = content,
+            )
         }
     }
+}
+
+/** Space above and below every row in a section card (closed-beta feedback: settings felt
+ * congested; the 5.7.0 "grouped cards" redesign). */
+private val ROW_VERTICAL_PADDING = 14.dp
+
+/** Space between a row's text and the switch or caret at its end. It was 0, so long descriptions
+ * ran right up to the switch. */
+internal val ROW_CONTROL_GAP = 16.dp
+
+/**
+ * A column that gives each child [rowPadding] above and below and draws a hairline between
+ * neighbouring children, so a section card reads as a list of rows without every caller adding
+ * its own dividers. A child that takes no height (a row hidden by its parent setting) gets neither
+ * padding nor a divider, so hiding a row never leaves a doubled line.
+ */
+@Composable
+private fun DividedColumn(modifier: Modifier, rowPadding: Dp, divider: Color, content: @Composable () -> Unit) {
+    val lines = remember { DividerLines() }
+    Layout(
+        content = content,
+        modifier = modifier.drawWithContent {
+            drawContent()
+            val stroke = 1.dp.toPx()
+            for (y in lines.ys) drawLine(divider, Offset(0f, y), Offset(size.width, y), stroke)
+        },
+    ) { measurables, constraints ->
+        val pad = rowPadding.roundToPx()
+        val placeables = measurables.map { it.measure(constraints.copy(minHeight = 0)) }
+        val shown = placeables.count { it.height > 0 }
+        val height = placeables.sumOf { it.height } + pad * 2 * shown
+        layout(constraints.maxWidth, height.coerceIn(constraints.minHeight, constraints.maxHeight)) {
+            val ys = ArrayList<Float>()
+            var y = 0
+            var first = true
+            for (p in placeables) {
+                if (p.height == 0) { p.placeRelative(0, y); continue }
+                if (!first) ys += y.toFloat()
+                first = false
+                y += pad
+                p.placeRelative(0, y)
+                y += p.height + pad
+            }
+            lines.ys = ys
+        }
+    }
+}
+
+/** Where [DividedColumn] last placed its dividers; read at draw time, written at layout. */
+private class DividerLines {
+    var ys: List<Float> = emptyList()
+}
+
+/** A row's title and its one-line explanation: the title at body size, the explanation a step
+ * smaller and muted so the eye lands on titles first. */
+@Composable
+internal fun SettingText(title: String, description: String?, modifier: Modifier = Modifier) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(text = title, style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium))
+        if (!description.isNullOrEmpty()) SettingDescription(description)
+    }
+}
+
+/** Explanatory text under a setting, in the muted description style. */
+@Composable
+internal fun SettingDescription(text: String, modifier: Modifier = Modifier) {
+    Text(text = text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = modifier)
 }
 
 /** A section card from the index. A picker section with no row title of its own (Theme, Font…)
@@ -199,11 +273,10 @@ internal fun FontPicker(fontPreferences: FontPreferences, currentFontId: String)
 internal fun EmojiSkinTonePicker(preferences: EmojiSkinTonePreferences) {
     val current by preferences.skinTone.collectAsState()
     Column(rememberSettingHighlight(SettingKey.EMOJI_SKIN_TONE), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(text = SettingKey.EMOJI_SKIN_TONE.title, style = MaterialTheme.typography.bodyLarge)
+        Text(text = SettingKey.EMOJI_SKIN_TONE.title, style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium))
         Text(
-            text = "Applied to emoji that support it — hands, faces and people. Everything else " +
-                "is unaffected.",
-            style = MaterialTheme.typography.bodySmall,
+            text = "Used for hands, faces and people.",
+            style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Row(
@@ -235,7 +308,7 @@ internal fun EmojiSkinTonePicker(preferences: EmojiSkinTonePreferences) {
         }
         Text(
             text = current.label,
-            style = MaterialTheme.typography.bodySmall,
+            style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
@@ -245,10 +318,7 @@ internal fun EmojiSkinTonePicker(preferences: EmojiSkinTonePreferences) {
 internal fun AutocorrectToggle(settings: AutocorrectSettings, autocorrectPreferences: AutocorrectPreferences) {
     SettingToggle(
         key = SettingKey.AUTOCORRECT,
-        description = "Automatically fixes likely typos the moment you finish a word, without " +
-            "asking. Backspacing right after reverts to what you actually typed. Turning this " +
-            "off only disables the silent auto-fix — correction suggestions in the strip " +
-            "(swipe or tap to accept) stay available either way.",
+        description = "Fix typos when you finish a word. Press backspace straight after to undo the fix.",
         checked = settings.autocorrectEnabled,
         onCheckedChange = autocorrectPreferences::setAutocorrectEnabled,
     )
@@ -258,8 +328,7 @@ internal fun AutocorrectToggle(settings: AutocorrectSettings, autocorrectPrefere
 internal fun AutoCapitalizeToggle(settings: AutocorrectSettings, autocorrectPreferences: AutocorrectPreferences) {
     SettingToggle(
         key = SettingKey.AUTO_CAPITALIZE,
-        description = "Capitalizes the first letter of a new field and after sentence-ending " +
-            "punctuation (. ! ?). Off by default.",
+        description = "Start each sentence with a capital letter.",
         checked = settings.autoCapitalizeEnabled,
         onCheckedChange = autocorrectPreferences::setAutoCapitalizeEnabled,
     )
@@ -269,8 +338,7 @@ internal fun AutoCapitalizeToggle(settings: AutocorrectSettings, autocorrectPref
 internal fun DoubleTapSpaceForPeriodToggle(settings: AutocorrectSettings, autocorrectPreferences: AutocorrectPreferences) {
     SettingToggle(
         key = SettingKey.DOUBLE_TAP_PERIOD,
-        description = "Tap (or swipe right, if that's enabled) space twice quickly to insert " +
-            "a period instead of two spaces. Off by default.",
+        description = "Tap space twice to end a sentence with a full stop.",
         checked = settings.doubleTapSpaceForPeriod,
         onCheckedChange = autocorrectPreferences::setDoubleTapSpaceForPeriod,
     )
@@ -280,9 +348,7 @@ internal fun DoubleTapSpaceForPeriodToggle(settings: AutocorrectSettings, autoco
 internal fun AutoSpaceAfterPunctuationToggle(settings: AutocorrectSettings, autocorrectPreferences: AutocorrectPreferences) {
     SettingToggle(
         key = SettingKey.SPACE_AFTER_PUNCTUATION,
-        description = "Adds a space after . , ! ? ; and : so you can go straight on to the next " +
-            "word. Typing a space yourself, more punctuation, or a number like 3.14 takes it " +
-            "back. Not in web address, email or password fields. Off by default.",
+        description = "Add a space after . , ! ? : and ; so you can keep typing.",
         checked = settings.autoSpaceAfterPunctuation,
         onCheckedChange = autocorrectPreferences::setAutoSpaceAfterPunctuation,
     )
@@ -293,9 +359,7 @@ internal fun NextWordPredictionToggle(predictionPreferences: PredictionPreferenc
     val settings by predictionPreferences.settings.collectAsState()
     SettingToggle(
         key = SettingKey.NEXT_WORD_PREDICTION,
-        description = "Guesses what word comes next based on common usage and your own typing " +
-            "history, shown in the suggestion strip once you finish a word. Turn off to only " +
-            "ever see a suggestion there when there's an actual correction to offer.",
+        description = "Suggest the next word after you finish one.",
         checked = settings.nextWordPredictionEnabled,
         onCheckedChange = predictionPreferences::setNextWordPredictionEnabled,
     )
@@ -306,11 +370,7 @@ internal fun ImplicitLearningToggle(incognitoPreferences: IncognitoPreferences) 
     val settings by incognitoPreferences.settings.collectAsState()
     SettingToggle(
         key = SettingKey.LEARN_FROM_TYPING,
-        description = "Remembers names, slang and jargon you type so they stop being flagged as " +
-            "typos and start showing up as suggestions. A word has to be typed a few times before " +
-            "it's treated as real, so an occasional slip doesn't get learned. Everything stays on " +
-            "this device. Password fields are never learned from, and the incognito button in the " +
-            "keyboard's tools row pauses it for anything else.",
+        description = "Remember names and words you type often so they stop being corrected. Stays on this phone, and never learns from password fields.",
         checked = settings.implicitLearningEnabled,
         onCheckedChange = incognitoPreferences::setImplicitLearningEnabled,
     )
@@ -328,9 +388,7 @@ internal fun ImplicitLearningToggle(incognitoPreferences: IncognitoPreferences) 
 internal fun TapPreviewToggle(settings: LayoutSettings, layoutPreferences: LayoutPreferences) {
     SettingToggle(
         key = SettingKey.TAP_PREVIEW,
-        description = "Briefly shows an enlarged copy of the letter above your finger on " +
-            "every tap. Distinct from \"Long press for special characters\" — this one is " +
-            "the ordinary per-tap preview, not the held-key accent picker.",
+        description = "Show a bigger copy of each letter as you tap it.",
         checked = settings.showTapPreview,
         onCheckedChange = layoutPreferences::setShowTapPreview,
     )
@@ -343,9 +401,7 @@ internal fun TapPreviewToggle(settings: LayoutSettings, layoutPreferences: Layou
 internal fun SwapEmojiLanguageToggle(settings: LayoutSettings, layoutPreferences: LayoutPreferences) {
     SettingToggle(
         key = SettingKey.SWAP_EMOJI_LANGUAGE,
-        description = "Normally the language button sits at the right of the suggestion bar and " +
-            "the emoji key next to the spacebar. Turn on to put the emoji button up top and the " +
-            "language key by the spacebar. Only applies with two or more languages.",
+        description = "Put the language key next to the spacebar and the emoji button in the bar above the keys.",
         checked = settings.swapEmojiAndLanguage,
         onCheckedChange = layoutPreferences::setSwapEmojiAndLanguage,
     )
@@ -367,43 +423,37 @@ internal fun TopStripPagesSection(topStripPreferences: dev.omakey.app.keyboard.T
             onCheckedChange = { topStripPreferences.setPageShown(page, it) },
         )
     }
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(
-            text = "The bar above the keys has pages you swipe between. Turn off the ones you " +
-                "don't use; with one left, it stays put.",
-            style = MaterialTheme.typography.bodySmall,
-        )
-        PageToggle(
-            dev.omakey.app.keyboard.TopStripTab.SUGGESTIONS,
-            SettingKey.BAR_SUGGESTIONS,
-            "Word suggestions, quick access and the language button. Off hides all three; " +
-                "autocorrect, swiping up or down through suggestions and learning new words still work.",
-        )
-        PageToggle(dev.omakey.app.keyboard.TopStripTab.NUMBERS, SettingKey.BAR_NUMBERS, "A row of digits.")
-        PageToggle(
-            dev.omakey.app.keyboard.TopStripTab.TOOLS,
-            SettingKey.BAR_TEXT_TOOLS,
-            "Undo, redo, select all, copy, cut, paste and clipboard history.",
-        )
-        // Shown on every Android version; below 11 there is nothing for it to ask for, which the
-        // description says rather than hiding a setting people read about.
-        SettingToggle(
-            key = SettingKey.AUTOFILL,
-            description = "Logins from your password manager, like Bitwarden, on the Suggestions " +
-                "page. Android 11 and newer, with the manager's inline autofill turned on. omakey " +
-                "only shows them: it never sees what they contain.",
-            checked = settings.autofillSuggestions,
-            onCheckedChange = topStripPreferences::setAutofillSuggestions,
-        )
-    }
+    // No wrapping Column: each row is its own row of the section card.
+    Text(
+        text = "Pages you can swipe between above the keys. Turn off the ones you don't need.",
+        style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    PageToggle(
+        dev.omakey.app.keyboard.TopStripTab.SUGGESTIONS,
+        SettingKey.BAR_SUGGESTIONS,
+        "Word suggestions, shortcuts and the language button.",
+    )
+    PageToggle(dev.omakey.app.keyboard.TopStripTab.NUMBERS, SettingKey.BAR_NUMBERS, "A row of numbers.")
+    PageToggle(
+        dev.omakey.app.keyboard.TopStripTab.TOOLS,
+        SettingKey.BAR_TEXT_TOOLS,
+        "Undo, redo, select all, copy, cut, paste and your clipboard.",
+    )
+    // Shown on every Android version; below 11 there is nothing for it to ask for, which the
+    // description says rather than hiding a setting people read about.
+    SettingToggle(
+        key = SettingKey.AUTOFILL,
+        description = "Shows logins from apps like Bitwarden above the keys. omakey can't see the passwords.",
+        checked = settings.autofillSuggestions,
+        onCheckedChange = topStripPreferences::setAutofillSuggestions,
+    )
 }
 
 @Composable
 internal fun EdgePaddingToggle(settings: LayoutSettings, layoutPreferences: LayoutPreferences) {
     SettingToggle(
         key = SettingKey.EDGE_PADDING,
-        description = "Leave a gap down the left and right edges, so the outer keys aren't flush " +
-            "against a curved or bezel-less screen edge. Costs a little key width.",
+        description = "Leave space at the left and right edges. Helps on curved screens; keys get a little narrower.",
         checked = settings.edgePadding,
         onCheckedChange = layoutPreferences::setEdgePadding,
     )
@@ -411,30 +461,26 @@ internal fun EdgePaddingToggle(settings: LayoutSettings, layoutPreferences: Layo
 
 @Composable
 internal fun AppearanceLayoutToggles(settings: LayoutSettings, layoutPreferences: LayoutPreferences) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        SettingToggle(
-            key = SettingKey.KEY_BACKGROUNDS,
-            description = "Shows a background box behind every key, instead of the flat default. " +
-                "Normal mode only — Grid mode always shows bordered keys.",
-            checked = settings.showKeyBackgrounds,
-            onCheckedChange = layoutPreferences::setShowKeyBackgrounds,
-        )
-        SettingToggle(
-            key = SettingKey.HOME_ROW_HIGHLIGHT,
-            description = "A light stripe behind the ASDF row to help find it by feel.",
-            checked = settings.showMiddleRowStripe,
-            onCheckedChange = layoutPreferences::setShowMiddleRowStripe,
-        )
-    }
+    // No wrapping Column: each row is its own row of the section card.
+    SettingToggle(
+        key = SettingKey.KEY_BACKGROUNDS,
+        description = "Draw a box behind each key.",
+        checked = settings.showKeyBackgrounds,
+        onCheckedChange = layoutPreferences::setShowKeyBackgrounds,
+    )
+    SettingToggle(
+        key = SettingKey.HOME_ROW_HIGHLIGHT,
+        description = "Shade the middle row of letters so it stands out.",
+        checked = settings.showMiddleRowStripe,
+        onCheckedChange = layoutPreferences::setShowMiddleRowStripe,
+    )
 }
 
 @Composable
 internal fun CapitalizationToggleSection(settings: LayoutSettings, layoutPreferences: LayoutPreferences) {
     SettingToggle(
         key = SettingKey.ALWAYS_CAPITALS,
-        description = "Keycaps always show uppercase letters, regardless of shift state " +
-            "(omakey's default look). Turn off for the usual keyboard behavior — lowercase " +
-            "keycaps that switch to uppercase only while shift is on.",
+        description = "Show capitals on the keys all the time. Turn off to see lowercase until you press Shift.",
         checked = settings.alwaysShowUppercaseLetters,
         onCheckedChange = layoutPreferences::setAlwaysShowUppercaseLetters,
     )
@@ -444,9 +490,7 @@ internal fun CapitalizationToggleSection(settings: LayoutSettings, layoutPrefere
 internal fun SecondarySymbolsToggle(settings: LayoutSettings, layoutPreferences: LayoutPreferences) {
     SettingToggle(
         key = SettingKey.SECONDARY_SYMBOLS,
-        description = "Show the digit or symbol a key types when held, small above its letter. " +
-            "Holding a key and letting go then types that symbol; slide to pick its other characters. " +
-            "Not shown while your own long-press symbols are set.",
+        description = "Show a small symbol in the corner of each key. Hold the key to type it.",
         checked = settings.showSecondarySymbols,
         onCheckedChange = layoutPreferences::setShowSecondarySymbols,
     )
@@ -458,8 +502,7 @@ internal fun SecondarySymbolsToggle(settings: LayoutSettings, layoutPreferences:
 internal fun NumberPadSection(settings: LayoutSettings, layoutPreferences: LayoutPreferences) {
     SettingToggle(
         key = SettingKey.NUMBER_PAD,
-        description = "Open a number pad in fields that only take numbers, like prices, codes " +
-            "and phone numbers. Turn a kind of field off if an app's text box gets numbers by mistake.",
+        description = "Show a number pad in boxes that only take numbers, like prices and phone numbers.",
         checked = settings.numberPad,
         onCheckedChange = layoutPreferences::setNumberPad,
     )
@@ -490,8 +533,7 @@ internal fun NumberPadSection(settings: LayoutSettings, layoutPreferences: Layou
 internal fun FleksySymbolsToggle(settings: LayoutSettings, layoutPreferences: LayoutPreferences) {
     SettingToggle(
         key = SettingKey.FLEKSY_SYMBOLS,
-        description = "The ?123 page uses Fleksy's symbol layout, and holding a letter gives the " +
-            "symbol in the same spot on that page. Turn off for omakey's original symbols page.",
+        description = "Arrange the ?123 page like Fleksy. Turn off for omakey's original arrangement.",
         checked = settings.fleksySymbols,
         onCheckedChange = layoutPreferences::setFleksySymbols,
     )
@@ -504,12 +546,10 @@ internal fun FleksySymbolsToggle(settings: LayoutSettings, layoutPreferences: La
 internal fun PopupSymbolsField(settings: LayoutSettings, layoutPreferences: LayoutPreferences) {
     var text by remember { mutableStateOf(settings.popupSymbols.joinToString(" ")) }
     Column(rememberSettingHighlight(SettingKey.POPUP_SYMBOLS).fillMaxWidth()) {
-        Text(text = SettingKey.POPUP_SYMBOLS.title, style = MaterialTheme.typography.bodyLarge)
+        Text(text = SettingKey.POPUP_SYMBOLS.title, style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium))
         Text(
-            text = "The symbols you use most, e.g. @ # \$ _ &. When set, holding any letter shows " +
-                "exactly these, in this order, instead of its own accents and symbols. Leave empty " +
-                "for each key's own.",
-            style = MaterialTheme.typography.bodySmall,
+            text = "Choose what appears when you hold any letter, like @ # \$ _ &. Leave empty to keep each key's own.",
+            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.height(8.dp))
         OutlinedTextField(
@@ -548,15 +588,15 @@ internal fun UnindexedSettingToggle(
     modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .toggleable(value = checked, role = Role.Switch, onValueChange = onCheckedChange),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        Column(Modifier.weight(1f)) {
-            Text(text = title, style = MaterialTheme.typography.bodyLarge)
-            Text(text = description, style = MaterialTheme.typography.bodySmall)
-        }
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        SettingText(title, description, Modifier.weight(1f))
+        Spacer(Modifier.width(ROW_CONTROL_GAP))
+        // The whole row toggles; the switch only shows the state.
+        Switch(checked = checked, onCheckedChange = null)
     }
 }
 
@@ -574,20 +614,16 @@ internal fun UnindexedClickableSettingRow(title: String, description: String, on
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(vertical = 4.dp),
+            .clickable(onClick = onClick),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        Column(Modifier.weight(1f)) {
-            Text(text = title, style = MaterialTheme.typography.bodyLarge)
-            Text(text = description, style = MaterialTheme.typography.bodySmall)
-        }
+        SettingText(title, description, Modifier.weight(1f))
+        Spacer(Modifier.width(ROW_CONTROL_GAP))
         Icon(
             imageVector = dev.omakey.core.icons.PhosphorLineCaretRight,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(start = 12.dp).size(18.dp),
+            modifier = Modifier.size(18.dp),
         )
     }
 }
@@ -595,111 +631,88 @@ internal fun UnindexedClickableSettingRow(title: String, description: String, on
 @Composable
 internal fun GestureSettingsSection(gesturePreferences: GesturePreferences) {
     val settings by gesturePreferences.settings.collectAsState()
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(
-            text = SettingKey.SWIPE_DISTANCE.title,
-            style = MaterialTheme.typography.bodyLarge,
-            modifier = Modifier.fillMaxWidth().then(rememberSettingHighlight(SettingKey.SWIPE_DISTANCE)),
-        )
-        Text(
-            text = "Shorter = swipes (like delete-word) trigger more easily, but taps with a " +
-                "little finger drift are more likely to be read as a swipe. Longer = the " +
-                "opposite trade-off.",
-            style = MaterialTheme.typography.bodySmall,
-        )
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(text = "Short", style = MaterialTheme.typography.bodySmall)
-            Slider(
-                value = settings.swipeSensitivity,
-                onValueChange = gesturePreferences::setSwipeSensitivity,
-                valueRange = GestureSettings.MIN_SENSITIVITY..GestureSettings.MAX_SENSITIVITY,
-                modifier = Modifier.weight(1f),
-            )
-            Text(text = "Long", style = MaterialTheme.typography.bodySmall)
-        }
-        Spacer(Modifier.height(12.dp))
-        SettingToggle(
-            key = SettingKey.LONG_PRESS_SPECIAL,
-            description = "Long-press a key (like e, a, or the period) to pick an accent or " +
-                "punctuation variant. Turning this off makes every long-press just repeat the tap.",
-            checked = settings.showKeyPopup,
-            onCheckedChange = gesturePreferences::setShowKeyPopup,
-        )
-        Spacer(Modifier.height(12.dp))
-        SettingToggle(
-            key = SettingKey.SWIPE_RIGHT_FOR_SPACE,
-            description = "Swipe right anywhere on the keys to insert a space. Off by default.",
-            checked = settings.swipeRightForSpace,
-            onCheckedChange = gesturePreferences::setSwipeRightForSpace,
-        )
-        SettingToggle(
-            key = SettingKey.SWIPE_LEFT_SPACE_STEP,
-            description = "Off: swipe left deletes the last word together with a space after it, " +
-                "so \"hello my name is \" becomes \"hello my name \". On: a space after the word " +
-                "takes a swipe of its own, and the word goes on the next one.",
-            checked = settings.swipeLeftSpaceIsOwnStep,
-            onCheckedChange = gesturePreferences::setSwipeLeftSpaceIsOwnStep,
-        )
-        SettingToggle(
-            key = SettingKey.SWIPE_SPACEBAR_LANGUAGE,
-            description = "With two or more languages, swipe right on the spacebar for the next " +
-                "language and left for the one before. The language button at the right of the " +
-                "suggestion bar is hidden while this is on. Hold the spacebar and drag to move " +
-                "the cursor, as before.",
-            checked = settings.swipeSpacebarForLanguage,
-            onCheckedChange = gesturePreferences::setSwipeSpacebarForLanguage,
-        )
-    }
+    // No wrapping Column: each setting is its own row of the section card, so it gets a divider.
+    SliderSetting(
+        title = SettingKey.SWIPE_DISTANCE.title,
+        description = "Shorter is quicker but easier to trigger by accident.",
+        value = settings.swipeSensitivity,
+        onValueChange = gesturePreferences::setSwipeSensitivity,
+        range = GestureSettings.MIN_SENSITIVITY..GestureSettings.MAX_SENSITIVITY,
+        low = "Short",
+        high = "Long",
+        modifier = rememberSettingHighlight(SettingKey.SWIPE_DISTANCE),
+    )
+    SettingToggle(
+        key = SettingKey.LONG_PRESS_SPECIAL,
+        description = "Hold a key to pick an accent or symbol, like é or !.",
+        checked = settings.showKeyPopup,
+        onCheckedChange = gesturePreferences::setShowKeyPopup,
+    )
+    SettingToggle(
+        key = SettingKey.SWIPE_RIGHT_FOR_SPACE,
+        description = "Swipe right on the keys to type a space.",
+        checked = settings.swipeRightForSpace,
+        onCheckedChange = gesturePreferences::setSwipeRightForSpace,
+    )
+    SettingToggle(
+        key = SettingKey.SWIPE_LEFT_SPACE_STEP,
+        description = "Swipe left removes the space first, then the word on the next swipe.",
+        checked = settings.swipeLeftSpaceIsOwnStep,
+        onCheckedChange = gesturePreferences::setSwipeLeftSpaceIsOwnStep,
+    )
+    SettingToggle(
+        key = SettingKey.SWIPE_SPACEBAR_LANGUAGE,
+        description = "Swipe left or right on the spacebar to switch language. Hold and drag it to move the cursor.",
+        checked = settings.swipeSpacebarForLanguage,
+        onCheckedChange = gesturePreferences::setSwipeSpacebarForLanguage,
+    )
 }
 
 @Composable
 internal fun FeedbackSettingsSection(preferences: HapticSoundPreferences, feedback: VibratorKeyboardFeedback) {
     val settings by preferences.settings.collectAsState()
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    // One card row per setting; a sub-setting shown while its parent is on sits in the same row.
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         SettingToggle(
             key = SettingKey.HAPTIC_FEEDBACK,
-            description = "A short vibration on every key press and a stronger one on swipes.",
+            description = "Vibrate a little on each key press.",
             checked = settings.hapticEnabled,
             onCheckedChange = preferences::setHapticEnabled,
         )
         if (settings.hapticEnabled) {
-            Text(text = "Strength", style = MaterialTheme.typography.bodyLarge)
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(text = "Light", style = MaterialTheme.typography.bodySmall)
-                Slider(
-                    // onValueChangeFinished fires a preview tick at the strength the user just
-                    // landed on — dragging a "strength" slider is meaningless without feeling the
-                    // result immediately, a plain number tells you nothing.
-                    value = settings.hapticStrength,
-                    onValueChange = preferences::setHapticStrength,
-                    onValueChangeFinished = { feedback.onKeyPress() },
-                    valueRange = HapticSoundSettings.MIN_HAPTIC_STRENGTH..HapticSoundSettings.MAX_HAPTIC_STRENGTH,
-                    modifier = Modifier.weight(1f),
-                )
-                Text(text = "Strong", style = MaterialTheme.typography.bodySmall)
-            }
+            // onValueChangeFinished fires a preview tick at the strength the user just landed on —
+            // dragging a "strength" slider is meaningless without feeling the result immediately.
+            SliderSetting(
+                title = "Strength",
+                description = null,
+                value = settings.hapticStrength,
+                onValueChange = preferences::setHapticStrength,
+                onValueChangeFinished = { feedback.onKeyPress() },
+                range = HapticSoundSettings.MIN_HAPTIC_STRENGTH..HapticSoundSettings.MAX_HAPTIC_STRENGTH,
+                low = "Light",
+                high = "Strong",
+            )
         }
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         SettingToggle(
             key = SettingKey.KEY_SOUNDS,
-            description = "Plays a keypress click sound while typing.",
+            description = "Play a click on each key press.",
             checked = settings.soundEnabled,
             onCheckedChange = preferences::setSoundEnabled,
         )
         if (settings.soundEnabled) {
-            Text(text = "Volume", style = MaterialTheme.typography.bodyLarge)
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(text = "Quiet", style = MaterialTheme.typography.bodySmall)
-                Slider(
-                    value = settings.soundVolume,
-                    onValueChange = preferences::setSoundVolume,
-                    onValueChangeFinished = { feedback.onKeyPress() },
-                    valueRange = HapticSoundSettings.MIN_SOUND_VOLUME..HapticSoundSettings.MAX_SOUND_VOLUME,
-                    modifier = Modifier.weight(1f),
-                )
-                Text(text = "Loud", style = MaterialTheme.typography.bodySmall)
-            }
-            Text(text = "Sound", style = MaterialTheme.typography.bodyLarge)
+            SliderSetting(
+                title = "Volume",
+                description = null,
+                value = settings.soundVolume,
+                onValueChange = preferences::setSoundVolume,
+                onValueChangeFinished = { feedback.onKeyPress() },
+                range = HapticSoundSettings.MIN_SOUND_VOLUME..HapticSoundSettings.MAX_SOUND_VOLUME,
+                low = "Quiet",
+                high = "Loud",
+            )
+            SettingText("Sound", null)
             SoundChoicePicker(preferences, settings.soundChoice, feedback)
         }
     }
@@ -735,21 +748,12 @@ private fun SoundChoicePicker(preferences: HapticSoundPreferences, currentChoice
 @Composable
 internal fun AccessibleModeToggle(accessibilityPreferences: AccessibilityPreferences) {
     val enabled by accessibilityPreferences.forceAccessibleMode.collectAsState()
-    Row(
-        modifier = rememberSettingHighlight(SettingKey.ACCESSIBLE_MODE).fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(text = SettingKey.ACCESSIBLE_MODE.title, style = MaterialTheme.typography.bodyLarge)
-            Text(
-                text = "Disables swipe gestures in favor of ordinary key taps, for use with " +
-                    "TalkBack. Turns on automatically when TalkBack is active.",
-                style = MaterialTheme.typography.bodySmall,
-            )
-        }
-        Switch(checked = enabled, onCheckedChange = accessibilityPreferences::setForceAccessibleMode)
-    }
+    SettingToggle(
+        key = SettingKey.ACCESSIBLE_MODE,
+        description = "Turn off swipe gestures so every key works with TalkBack. Turns on by itself when TalkBack is running.",
+        checked = enabled,
+        onCheckedChange = accessibilityPreferences::setForceAccessibleMode,
+    )
 }
 
 /** The one manual, opt-in network call in the whole app — see [dev.omakey.core.update.UpdateChecker]'s
@@ -785,14 +789,14 @@ internal fun UpdateCheckRow() {
             UpdateCheckStatus.Idle, UpdateCheckStatus.Checking -> Unit
             UpdateCheckStatus.Failed -> Text(
                 text = "Couldn't check for updates — try again later.",
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             is UpdateCheckStatus.Checked -> if (current.result.updateAvailable) {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(
                         text = "Version ${current.result.latestVersion} is available.",
-                        style = MaterialTheme.typography.bodySmall,
+                        style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     TextButton(onClick = {
                         context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(current.result.releaseUrl)))
@@ -803,7 +807,7 @@ internal fun UpdateCheckRow() {
             } else {
                 Text(
                     text = "You're up to date.",
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -828,10 +832,10 @@ internal fun SpacebarSideKeyRow(settings: LayoutSettings, layoutPreferences: Lay
     val current = settings.spacebarSideKey
     var custom by remember { mutableStateOf(current.takeIf { it !in SPACEBAR_SIDE_CHOICES }.orEmpty()) }
     Column(rememberSettingHighlight(SettingKey.SPACEBAR_SIDE_KEY), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(text = SettingKey.SPACEBAR_SIDE_KEY.title, style = MaterialTheme.typography.bodyLarge)
+        Text(text = SettingKey.SPACEBAR_SIDE_KEY.title, style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium))
         Text(
             text = "What the key to the right of the spacebar types. Hold it for the one it replaced.",
-            style = MaterialTheme.typography.bodySmall,
+            style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -881,5 +885,35 @@ internal fun SpacebarSideKeyRow(settings: LayoutSettings, layoutPreferences: Lay
             placeholder = { Text(text = "Or type any one character") },
             singleLine = true,
         )
+    }
+}
+
+/** A setting set with a slider: title and optional description above, the slider between its two
+ * end labels below. */
+@Composable
+internal fun SliderSetting(
+    title: String,
+    description: String?,
+    value: Float,
+    onValueChange: (Float) -> Unit,
+    range: ClosedFloatingPointRange<Float>,
+    low: String,
+    high: String,
+    modifier: Modifier = Modifier,
+    onValueChangeFinished: (() -> Unit)? = null,
+) {
+    Column(modifier.fillMaxWidth()) {
+        SettingText(title, description)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            SettingDescription(low)
+            Slider(
+                value = value,
+                onValueChange = onValueChange,
+                onValueChangeFinished = onValueChangeFinished,
+                valueRange = range,
+                modifier = Modifier.weight(1f),
+            )
+            SettingDescription(high)
+        }
     }
 }

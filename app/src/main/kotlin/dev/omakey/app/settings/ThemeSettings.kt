@@ -61,6 +61,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.font.FontWeight
 import dev.omakey.core.locale.KeyboardLocale
 import dev.omakey.core.icons.PhosphorLineCopy
 import dev.omakey.core.layout.LayoutPreferences
@@ -150,7 +151,7 @@ internal fun ThemePicker(
         }
 
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-        Text(text = "Custom themes", style = MaterialTheme.typography.bodyLarge)
+        Text(text = "Custom themes", style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium))
 
         // null designedForLayoutMode = made before this field existed, or never re-tagged —
         // shown regardless of mode rather than disappearing from a list it used to be in.
@@ -158,7 +159,7 @@ internal fun ThemePicker(
         if (visibleCustomThemes.isEmpty() && customThemes.isNotEmpty()) {
             Text(
                 text = "You have custom themes, but none are tagged for ${if (layoutMode == dev.omakey.core.theme.LayoutMode.GRID) "Grid" else "Normal"} mode yet — edit one to tag it, or create a new one below.",
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -188,7 +189,7 @@ internal fun ThemePicker(
             ) {
                 Text(text = "+", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary)
             }
-            Text(text = "Create your own theme", style = MaterialTheme.typography.bodyLarge)
+            Text(text = "Create your own theme", style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium))
         }
     }
 
@@ -443,7 +444,7 @@ internal fun ThemeEditorOverlay(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(text = "Show key backgrounds", style = MaterialTheme.typography.bodyLarge)
+                    Text(text = "Show key backgrounds", style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium))
                     Switch(
                         checked = layoutSettings.showKeyBackgrounds,
                         onCheckedChange = layoutPreferences::setShowKeyBackgrounds,
