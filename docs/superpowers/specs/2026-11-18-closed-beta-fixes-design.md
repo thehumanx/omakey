@@ -116,7 +116,7 @@ the theme name.
 ### 6. Grid colours (custom-theme derivation)
 `ThemeDerivation.fromBackground`'s grid border moves from "75 % toward white/black, at least 3:1"
 to a soft line: mixed toward the label colour until it reaches a contrast band of roughly
-1.5–2.0:1 against the background (exact band chosen from the HTML mock). Keys get a touch more
+1.5–2.0:1 against the background (chosen from the HTML mock: **Soft, 1.6–2.0:1**; settings rows: **style A, grouped cards**; copy approved as written — developer, 2026-11-18). Keys get a touch more
 separation from the background where they're near-identical. Built-in presets untouched. Existing
 custom themes that never overrode the border pick up the new value (they follow the background).
 Unit tests pin the band.

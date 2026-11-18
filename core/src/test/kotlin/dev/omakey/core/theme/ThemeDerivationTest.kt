@@ -33,7 +33,27 @@ class ThemeDerivationTest {
         for (bg in backgrounds) {
             val p = ThemeDerivation.fromBackground(bg)
             assertTrue("accent on ${bg.hex()}", contrast(p.accent, p.key) >= MIN_UI_CONTRAST)
-            assertTrue("border on ${bg.hex()}", contrast(p.gridBorder, bg) >= MIN_UI_CONTRAST)
+        }
+    }
+
+    /** Closed-beta report: derived grid borders looked harsh. The border is a soft line now (the
+     * "Soft" band picked from the settings mock), on the mock's six backgrounds and on random ones. */
+    @Test
+    fun `grid border is soft but visible`() {
+        val random = kotlin.random.Random(7)
+        val mock = listOf(0x2B2B2EL, 0x101010L, 0x1D2A4AL, 0x0F5C5AL, 0xE9DFCCL, 0xFAFAFAL)
+        val all = (mock + List(20) { random.nextLong(0x1000000L) }).map { ColorSpec(0xFF000000L or it) } + backgrounds
+        for (bg in all) {
+            val ratio = contrast(ThemeDerivation.fromBackground(bg).gridBorder, bg)
+            assertTrue("border on ${bg.hex()}: $ratio", ratio in ThemeDerivation.GRID_BORDER_CONTRAST)
+        }
+    }
+
+    @Test
+    fun `derived keys stand off the background`() {
+        for (bg in backgrounds) {
+            val p = ThemeDerivation.fromBackground(bg)
+            assertTrue("key on ${bg.hex()}: ${contrast(p.key, bg)}", contrast(p.key, bg) >= ThemeDerivation.MIN_KEY_SEPARATION)
         }
     }
 

@@ -14,12 +14,21 @@ import kotlin.math.pow
  *
  * Contrast is measured the WCAG way (relative luminance, sRGB-linearised), and the floors are the
  * WCAG ones: [MIN_TEXT_CONTRAST] (4.5:1) for key labels, [MIN_UI_CONTRAST] (3:1) for the accent
- * and the grid border, which are non-text UI.
+ * which is non-text UI. The grid border is a deliberately
+ * soft divider ([GRID_BORDER_CONTRAST]); keys stand off the background by [MIN_KEY_SEPARATION].
  */
 object ThemeDerivation {
 
     const val MIN_TEXT_CONTRAST = 4.5
     const val MIN_UI_CONTRAST = 3.0
+
+    /** Least contrast between a derived key and the background, so keys read as keys. */
+    const val MIN_KEY_SEPARATION = 1.08
+
+    /** How far a derived grid border stands from the background: a soft line, not a frame. Picked
+     * from the settings mock ("Soft"); the old 3:1 floor read as harsh outlines on every key. The
+     * keys themselves still separate from the background by colour, so the border needn't carry it. */
+    val GRID_BORDER_CONTRAST: ClosedFloatingPointRange<Double> = 1.6..2.0
 
     data class Palette(
         val isDark: Boolean,
@@ -55,6 +64,10 @@ object ThemeDerivation {
             // whichever text it gets until it does.
             val text = textOn(key)
             key = untilContrast(key, text, MIN_TEXT_CONTRAST, towardsLight = text == DARK_TEXT)
+            // With a soft grid border the key's own colour carries the separation, so it must not
+            // melt into the background (mid-greys did: 1.03:1). Away from the label, so text only
+            // gets more readable.
+            key = untilContrast(key, background, MIN_KEY_SEPARATION, towardsLight = textOn(key) == DARK_TEXT)
         }
         val keyDark = textOn(key) == LIGHT_TEXT
         val keyTap = if (keyDark) mix(key, WHITE, 0.18) else mix(key, BLACK, 0.16)
@@ -67,8 +80,20 @@ object ThemeDerivation {
             // Neutral like every preset's spacebar; colour is the user's to add.
             spacebar = key,
             accent = accentFor(background, key, keyDark),
-            gridBorder = untilContrast(if (dark) mix(background, WHITE, 0.75) else mix(background, BLACK, 0.75), background, MIN_UI_CONTRAST, towardsLight = dark),
+            gridBorder = softBorder(background),
         )
+    }
+
+    /** The background moved toward its own label colour in fine steps, stopping at the bottom of
+     * [GRID_BORDER_CONTRAST]: the gentlest line that still reads. Fine steps keep it from
+     * overshooting the band; mixing from the background each time avoids integer-rounding stalls. */
+    private fun softBorder(background: ColorSpec): ColorSpec {
+        val target = textOn(background)
+        for (step in 1..100) {
+            val c = mix(background, target, step / 100.0)
+            if (contrast(c, background) >= GRID_BORDER_CONTRAST.start) return c
+        }
+        return target
     }
 
     /** The home-row tint for a light or dark keyboard: the label's own direction (white on dark,
