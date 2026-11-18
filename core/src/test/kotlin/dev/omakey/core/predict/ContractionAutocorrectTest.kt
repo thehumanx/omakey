@@ -61,4 +61,25 @@ class ContractionAutocorrectTest {
         assertEquals("I'm", matchCase("Im", index.correct("Im")!!))
         assertEquals("I'm", matchCase("im", index.correct("im")!!))
     }
+
+    /** "IM" in capitals is "instant message", not a shouted "I'm". A capitalised two-letter word
+     * reads as an abbreviation; longer all-caps words ("DONT") are still shouting. */
+    @Test
+    fun `an all-caps two-letter word is left as an abbreviation`() {
+        for (word in listOf("IM", "ID")) assertNull(word, index.correct(word))
+        assertEquals("DON'T", matchCase("DONT", index.correct("DONT")!!))
+    }
+
+    /** "yall" was in both the shorthand list and the contraction table; shorthand won, so it never
+     * became "y'all". */
+    @Test
+    fun `yall becomes y'all`() {
+        assertEquals("y'all", index.correct("yall"))
+    }
+
+    @Test
+    fun `no shorthand word hides a contraction`() {
+        val english = dev.omakey.core.locale.LanguageProfile.English
+        assertEquals(emptySet<String>(), english.keepAsTyped intersect english.contractions.keys)
+    }
 }

@@ -347,8 +347,9 @@ class AutocorrectIndex(
         }
         val lower = typed.toLookupForm()
         if (lower in profile.keepAsTyped) return null
-        // Before the length gate: "im" and "id" are shorter than MIN_LENGTH.
-        contractionOnSpace(lower)?.let { return it }
+        // Before the length gate: "im" and "id" are shorter than MIN_LENGTH. A two-letter word in
+        // capitals ("IM", "ID") is an abbreviation, not a shouted "I'm".
+        if (!isAbbreviation(typed)) contractionOnSpace(lower)?.let { return it }
         if (lower.length < MIN_LENGTH || lower.length > MAX_LENGTH) return null
         if (!profile.isWord(lower)) return null
         if (isKnown(lower)) return null // never "correct" an already-real word
@@ -378,6 +379,9 @@ class AutocorrectIndex(
      *
      * Returned exactly as the table writes it ("I'm"), so `matchCase` keeps its capital.
      */
+    private fun isAbbreviation(typed: String): Boolean =
+        typed.length <= 2 && typed.count { it.isLetter() } > 1 && typed.none { it.isLowerCase() }
+
     private fun contractionOnSpace(lower: String): String? {
         val languageModel = model ?: return null
         val contraction = profile.contractions[lower] ?: return null

@@ -28,7 +28,7 @@ android {
         // refuses same-or-lower versionCode as a downgrade and uninstalling first would wipe local
         // app data (learned words, settings, clipboard history). Bump versionName only when
         // actually cutting a release.
-        versionCode = 49
+        versionCode = 50
         versionName = "5.7.0"
     }
 

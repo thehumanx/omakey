@@ -151,9 +151,10 @@ private fun DividedColumn(modifier: Modifier, rowPadding: Dp, divider: Color, co
     }
 }
 
-/** Where [DividedColumn] last placed its dividers; read at draw time, written at layout. */
+/** Where [DividedColumn] last placed its dividers; written at layout, read at draw time. State, so
+ * a row that changes height without changing the card's size still redraws the lines in place. */
 private class DividerLines {
-    var ys: List<Float> = emptyList()
+    var ys: List<Float> by mutableStateOf(emptyList())
 }
 
 /** A row's title and its one-line explanation: the title at body size, the explanation a step
