@@ -430,9 +430,9 @@ private fun SettingsScreen(
                         }
                         SettingsSectionKey.SUGGESTION_BAR -> TopStripPagesSection(topStripPreferences)
                         SettingsSectionKey.BUTTONS -> {
+                            EmojiSlotKeyRow(layoutSettings, layoutPreferences)
                             SpacebarSideKeyRow(layoutSettings, layoutPreferences)
-                            SwapEmojiLanguageToggle(layoutSettings, layoutPreferences)
-                            TapPreviewToggle(layoutSettings, layoutPreferences)
+                            TapPreviewStylePicker(layoutSettings, layoutPreferences)
                         }
                         SettingsSectionKey.SYMBOLS -> {
                             FleksySymbolsToggle(layoutSettings, layoutPreferences)

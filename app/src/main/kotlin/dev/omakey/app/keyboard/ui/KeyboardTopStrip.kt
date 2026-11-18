@@ -277,11 +277,11 @@ private fun SuggestionBar(
 ) {
     val trailing = dev.omakey.core.layout.SuggestionBarButtons.trailing(
         languageCount = uiState.languages.size,
-        swapEmojiAndLanguage = uiState.layoutSettings.swapEmojiAndLanguage,
+        emojiSlotKey = uiState.layoutSettings.emojiSlotKey,
         swipeSpacebarForLanguage = uiState.gestureSettings.swipeSpacebarForLanguage,
         gesturesActive = gesturesActive,
     )
-    val hasTrailing = trailing != dev.omakey.core.layout.SuggestionBarButtons.Trailing.NONE
+    val hasTrailing = trailing.isNotEmpty()
     Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
         StripButton(
             theme = theme,
@@ -328,16 +328,15 @@ private fun SuggestionBar(
         }
         // Which button (if any) goes here is SuggestionBarButtons' rule, shared with the autofill
         // request so its chips are sized to the room left.
-        if (trailing == dev.omakey.core.layout.SuggestionBarButtons.Trailing.LANGUAGE) {
-            StripButton(
+        for (button in trailing) when (button) {
+            dev.omakey.core.layout.SuggestionBarButtons.Trailing.LANGUAGE -> StripButton(
                 theme = theme,
                 active = uiState.languagePickerOpen,
                 description = "Switch language",
                 onClick = { feedback.onKeyPress(); viewModel.nextLanguage() },
                 onLongClick = { feedback.onKeyPress(); viewModel.openLanguagePicker() },
             ) { tint -> Icon(PhosphorGlobe, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp)) }
-        } else if (trailing == dev.omakey.core.layout.SuggestionBarButtons.Trailing.EMOJI) {
-            StripButton(
+            dev.omakey.core.layout.SuggestionBarButtons.Trailing.EMOJI -> StripButton(
                 theme = theme,
                 active = uiState.activeExtensionId != null,
                 description = "Emoji and extensions",

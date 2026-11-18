@@ -35,6 +35,27 @@ class FeedbackTuningTest {
     }
 
     @Test
+    fun `deleting a word feels the same as typing a key`() {
+        // Reported on a Galaxy S25 Ultra: swipe-to-delete buzzed noticeably harder than typing,
+        // and held, it repeats every 150 ms. The swoosh sound already tells it apart.
+        for (s in strengths) {
+            assertEquals(
+                FeedbackTuning.primitiveScale(FeedbackKind.KEY_PRESS, s),
+                FeedbackTuning.primitiveScale(FeedbackKind.SWIPE_DELETE, s),
+                0.0001f,
+            )
+            assertEquals(
+                FeedbackTuning.oneShotDurationMs(FeedbackKind.KEY_PRESS, s),
+                FeedbackTuning.oneShotDurationMs(FeedbackKind.SWIPE_DELETE, s),
+            )
+            assertEquals(
+                FeedbackTuning.oneShotAmplitude(FeedbackKind.KEY_PRESS, s),
+                FeedbackTuning.oneShotAmplitude(FeedbackKind.SWIPE_DELETE, s),
+            )
+        }
+    }
+
+    @Test
     fun `one-shot fallback stays above the OEM tick floor and inside the amplitude range`() {
         for (kind in FeedbackKind.entries) for (s in strengths) {
             assertTrue(FeedbackTuning.oneShotDurationMs(kind, s) >= 20)

@@ -57,9 +57,13 @@ import dev.omakey.core.feedback.HapticSoundPreferences
 import dev.omakey.core.feedback.HapticSoundSettings
 import dev.omakey.core.gesture.GesturePreferences
 import dev.omakey.core.gesture.GestureSettings
+import androidx.compose.material3.SegmentedButton
 import dev.omakey.core.layout.LayoutPreferences
 import dev.omakey.core.layout.LayoutSettings
 import dev.omakey.core.layout.DEFAULT_SPACEBAR_SIDE_KEY
+import dev.omakey.core.layout.EMOJI_SLOT_DEFAULT
+import dev.omakey.core.layout.EMOJI_SLOT_LANGUAGE
+import dev.omakey.core.layout.sanitizeEmojiSlotKey
 import dev.omakey.core.layout.MAX_POPUP_SYMBOLS
 import dev.omakey.core.layout.sanitizeSpacebarSideKey
 import dev.omakey.core.layout.popupSymbolsAsTyped
@@ -388,27 +392,41 @@ internal fun ImplicitLearningToggle(incognitoPreferences: IncognitoPreferences) 
  * looks (themes, fonts, key shapes) put it where nobody would look for it. Distinct from
  * `GestureSettings.showKeyPopup`, the long-press accent popup, which is in Gestures. */
 @Composable
-internal fun TapPreviewToggle(settings: LayoutSettings, layoutPreferences: LayoutPreferences) {
-    SettingToggle(
-        key = SettingKey.TAP_PREVIEW,
-        description = "Show a bigger copy of each letter as you tap it.",
-        checked = settings.showTapPreview,
-        onCheckedChange = layoutPreferences::setShowTapPreview,
+internal fun TapPreviewStylePicker(settings: LayoutSettings, layoutPreferences: LayoutPreferences) {
+    val options = listOf(
+        dev.omakey.core.layout.TapPreviewStyle.CLASSIC to "Classic",
+        dev.omakey.core.layout.TapPreviewStyle.SLIM to "Slim",
+        dev.omakey.core.layout.TapPreviewStyle.LIFT to "Key lift",
+        dev.omakey.core.layout.TapPreviewStyle.OFF to "Off",
     )
+    val description = when (settings.tapPreviewStyle) {
+        dev.omakey.core.layout.TapPreviewStyle.CLASSIC -> "A bigger copy of each letter above your finger as you tap it."
+        dev.omakey.core.layout.TapPreviewStyle.SLIM -> "A smaller, lighter copy of each letter, just above the key."
+        dev.omakey.core.layout.TapPreviewStyle.LIFT -> "The key you press rises and grows a little."
+        dev.omakey.core.layout.TapPreviewStyle.OFF -> "Only the key you press lights up."
+    }
+    Column(
+        rememberSettingHighlight(SettingKey.TAP_PREVIEW).padding(vertical = ROW_INNER_PADDING),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        SettingText(SettingKey.TAP_PREVIEW.title, description)
+        androidx.compose.material3.SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+            options.forEachIndexed { index, (style, label) ->
+                SegmentedButton(
+                    selected = style == settings.tapPreviewStyle,
+                    onClick = { layoutPreferences.setTapPreviewStyle(style) },
+                    shape = androidx.compose.material3.SegmentedButtonDefaults.itemShape(index = index, count = options.size),
+                    icon = {},
+                    label = { Text(label, maxLines = 1) },
+                )
+            }
+        }
+    }
 }
 
 /** Blank gutters down both sides of the keyboard. Fleksy shipped the same option for the same
  * reason — on a phone with no side bezel the outer keys sit where the glass curves away, which is
  * exactly where a thumb slides off. */
-@Composable
-internal fun SwapEmojiLanguageToggle(settings: LayoutSettings, layoutPreferences: LayoutPreferences) {
-    SettingToggle(
-        key = SettingKey.SWAP_EMOJI_LANGUAGE,
-        description = "Put the language key next to the spacebar and the emoji button in the bar above the keys.",
-        checked = settings.swapEmojiAndLanguage,
-        onCheckedChange = layoutPreferences::setSwapEmojiAndLanguage,
-    )
-}
 
 /** Which of the bar's swipeable pages are shown (GitHub issue #10). The last one shown can't be
  * turned off — see [dev.omakey.app.keyboard.TopStripSettings]. */
@@ -827,29 +845,75 @@ private sealed interface UpdateCheckStatus {
     data class Checked(val result: dev.omakey.core.update.UpdateCheckResult) : UpdateCheckStatus
 }
 
-/** Choices offered as one tap; anything else goes in the field below them. */
-private val SPACEBAR_SIDE_CHOICES = listOf(DEFAULT_SPACEBAR_SIDE_KEY, ".", ",", "?", "!", "'", "-")
+/** Choices offered as one tap (value to tile label); anything else goes in the field below them. */
+private val SPACEBAR_SIDE_CHOICES = listOf(DEFAULT_SPACEBAR_SIDE_KEY to "Auto") + listOf(".", ",", "?", "!", "'", "-").map { it to it }
 
 /** The key right of the spacebar (closed-beta request): the language's own by default, or any one
- * character. Same tile style as [EmojiSkinTonePicker]. */
+ * character. */
 @Composable
-internal fun SpacebarSideKeyRow(settings: LayoutSettings, layoutPreferences: LayoutPreferences) {
-    val current = settings.spacebarSideKey
-    var custom by remember { mutableStateOf(current.takeIf { it !in SPACEBAR_SIDE_CHOICES }.orEmpty()) }
-    Column(rememberSettingHighlight(SettingKey.SPACEBAR_SIDE_KEY), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(text = SettingKey.SPACEBAR_SIDE_KEY.title, style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium))
+internal fun SpacebarSideKeyRow(settings: LayoutSettings, layoutPreferences: LayoutPreferences) = KeyChoiceRow(
+    key = SettingKey.SPACEBAR_SIDE_KEY,
+    description = "What the key to the right of the spacebar types. Hold it for the one it replaced.",
+    choices = SPACEBAR_SIDE_CHOICES,
+    defaultValue = DEFAULT_SPACEBAR_SIDE_KEY,
+    current = settings.spacebarSideKey,
+    describe = { if (it == DEFAULT_SPACEBAR_SIDE_KEY) "Language default" else "Type $it" },
+    isValidCustom = { sanitizeSpacebarSideKey(it) == it },
+    onChoose = layoutPreferences::setSpacebarSideKey,
+)
+
+private val EMOJI_SLOT_CHOICES = listOf(EMOJI_SLOT_DEFAULT to "😊", EMOJI_SLOT_LANGUAGE to "🌐") +
+    listOf(",", ".", "?", "!", "'").map { it to it }
+
+/** The key left of the spacebar (user request): the emoji key by default, the language key, or any
+ * one character. The emoji button moves up to the suggestion bar whenever its key is taken. */
+@Composable
+internal fun EmojiSlotKeyRow(settings: LayoutSettings, layoutPreferences: LayoutPreferences) = KeyChoiceRow(
+    key = SettingKey.EMOJI_SLOT_KEY,
+    description = "What the key to the left of the spacebar does: emoji, switch language (with two or more), or " +
+        "type a character. When it isn't emoji, the emoji button moves to the bar above the keys.",
+    choices = EMOJI_SLOT_CHOICES,
+    defaultValue = EMOJI_SLOT_DEFAULT,
+    current = settings.emojiSlotKey,
+    describe = {
+        when (it) {
+            EMOJI_SLOT_DEFAULT -> "Emoji"
+            EMOJI_SLOT_LANGUAGE -> "Switch language"
+            else -> "Type $it"
+        }
+    },
+    isValidCustom = { sanitizeEmojiSlotKey(it) == it && it != EMOJI_SLOT_LANGUAGE },
+    onChoose = layoutPreferences::setEmojiSlotKey,
+)
+
+/** A key that can be one of a few one-tap [choices] or any one character typed in the field below
+ * them. Same tile style as [EmojiSkinTonePicker]. */
+@Composable
+private fun KeyChoiceRow(
+    key: SettingKey,
+    description: String,
+    choices: List<Pair<String, String>>,
+    defaultValue: String,
+    current: String,
+    describe: (String) -> String,
+    isValidCustom: (String) -> Boolean,
+    onChoose: (String) -> Unit,
+) {
+    var custom by remember { mutableStateOf(current.takeIf { c -> choices.none { it.first == c } }.orEmpty()) }
+    Column(rememberSettingHighlight(key), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(text = key.title, style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium))
         Text(
-            text = "What the key to the right of the spacebar types. Hold it for the one it replaced.",
+            text = description,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            for (choice in SPACEBAR_SIDE_CHOICES) {
+            for ((choice, label) in choices) {
                 val selected = choice == current
-                val label = if (choice == DEFAULT_SPACEBAR_SIDE_KEY) "Auto" else choice
+                val isWord = label.length > 2
                 Box(
                     modifier = Modifier
-                        .weight(if (choice == DEFAULT_SPACEBAR_SIDE_KEY) 1.6f else 1f)
+                        .weight(if (isWord) 1.6f else 1f)
                         .height(44.dp)
                         .background(
                             if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
@@ -862,14 +926,12 @@ internal fun SpacebarSideKeyRow(settings: LayoutSettings, layoutPreferences: Lay
                         )
                         .clickable {
                             custom = ""
-                            layoutPreferences.setSpacebarSideKey(choice)
+                            onChoose(choice)
                         }
-                        .semantics {
-                            contentDescription = if (choice == DEFAULT_SPACEBAR_SIDE_KEY) "Language default" else "Type $choice"
-                        },
+                        .semantics { contentDescription = describe(choice) },
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(text = label, fontSize = if (choice == DEFAULT_SPACEBAR_SIDE_KEY) 14.sp else 20.sp)
+                    Text(text = label, fontSize = if (isWord) 14.sp else 20.sp)
                 }
             }
         }
@@ -880,10 +942,10 @@ internal fun SpacebarSideKeyRow(settings: LayoutSettings, layoutPreferences: Lay
                 // the keyboard would then ignore.
                 if (typed.isEmpty()) {
                     custom = ""
-                    layoutPreferences.setSpacebarSideKey(DEFAULT_SPACEBAR_SIDE_KEY)
-                } else if (sanitizeSpacebarSideKey(typed) == typed) {
+                    onChoose(defaultValue)
+                } else if (isValidCustom(typed)) {
                     custom = typed
-                    layoutPreferences.setSpacebarSideKey(typed)
+                    onChoose(typed)
                 }
             },
             modifier = Modifier.fillMaxWidth(),

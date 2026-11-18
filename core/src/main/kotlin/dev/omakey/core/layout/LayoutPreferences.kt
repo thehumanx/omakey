@@ -23,11 +23,10 @@ data class LayoutSettings(
      * is engaged (one-shot or locked), matching what almost every other keyboard does and what
      * users coming from one expect. */
     val alwaysShowUppercaseLetters: Boolean = true,
-    /** The brief enlarged-character bubble that floats above a tapped character key (distinct
-     * from the long-press accent/punctuation popup, `GestureSettings.showKeyPopup`, which is a
-     * held-key thing). On by default; off makes ordinary taps give no extra visual feedback
-     * beyond the key's own press state. */
-    val showTapPreview: Boolean = true,
+    /** How a tapped letter is shown while the finger is on it: a bubble (classic or slim), the
+     * key lifting, or nothing beyond the key's own press state. Distinct from the long-press
+     * accent/punctuation popup, `GestureSettings.showKeyPopup`, which is a held-key thing. */
+    val tapPreviewStyle: TapPreviewStyle = TapPreviewStyle.DEFAULT,
     /** Blank gutters down the left and right of the keyboard, so the outermost keys (Q/P, shift,
      * backspace) don't sit flush against the screen edge. On a bezel-less phone with curved glass
      * that edge is where a thumb slides off, or where the display itself starts to distort — the
@@ -50,11 +49,10 @@ data class LayoutSettings(
     /** Width of the one-handed keyboard; the rest of the row is the gutter holding its side
      * buttons. Independent of the floating size for the same reason as above. */
     val oneHandedWidthDp: Int = DEFAULT_ONE_HANDED_WIDTH_DP,
-    /** Where the emoji and language buttons sit. Default: the language button at the right end of
-     * the suggestion bar and the emoji key in the bottom row, next to the spacebar. Swapped puts the
-     * language key in the bottom row and the emoji button in the suggestion bar. Only matters with
-     * two or more languages enabled — with one, there is no language button at all. */
-    val swapEmojiAndLanguage: Boolean = false,
+    /** What the key left of the spacebar is: the emoji key ([EMOJI_SLOT_DEFAULT]), the language key
+     * ([EMOJI_SLOT_LANGUAGE], with two or more languages), or a key typing one character. When it
+     * isn't the emoji key, the emoji button moves to the suggestion bar. See [withEmojiSlotKey]. */
+    val emojiSlotKey: String = EMOJI_SLOT_DEFAULT,
     /** A small secondary character in the corner of each letter key — the digit or symbol its
      * long-press types ([KeyDefinition.secondarySymbol]). Off by default: it is visual noise for
      * anyone who doesn't use long-press. While on, a long-press preselects that symbol so the
@@ -115,9 +113,9 @@ class LayoutPreferences(context: Context) {
     fun setShowKeyBackgrounds(show: Boolean) = update { it.copy(showKeyBackgrounds = show) }
     fun setShowMiddleRowStripe(show: Boolean) = update { it.copy(showMiddleRowStripe = show) }
     fun setAlwaysShowUppercaseLetters(show: Boolean) = update { it.copy(alwaysShowUppercaseLetters = show) }
-    fun setShowTapPreview(show: Boolean) = update { it.copy(showTapPreview = show) }
+    fun setTapPreviewStyle(style: TapPreviewStyle) = update { it.copy(tapPreviewStyle = style) }
     fun setEdgePadding(enabled: Boolean) = update { it.copy(edgePadding = enabled) }
-    fun setSwapEmojiAndLanguage(swap: Boolean) = update { it.copy(swapEmojiAndLanguage = swap) }
+    fun setEmojiSlotKey(value: String) = update { it.copy(emojiSlotKey = sanitizeEmojiSlotKey(value)) }
     fun setShowSecondarySymbols(show: Boolean) = update { it.copy(showSecondarySymbols = show) }
     fun setFleksySymbols(enabled: Boolean) = update { it.copy(fleksySymbols = enabled) }
     fun setPopupSymbols(input: String) = update { it.copy(popupSymbols = parsePopupSymbols(input)) }
@@ -153,7 +151,10 @@ class LayoutPreferences(context: Context) {
             putBoolean(KEY_MIDDLE_STRIPE, next.showMiddleRowStripe)
             putInt(KEY_BOTTOM_OFFSET, next.bottomOffsetDp)
             putBoolean(KEY_ALWAYS_UPPERCASE, next.alwaysShowUppercaseLetters)
-            putBoolean(KEY_SHOW_TAP_PREVIEW, next.showTapPreview)
+            putString(KEY_TAP_PREVIEW_STYLE, next.tapPreviewStyle.name)
+            // Still written, so a downgrade to a build with only the on/off switch keeps the
+            // user's on/off choice.
+            putBoolean(KEY_SHOW_TAP_PREVIEW, next.tapPreviewStyle != TapPreviewStyle.OFF)
             putBoolean(KEY_EDGE_PADDING, next.edgePadding)
             putString(KEY_PLACEMENT, next.placement.name)
             putInt(KEY_FLOATING_WIDTH, next.floatingWidthDp)
@@ -161,7 +162,9 @@ class LayoutPreferences(context: Context) {
             putInt(KEY_FLOATING_X, next.floatingXDp)
             putInt(KEY_FLOATING_Y, next.floatingYDp)
             putInt(KEY_ONE_HANDED_WIDTH, next.oneHandedWidthDp)
-            putBoolean(KEY_SWAP_EMOJI_LANGUAGE, next.swapEmojiAndLanguage)
+            putString(KEY_EMOJI_SLOT, next.emojiSlotKey)
+            // Still written, so a downgrade to a build with only the swap switch keeps it.
+            putBoolean(KEY_SWAP_EMOJI_LANGUAGE, next.emojiSlotKey == EMOJI_SLOT_LANGUAGE)
             putBoolean(KEY_SECONDARY_SYMBOLS, next.showSecondarySymbols)
             putBoolean(KEY_FLEKSY_SYMBOLS, next.fleksySymbols)
             // Stored as typed-back text: parsePopupSymbols splits it into the same symbols again.
@@ -182,7 +185,10 @@ class LayoutPreferences(context: Context) {
         showMiddleRowStripe = prefs.getBoolean(KEY_MIDDLE_STRIPE, true),
         bottomOffsetDp = prefs.getInt(KEY_BOTTOM_OFFSET, 0),
         alwaysShowUppercaseLetters = prefs.getBoolean(KEY_ALWAYS_UPPERCASE, true),
-        showTapPreview = prefs.getBoolean(KEY_SHOW_TAP_PREVIEW, true),
+        tapPreviewStyle = TapPreviewStyle.fromStored(
+            prefs.getString(KEY_TAP_PREVIEW_STYLE, null),
+            legacyShown = prefs.getBoolean(KEY_SHOW_TAP_PREVIEW, true),
+        ),
         edgePadding = prefs.getBoolean(KEY_EDGE_PADDING, false),
         // Stored by name, and an unrecognised one falls back to DOCKED rather than throwing —
         // a downgrade after this enum ever gains a case must not brick the keyboard.
@@ -193,7 +199,10 @@ class LayoutPreferences(context: Context) {
         floatingXDp = prefs.getInt(KEY_FLOATING_X, LayoutSettings.UNSET_POSITION),
         floatingYDp = prefs.getInt(KEY_FLOATING_Y, KeyboardPlacementGeometry.DEFAULT_FLOATING_Y_DP),
         oneHandedWidthDp = prefs.getInt(KEY_ONE_HANDED_WIDTH, LayoutSettings.DEFAULT_ONE_HANDED_WIDTH_DP),
-        swapEmojiAndLanguage = prefs.getBoolean(KEY_SWAP_EMOJI_LANGUAGE, false),
+        emojiSlotKey = emojiSlotKeyFromStored(
+            prefs.getString(KEY_EMOJI_SLOT, null),
+            legacySwap = prefs.getBoolean(KEY_SWAP_EMOJI_LANGUAGE, false),
+        ),
         showSecondarySymbols = prefs.getBoolean(KEY_SECONDARY_SYMBOLS, false),
         fleksySymbols = prefs.getBoolean(KEY_FLEKSY_SYMBOLS, true),
         popupSymbols = parsePopupSymbols(prefs.getString(KEY_POPUP_SYMBOLS, null).orEmpty()),
@@ -207,6 +216,7 @@ class LayoutPreferences(context: Context) {
     private companion object {
         const val PREFS_NAME = "omakey_layout_prefs"
         const val KEY_SWAP_EMOJI_LANGUAGE = "swap_emoji_and_language"
+        const val KEY_EMOJI_SLOT = "emoji_slot_key"
         const val KEY_SECONDARY_SYMBOLS = "show_secondary_symbols"
         const val KEY_FLEKSY_SYMBOLS = "fleksy_symbols"
         const val KEY_POPUP_SYMBOLS = "popup_symbols"
@@ -221,6 +231,7 @@ class LayoutPreferences(context: Context) {
         const val KEY_BOTTOM_OFFSET = "keyboard_bottom_offset_dp"
         const val KEY_ALWAYS_UPPERCASE = "always_show_uppercase_letters"
         const val KEY_SHOW_TAP_PREVIEW = "show_tap_preview"
+        const val KEY_TAP_PREVIEW_STYLE = "tap_preview_style"
         const val KEY_EDGE_PADDING = "edge_padding"
         const val KEY_PLACEMENT = "placement"
         const val KEY_FLOATING_WIDTH = "floating_width_dp"

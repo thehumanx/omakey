@@ -501,7 +501,7 @@ class OmakeyInputMethodService :
         val state = keyboardViewModel?.uiState?.value
         val buttons = dev.omakey.core.layout.SuggestionBarButtons.count(
             languageCount = state?.languages?.size ?: 0,
-            swapEmojiAndLanguage = state?.layoutSettings?.swapEmojiAndLanguage ?: false,
+            emojiSlotKey = state?.layoutSettings?.emojiSlotKey ?: dev.omakey.core.layout.EMOJI_SLOT_DEFAULT,
             swipeSpacebarForLanguage = state?.gestureSettings?.swipeSpacebarForLanguage ?: false,
             // Same test KeyboardRoot uses for accessible mode, where swipes are off.
             gesturesActive = !accessibilityPreferences.forceAccessibleMode.value &&

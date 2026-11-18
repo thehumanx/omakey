@@ -21,13 +21,15 @@ enum class FeedbackKind { KEY_PRESS, SWIPE, SWIPE_DELETE }
 object FeedbackTuning {
 
     /** Primitive intensity. Never below [MIN_PRIMITIVE_SCALE]: the slider's low end should be
-     * "lighter", not "gone". Swipes sit a step above a keypress so they read as a separate event. */
+     * "lighter", not "gone". A swipe sits a step above a keypress so it reads as a separate event.
+     * Deleting a word does not: it repeats every 150 ms while held, and a boosted buzz there was
+     * reported (Galaxy S25 Ultra) as far stronger than typing. Its swoosh sound sets it apart. */
     fun primitiveScale(kind: FeedbackKind, strength: Float): Float {
         val s = strength.coerceIn(0f, 1f)
         val base = MIN_PRIMITIVE_SCALE + (1f - MIN_PRIMITIVE_SCALE) * s
         return when (kind) {
-            FeedbackKind.KEY_PRESS -> base
-            FeedbackKind.SWIPE, FeedbackKind.SWIPE_DELETE -> (base * SWIPE_BOOST).coerceAtMost(1f)
+            FeedbackKind.KEY_PRESS, FeedbackKind.SWIPE_DELETE -> base
+            FeedbackKind.SWIPE -> (base * SWIPE_BOOST).coerceAtMost(1f)
         }
     }
 
@@ -38,8 +40,8 @@ object FeedbackTuning {
     fun oneShotDurationMs(kind: FeedbackKind, strength: Float): Long {
         val s = strength.coerceIn(0f, 1f)
         return when (kind) {
-            FeedbackKind.KEY_PRESS -> 20 + (s * 25).toLong()
-            FeedbackKind.SWIPE, FeedbackKind.SWIPE_DELETE -> 35 + (s * 30).toLong()
+            FeedbackKind.KEY_PRESS, FeedbackKind.SWIPE_DELETE -> 20 + (s * 25).toLong()
+            FeedbackKind.SWIPE -> 35 + (s * 30).toLong()
         }
     }
 
@@ -47,8 +49,8 @@ object FeedbackTuning {
     fun oneShotAmplitude(kind: FeedbackKind, strength: Float): Int {
         val s = strength.coerceIn(0f, 1f)
         val fraction = when (kind) {
-            FeedbackKind.KEY_PRESS -> s
-            FeedbackKind.SWIPE, FeedbackKind.SWIPE_DELETE -> s * SWIPE_BOOST
+            FeedbackKind.KEY_PRESS, FeedbackKind.SWIPE_DELETE -> s
+            FeedbackKind.SWIPE -> s * SWIPE_BOOST
         }
         return (fraction.coerceIn(MIN_AMPLITUDE_FRACTION, 1f) * 255).toInt().coerceIn(1, 255)
     }

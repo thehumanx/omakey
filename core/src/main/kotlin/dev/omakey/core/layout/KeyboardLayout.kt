@@ -25,6 +25,9 @@ object SpecialKeyCode {
      * a stored layout: normally the language button lives in the suggestion bar, and this key only
      * replaces the emoji key when the user swaps the two (see `withLanguageKeyInsteadOfEmoji`). */
     const val LANGUAGE = -9
+    /** The key left of the spacebar when the user set it to type a character instead of opening
+     * emoji (see `withEmojiSlotKey`). The key carries the character as its text. */
+    const val EMOJI_SLOT_CHARACTER = -10
 }
 
 // @Immutable is a promise to the Compose compiler that instances never change after construction

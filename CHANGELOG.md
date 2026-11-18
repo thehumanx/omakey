@@ -3,6 +3,39 @@
 All notable changes to omakey are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Added
+- **Choose the key left of the spacebar** (Settings → Keyboard → Buttons → Key left of the
+  spacebar): emoji, the language switch, a comma, or any single character you like. When it isn't
+  emoji, the emoji button moves to the bar above the keys, so it's always one tap away. This
+  replaces "Swap emoji and language buttons"; if you had that on, you keep the language key.
+- **Choose how the key press popup looks** (Settings → Keyboard → Buttons → Key press popup):
+  Classic (the bubble you know), Slim (smaller and lighter, just above the key), Key lift (the key
+  itself rises and grows, no bubble), or Off. If you had the popup turned off, it stays off.
+
+### Changed
+- **Italian and French (QWERTY) keyboards drop the extra apostrophe key**, so the A–L row has its
+  usual nine full-size keys, like other keyboards. The apostrophe is still a long-press on the full
+  stop key, or put it next to the spacebar in Settings → Keyboard → Buttons. French AZERTY keeps
+  its apostrophe key. Arrives with the language pack update (Italian and French 1.0.1).
+
+### Fixed
+- **Typing is faster on slower phones.** Each keypress used to redraw the whole keyboard several
+  times, to show and hide the key popup and to light up the pressed key. Now only the popup and
+  the key you pressed change.
+- **The key popup is instant.** It appears the moment your finger touches a letter, instead of
+  when you lift it, and disappears right after you let go, or as soon as you start a swipe.
+- **The spacebar is as easy to hit as any other key.** A thumb that slides along the spacebar as
+  it taps now types a space instead of nothing, and so does a slow press that you let go of
+  without moving the cursor.
+- **Deleting a word buzzes no harder than typing a key.** It used to feel much heavier, especially
+  when held down.
+- **Holding Backspace or swipe-to-delete stops vibrating once there's nothing left to delete.**
+- **The phone's own keyboard buttons no longer sit on top of the bottom row.** On phones that show
+  a hide-keyboard or switch-keyboard button at the bottom of the screen (such as Samsung Galaxy
+  phones), the keyboard now leaves room for them.
+
 ## [5.7.0] — 2026-11-18
 
 Fixes from the closed beta: smarter contractions and Russian spelling, the missing % sign, no more
