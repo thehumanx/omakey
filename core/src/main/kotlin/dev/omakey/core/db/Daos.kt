@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 
 /**
  * The `words` table now holds **only** words the user taught the keyboard. The bundled 60k
@@ -63,6 +64,21 @@ interface WordDao {
      * preserves the row's existing frequency/lastUsedTimestamp instead of resetting them. */
     @Query("UPDATE words SET word = :newWord WHERE locale = :locale AND word = :oldWord")
     suspend fun rename(locale: String, oldWord: String, newWord: String)
+
+    /**
+     * Settings' "Edit": renames [oldWord] to [newWord], merging into [newWord]'s row when that word
+     * is already learned ([LearnedWordEdits.merge]) instead of hitting the (locale, word) primary
+     * key — which is what used to crash the screen. One transaction, so a crash midway can't lose
+     * the word.
+     */
+    @Transaction
+    suspend fun renameOrMerge(locale: String, oldWord: String, newWord: String) {
+        if (oldWord == newWord) return
+        val old = findExact(locale, oldWord) ?: return
+        val existing = findExact(locale, newWord)
+        delete(locale, oldWord)
+        upsert(LearnedWordEdits.merge(old, existing, newWord))
+    }
 }
 
 @Dao

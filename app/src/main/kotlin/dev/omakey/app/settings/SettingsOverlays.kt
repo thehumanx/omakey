@@ -55,6 +55,7 @@ import dev.omakey.core.locale.KeyboardLocale
 import dev.omakey.core.clipboard.ClipboardHistoryStore
 import dev.omakey.core.clipboard.ClipboardPreferences
 import dev.omakey.core.db.ClipboardEntity
+import dev.omakey.core.db.LearnedWordEdits
 import dev.omakey.core.db.WordDao
 import dev.omakey.core.db.WordEntity
 import dev.omakey.core.layout.LayoutPreferences
@@ -388,9 +389,19 @@ internal fun ClipboardHistoryOverlay(
 }
 
 @Composable
-internal fun LearnedWordsOverlay(wordDao: WordDao, onClose: () -> Unit) {
+internal fun LearnedWordsOverlay(
+    wordDao: WordDao,
+    /** The rules of the language a word was learned in, for checking an edit. */
+    profileOf: (localeId: String) -> dev.omakey.core.locale.LanguageProfile,
+    onClose: () -> Unit,
+) {
     BackHandler(onBack = onClose)
     val scope = rememberCoroutineScope()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    // Tells a running keyboard to reload, so an edit or removal applies right away rather than on
+    // its next restart.
+    val signal = remember { dev.omakey.core.predict.LearnedWordsSignal(context) }
+    androidx.compose.runtime.DisposableEffect(signal) { onDispose { signal.close() } }
     var query by remember { mutableStateOf("") }
     var words by remember { mutableStateOf<List<WordEntity>>(emptyList()) }
     var showDeleteAllConfirm by remember { mutableStateOf(false) }
@@ -474,6 +485,7 @@ internal fun LearnedWordsOverlay(wordDao: WordDao, onClose: () -> Unit) {
                             onClick = {
                                 scope.launch {
                                     wordDao.delete(entry.locale, entry.word)
+                                    signal.bump()
                                     reload()
                                 }
                             },
@@ -495,6 +507,7 @@ internal fun LearnedWordsOverlay(wordDao: WordDao, onClose: () -> Unit) {
                         showDeleteAllConfirm = false
                         scope.launch {
                             wordDao.deleteAllUserAdded()
+                            signal.bump()
                             reload()
                         }
                     },
@@ -508,6 +521,7 @@ internal fun LearnedWordsOverlay(wordDao: WordDao, onClose: () -> Unit) {
 
     wordBeingEdited?.let { entry ->
         var editedWord by remember(entry.word) { mutableStateOf(entry.word) }
+        val normalised = LearnedWordEdits.normalise(editedWord, profileOf(entry.locale))
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { wordBeingEdited = null },
             title = { Text(text = "Edit word") },
@@ -516,16 +530,20 @@ internal fun LearnedWordsOverlay(wordDao: WordDao, onClose: () -> Unit) {
                     value = editedWord,
                     onValueChange = { editedWord = it },
                     singleLine = true,
+                    isError = normalised == null,
+                    supportingText = { if (normalised == null) Text(text = "One word, letters only") },
                 )
             },
             confirmButton = {
                 TextButton(
+                    enabled = normalised != null,
                     onClick = {
-                        val newWord = editedWord.trim().lowercase()
+                        val newWord = normalised ?: return@TextButton
                         wordBeingEdited = null
-                        if (newWord.isNotEmpty() && newWord != entry.word) {
+                        if (newWord != entry.word) {
                             scope.launch {
-                                wordDao.rename(entry.locale, entry.word, newWord)
+                                wordDao.renameOrMerge(entry.locale, entry.word, newWord)
+                                signal.bump()
                                 reload()
                             }
                         }

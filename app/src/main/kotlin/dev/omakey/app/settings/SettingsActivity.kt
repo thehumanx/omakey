@@ -539,7 +539,11 @@ private fun SettingsScreen(
         TestKeyboardOverlay(onClose = { showTestOverlay = false }, onSwitchKeyboard = onSwitchKeyboard)
     }
     if (showLearnedWordsOverlay) {
-        LearnedWordsOverlay(wordDao = wordDao, onClose = { showLearnedWordsOverlay = false })
+        LearnedWordsOverlay(
+            wordDao = wordDao,
+            profileOf = { id -> languagePacks.registry[id]?.profile ?: dev.omakey.core.locale.LanguageProfile.English },
+            onClose = { showLearnedWordsOverlay = false },
+        )
     }
     if (showClipboardHistoryOverlay) {
         ClipboardHistoryOverlay(

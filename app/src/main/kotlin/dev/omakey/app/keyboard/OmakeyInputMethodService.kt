@@ -91,6 +91,7 @@ class OmakeyInputMethodService :
     private lateinit var textEditor: TextEditor
     private lateinit var themeRepository: ThemeRepository
     private lateinit var customThemePreferences: dev.omakey.core.theme.CustomThemePreferences
+    private lateinit var learnedWordsSignal: dev.omakey.core.predict.LearnedWordsSignal
     private lateinit var accessibilityPreferences: AccessibilityPreferences
     private lateinit var layoutPreferences: LayoutPreferences
     private lateinit var fontPreferences: FontPreferences
@@ -292,6 +293,7 @@ class OmakeyInputMethodService :
         // Shared with Settings, so a pack installed there shows up here without a restart.
         localeRegistry = dev.omakey.app.languages.LanguagePacks.get(applicationContext).registry
         localePreferences = LocalePreferences(applicationContext)
+        learnedWordsSignal = dev.omakey.core.predict.LearnedWordsSignal(applicationContext)
         localeManager = LocaleManager(
             context = applicationContext,
             registry = localeRegistry,
@@ -300,6 +302,7 @@ class OmakeyInputMethodService :
             autocorrectIndex = autocorrectIndex,
             predictionEngine = predictionEngine,
             scope = serviceScope,
+            learnedWordsChanges = learnedWordsSignal.changes,
         )
         serviceScope.launch {
             // The old dictionary importer tracked its progress here. Left-over state is meaningless
@@ -679,6 +682,7 @@ class OmakeyInputMethodService :
         predictionPreferences.close()
         themeRepository.close()
         customThemePreferences.close()
+        learnedWordsSignal.close()
         accessibilityPreferences.close()
         layoutPreferences.close()
         fontPreferences.close()
