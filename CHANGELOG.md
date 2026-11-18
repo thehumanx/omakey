@@ -7,7 +7,9 @@ All notable changes to omakey are documented here. Format loosely follows
 
 Fixes from the closed beta: smarter contractions and Russian spelling, the missing % sign, no more
 red underlines on languages other than English, editable learned words, and calmer, roomier
-Settings. Thanks to the closed-beta testers for the reports.
+Settings. Thanks to John for reporting the missing % sign, to Konstantin for reporting the red
+underlines on Russian, and to Jablon for reporting the learned-word editing bug and for suggesting
+a choice of key next to the spacebar.
 
 ### Added
 - **Choose the key next to the spacebar** (Settings → Keyboard → Buttons). Keep your language's own
