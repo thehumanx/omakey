@@ -30,7 +30,6 @@ import dev.omakey.core.layout.flippedOneHandedSide
 import dev.omakey.core.layout.nextOneHanded
 import dev.omakey.core.layout.toggledWith
 import dev.omakey.core.layout.LayoutSettings
-import dev.omakey.core.layout.withLanguageKeyInsteadOfEmoji
 import dev.omakey.core.layout.withSpaceLabel
 import dev.omakey.core.layout.Layouts
 import dev.omakey.core.layout.NumberPadKind
@@ -39,6 +38,7 @@ import dev.omakey.core.layout.withDigits
 import dev.omakey.core.layout.withSymbolsPage
 import dev.omakey.core.layout.withPopupSymbols
 import dev.omakey.core.layout.withSpacebarSideKey
+import dev.omakey.core.layout.withEmojiSlotKey
 import dev.omakey.core.theme.nextTheme
 import dev.omakey.core.layout.SpecialKeyCode
 import dev.omakey.core.predict.AutocorrectIndex
@@ -1487,6 +1487,15 @@ class KeyboardViewModel(
         _uiState.update { it.copy(canUndo = undoHistory.canUndo, canRedo = undoHistory.canRedo) }
     }
 
+    /**
+     * Whether a delete right now would remove anything: a selection, a word being
+     * transliterated, or text before the cursor. Held Backspace and swipe-and-hold delete check
+     * it before each repeat, so they stop (and stop vibrating) once the field is empty instead of
+     * buzzing on at nothing — reported on a Galaxy S25 Ultra.
+     */
+    fun canDeleteBackward(): Boolean =
+        translit.isComposing || textEditor.hasSelection() || textEditor.textBeforeCursor(1).isNotEmpty()
+
     private fun onDeleteWord() {
         autoSpacePending = false
         discardPendingLearn()
@@ -1965,11 +1974,11 @@ class KeyboardViewModel(
             // Last, so the user's own symbols win over everything above.
             .withPopupSymbols(layoutPreferences.settings.value.popupSymbols)
             .withSpacebarSideKey(layoutPreferences.settings.value.spacebarSideKey)
+            .withEmojiSlotKey(layoutPreferences.settings.value.emojiSlotKey, localeController.enabled.value.size)
         if (localeController.enabled.value.size < 2) return stored
         // "FR - AZERTY": language and layout together, so the spacebar says exactly what the globe
         // key just switched to — two layouts of one language would otherwise look identical.
-        val labelled = stored.withSpaceLabel(spacebarLabel(locale))
-        return if (layoutPreferences.settings.value.swapEmojiAndLanguage) labelled.withLanguageKeyInsteadOfEmoji() else labelled
+        return stored.withSpaceLabel(spacebarLabel(locale))
     }
 
     private fun spacebarLabel(locale: KeyboardLocale): String =

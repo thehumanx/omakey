@@ -34,7 +34,8 @@ interface KeyboardFeedback {
  *
  * **Haptics** use the best form the phone's motor supports — see [FeedbackTuning] for the three
  * forms and the measurement behind preferring primitives. A keypress is a click; a swipe a stronger
- * click; a word deleted a thud, so it reads as something going away.
+ * click; a word deleted the same click as a keypress. It used to be a boosted THUD, which on a
+ * Galaxy S25 Ultra felt far heavier than typing, and repeats every 150 ms while held.
  *
  * **Sound** is a bundled sample played via SoundPool, rather than AudioManager.playSoundEffect —
  * the system sound-effect API silently no-ops on many OEM builds when the device's own "Touch
@@ -66,11 +67,6 @@ class VibratorKeyboardFeedback(context: Context, private val preferences: Haptic
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q -> HapticForm.PRESET
             else -> HapticForm.ONE_SHOT
         }
-    }
-
-    private val thudSupported: Boolean by lazy {
-        Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
-            vibrator.areAllPrimitivesSupported(VibrationEffect.Composition.PRIMITIVE_THUD)
     }
 
     private val soundPool: SoundPool = SoundPool.Builder()
@@ -125,19 +121,14 @@ class VibratorKeyboardFeedback(context: Context, private val preferences: Haptic
 
     @androidx.annotation.RequiresApi(Build.VERSION_CODES.R)
     private fun primitive(kind: FeedbackKind, strength: Float): VibrationEffect {
-        val id = if (kind == FeedbackKind.SWIPE_DELETE && thudSupported) {
-            VibrationEffect.Composition.PRIMITIVE_THUD
-        } else {
-            VibrationEffect.Composition.PRIMITIVE_CLICK
-        }
         return VibrationEffect.startComposition()
-            .addPrimitive(id, FeedbackTuning.primitiveScale(kind, strength))
+            .addPrimitive(VibrationEffect.Composition.PRIMITIVE_CLICK, FeedbackTuning.primitiveScale(kind, strength))
             .compose()
     }
 
     @androidx.annotation.RequiresApi(Build.VERSION_CODES.Q)
     private fun preset(kind: FeedbackKind): VibrationEffect = VibrationEffect.createPredefined(
-        if (kind == FeedbackKind.KEY_PRESS) VibrationEffect.EFFECT_CLICK else VibrationEffect.EFFECT_HEAVY_CLICK,
+        if (kind == FeedbackKind.SWIPE) VibrationEffect.EFFECT_HEAVY_CLICK else VibrationEffect.EFFECT_CLICK,
     )
 
     private fun playSound(kind: FeedbackKind, settings: HapticSoundSettings) {

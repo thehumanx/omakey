@@ -32,6 +32,8 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.changedToDownIgnoreConsumed
@@ -123,11 +125,11 @@ internal fun KeyGrid(
     ancestorCoordinatesStable: () -> androidx.compose.ui.layout.LayoutCoordinates?,
     onKeysAreaPositioned: (androidx.compose.ui.layout.LayoutCoordinates) -> Unit,
     onPreviewKey: (Int) -> Unit,
-    previewKey: Pair<KeyDefinition, Rect>?,
+    tapPreview: TapPreviewState,
     onOpenSettings: () -> Unit,
     feedback: KeyboardFeedback,
     fontFamily: androidx.compose.ui.text.font.FontFamily?,
-    pressedKeyCode: Int?,
+    pressedKeyCode: () -> Int?,
     onPressedKeyChange: (Int?) -> Unit,
 ) {
     val gestureSettings = uiState.gestureSettings
@@ -236,6 +238,11 @@ internal fun KeyGrid(
                             // short-circuit the generic long-press fallback.
                             var cursorDragActive = false
                             var cursorDragAnchorX = down.position.x
+                            // Whether the held spacebar actually moved the cursor. Released
+                            // without moving, the hold was just a slow tap and types a space, as a
+                            // held letter types its letter. It used to type nothing, which made
+                            // the spacebar feel less sensitive than the other keys.
+                            var cursorDragMoved = false
                             val cursorDragStepPx = 10.dp.toPx()
 
                             // Swipe-left-and-hold repeats the delete-word gesture, matching held-
@@ -259,7 +266,9 @@ internal fun KeyGrid(
                                         // Repeat-delete while held, matching standard keyboard
                                         // convention — stops as soon as the finger lifts, since
                                         // that cancels this whole job (see the UP branch below).
-                                        while (isActive) {
+                                        // Stops once there is nothing left to delete, so it
+                                        // doesn't keep vibrating at an empty field.
+                                        while (isActive && viewModel.canDeleteBackward()) {
                                             feedback.onKeyPress()
                                             viewModel.onKeyTap(SpecialKeyCode.BACKSPACE)
                                             delay(60)
@@ -291,6 +300,7 @@ internal fun KeyGrid(
                                             ?.let { heldKey.popupChars.indexOf(it) + 1 }
                                             ?.takeIf { it > 0 }
                                         accentMoved = false
+                                        tapPreview.hide()
                                         accentDragState = AccentDragState(
                                             key = heldKey,
                                             options = listOf(heldKey.label) + heldKey.popupChars,
@@ -367,6 +377,10 @@ internal fun KeyGrid(
                                     swipeDeleteHoldJob?.cancel()
                                     onPressedKeyChange(null)
                                     if (cursorDragActive) {
+                                        if (!cursorDragMoved) {
+                                            onPreviewKey(SpecialKeyCode.SPACE)
+                                            viewModel.onKeyTap(SpecialKeyCode.SPACE)
+                                        }
                                         settled = true
                                     } else if (dragState != null) {
                                         // Commits whichever option is selected: the one the finger
@@ -391,10 +405,12 @@ internal fun KeyGrid(
                                 } else if (cursorDragActive) {
                                     val delta = change.position.x - cursorDragAnchorX
                                     if (delta >= cursorDragStepPx) {
+                                        cursorDragMoved = true
                                         feedback.onKeyPress()
                                         viewModel.moveCursor(forward = true)
                                         cursorDragAnchorX = change.position.x
                                     } else if (delta <= -cursorDragStepPx) {
+                                        cursorDragMoved = true
                                         feedback.onKeyPress()
                                         viewModel.moveCursor(forward = false)
                                         cursorDragAnchorX = change.position.x
@@ -441,7 +457,12 @@ internal fun KeyGrid(
                                     val gestureEvent = machine.onTouch(
                                         TouchSample(change.position.x, change.position.y, now, TouchAction.MOVE),
                                     )
-                                    if (gestureEvent != null) longPressJob.cancel()
+                                    if (gestureEvent != null) {
+                                        longPressJob.cancel()
+                                        // A swipe, not a tap: the key under the finger isn't
+                                        // being typed, so don't keep showing it.
+                                        tapPreview.hide()
+                                    }
                                     handleGestureEvent(
                                         gestureEvent, viewModel, keyLookupByCode, gestureSettings.swipeRightForSpace,
                                         onPreviewKey, onOpenSettings, feedback,
@@ -459,7 +480,9 @@ internal fun KeyGrid(
                                     ) {
                                         swipeDeleteHoldJob = scope.launch(touchJobsParent) {
                                             delay(400)
-                                            while (isActive) {
+                                            // Stops once there is nothing left to delete, so it
+                                            // doesn't keep vibrating at an empty field.
+                                            while (isActive && viewModel.canDeleteBackward()) {
                                                 feedback.onSwipeDelete()
                                                 onSwipeDeleteTriggeredStable()
                                                 viewModel.onSwipeLeft()
@@ -524,55 +547,18 @@ internal fun KeyGrid(
                     capsLockOn = uiState.capsLockOn,
                     enterAction = uiState.enterAction,
                     shimmerProgress = shimmerProgress.value,
+                    liftPressedKey = layoutSettings.tapPreviewStyle == dev.omakey.core.layout.TapPreviewStyle.LIFT,
                     alwaysShowUppercaseLetters = layoutSettings.alwaysShowUppercaseLetters,
                     showSecondarySymbols = layoutSettings.secondarySymbolsShown,
                 )
             }
         }
 
-        // Gated on the render side, not inside onPreviewKeyStable — that lambda is deliberately
-        // `remember`ed with no keys (see its own doc, this is what keeps typing from recomposing
-        // every key row), so it would otherwise capture a stale first-composition value of this
-        // setting instead of staying live if the user changes it from Settings mid-session.
-        if (previewKey != null && layoutSettings.showTapPreview) {
-            val (key, rect) = previewKey
-            val density = androidx.compose.ui.platform.LocalDensity.current
-            val bubbleWidthPx = with(density) { 44.dp.toPx() }.coerceAtLeast(rect.width)
-            val bubbleHeightPx = with(density) { 52.dp.toPx() }
-            val gapPx = with(density) { 6.dp.toPx() }
-            val parentWidthPx = ancestorCoordinatesStable()?.size?.width?.toFloat() ?: (rect.right)
-            val x = ((rect.left + rect.right) / 2f - bubbleWidthPx / 2f)
-                .coerceIn(0f, (parentWidthPx - bubbleWidthPx).coerceAtLeast(0f))
-            val y = (rect.top - bubbleHeightPx - gapPx).coerceAtLeast(0f)
-            val isGridModeBubble = dev.omakey.core.theme.LocalKeyboardLayoutMode.current == dev.omakey.core.theme.LayoutMode.GRID
-            val bubbleShape = if (isGridModeBubble) {
-                androidx.compose.foundation.shape.RoundedCornerShape(0.dp)
-            } else {
-                androidx.compose.foundation.shape.RoundedCornerShape(8.dp)
-            }
-            // The key tap colour in both modes: the bubble is the tapped key, enlarged.
-            val bubbleBackground = theme.keyBackgroundPressed.toComposeColor()
-            Box(
-                modifier = Modifier
-                    .offset { androidx.compose.ui.unit.IntOffset(x.toInt(), y.toInt()) }
-                    .size(with(density) { bubbleWidthPx.toDp() }, with(density) { bubbleHeightPx.toDp() })
-                    .background(bubbleBackground, bubbleShape)
-                    .let { m ->
-                        if (isGridModeBubble) {
-                            m.border(theme.gridBorderWidth.toDp(), theme.gridBorderColor.toComposeColor(), bubbleShape)
-                        } else {
-                            m
-                        }
-                    },
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = key.label.let { if (it.length == 1) it.uppercase() else it },
-                    color = theme.labelOn(theme.keyBackgroundPressed).toComposeColor(),
-                    fontFamily = fontFamily,
-                    fontSize = 26.sp,
-                )
-            }
+        if (layoutSettings.tapPreviewStyle.showsBubble) {
+            TapPreviewBubble(
+                tapPreview, theme, fontFamily, ancestorCoordinatesStable,
+                slim = layoutSettings.tapPreviewStyle == dev.omakey.core.layout.TapPreviewStyle.SLIM,
+            )
         }
 
         if (symbolModeAlpha.value > 0f) {
@@ -787,18 +773,25 @@ private fun handleGestureEvent(
                 feedback.onSwipe()
                 return
             }
+            // A thumb sliding along the spacebar as it taps: a space, not a gesture. Also keeps
+            // swipe-left off word-delete from the spacebar, so it can't race the hold-to-move-
+            // cursor gesture there (see SpacebarSwipe).
+            if (dev.omakey.core.gesture.SpacebarSwipe.typesSpace(event.direction, event.downKeyCode)) {
+                feedback.onKeyPress()
+                onPreviewKey(SpecialKeyCode.SPACE)
+                viewModel.onKeyTap(SpecialKeyCode.SPACE)
+                return
+            }
             // Off by default (see GestureSettings.swipeRightForSpace) — a disabled swipe-right is
             // a full no-op, not just a suppressed action, so it doesn't fire haptic/popup-dismiss
             // feedback for a gesture that visibly did nothing.
             if (event.direction == SwipeDirection.RIGHT && !swipeRightForSpace) return
-            // A swipe-left starting on the spacebar is reserved exclusively for the long-press-
-            // and-drag cursor-move gesture (see KeyGrid's `cursorDragActive`) — without this, a
-            // fast left-drag on the spacebar could win the race and delete a word before the
-            // 400ms long-press timer had a chance to engage cursor-drag mode instead.
-            if (event.direction == SwipeDirection.LEFT && event.downKeyCode == SpecialKeyCode.SPACE) return
             if (event.direction == SwipeDirection.LEFT) {
-                feedback.onSwipeDelete()
-                onSwipeDeleteTriggered()
+                // No swoosh or buzz for a delete with nothing to delete.
+                if (viewModel.canDeleteBackward()) {
+                    feedback.onSwipeDelete()
+                    onSwipeDeleteTriggered()
+                }
             } else {
                 feedback.onSwipe()
             }
@@ -853,7 +846,8 @@ internal fun KeyRowView(
     ancestorCoordinates: () -> androidx.compose.ui.layout.LayoutCoordinates?,
     onBoundsMeasured: (List<Triple<Int, KeyDefinition, Rect>>) -> Unit,
     fontFamily: androidx.compose.ui.text.font.FontFamily? = null,
-    pressedKeyCode: Int? = null,
+    /** Which key is held, read lazily so a press recomposes only the keys it changes. */
+    pressedKeyCode: () -> Int? = { null },
     capsLockOn: Boolean = false,
     enterAction: Int = android.view.inputmethod.EditorInfo.IME_ACTION_NONE,
     // Right-to-left gradient shimmer along the home row's top/bottom borders — a quick, purely
@@ -883,6 +877,8 @@ internal fun KeyRowView(
     // "Show secondary symbols": each character key's [KeyDefinition.secondarySymbol], drawn small
     // above its label. See LayoutSettings.showSecondarySymbols.
     showSecondarySymbols: Boolean = false,
+    /** The "Key lift" tap preview: a pressed letter key rises and grows instead of a bubble. */
+    liftPressedKey: Boolean = false,
 ) {
     Box(
         Modifier
@@ -965,158 +961,226 @@ internal fun KeyRowView(
         // color regardless of this setting, so it stays visually distinguishable either way.
         Row(Modifier.fillMaxWidth().fillMaxHeight(), verticalAlignment = Alignment.CenterVertically) {
             rowKeys.forEach { key ->
-                val label = key.label.let {
-                    if (it.length != 1) return@let it
-                    if (alwaysShowUppercaseLetters || shiftOn || capsLockOn) it.uppercase() else it.lowercase()
+                // Per key, and only flips when *this* key's pressed-ness does: a keystroke used to
+                // pass the pressed key down as a plain value, so every press and release
+                // recomposed every key on the keyboard. Now only the key going down and the key
+                // coming up redraw — the rest skip.
+                val isPressedState = remember(key.code, pressedKeyCode) {
+                    androidx.compose.runtime.derivedStateOf { pressedKeyCode() == key.code }
                 }
-                val fontSize = when {
-                    key.label.length == 1 -> 24.sp
-                    key.code == SpecialKeyCode.SPACE -> 12.sp
-                    else -> 15.sp
-                }
-                val isSpace = key.code == SpecialKeyCode.SPACE
-                val isCapsLockKey = key.code == SpecialKeyCode.SHIFT && capsLockOn
-                val isPressed = pressedKeyCode == key.code
-                val isGridMode = dev.omakey.core.theme.LocalKeyboardLayoutMode.current == dev.omakey.core.theme.LayoutMode.GRID
-                // Kept as a ColorSpec rather than resolved straight to a Compose Color, because
-                // the label colour below has to be chosen against whatever this works out to —
-                // see theme.labelOn. Null means the key paints no fill of its own.
-                val keyBackgroundSpec = when {
-                    // Grid mode's whole point is a solid fill on press, so it takes priority over
-                    // every other background rule here (including the spacebar's own accent color
-                    // and the "borderless" showKeyBackgrounds toggle, which is a Normal-mode-only
-                    // preference — a borderless grid isn't a grid).
-                    // Every key fills with the theme's key tap colour while held, in both layout
-                    // modes and whether or not key backgrounds are shown — it used to happen in Grid
-                    // mode only, so the same theme looked different to tap depending on a layout
-                    // toggle, and "key tap colour" meant nothing in Normal mode.
-                    isPressed -> theme.keyBackgroundPressed
-                    isSpace -> theme.spacebarAccentColor
-                    // Caps lock gets its own persistent highlight, same visual language as a
-                    // physical caps-lock LED — distinguishes "locked on" from a plain momentary
-                    // press, which only brightens the icon (see isPressed below). Uses
-                    // keyBackgroundPressed (the same accent-ish color isActiveShift's icon tint
-                    // and the accent-drag popup's highlighted cell already use), not
-                    // keySpecialBackground — on a custom theme, keySpecialBackground is only a
-                    // small nudge off the base key color (see buildCustomTheme's smallNudge),
-                    // which read as flat, barely-distinguishable "weird grey" instead of a clear
-                    // locked-on indicator (real bug report).
-                    isCapsLockKey -> theme.accent
-                    !isGridMode && !showKeyBackgrounds -> null
-                    // Grid mode deliberately has only 4 meaningfully distinct colors — background,
-                    // border, spacebar accent, and the home-row tint below — not a separate "key
-                    // color"/"special key color" on top. Real user feedback: keeping keyBackground
-                    // and keySpecialBackground as distinct fields there just meant two theme
-                    // settings doing the same visual job (every cell is "boxed" by its border
-                    // regardless of key type), for no benefit.
-                    isGridMode -> theme.keyboardBackground
-                    key.keyType == dev.omakey.core.layout.KeyType.SPECIAL -> theme.keySpecialBackground
-                    else -> theme.keyBackground
-                }
-                val keyBackground = keyBackgroundSpec?.toComposeColor() ?: Color.Transparent
-                val keyDescription = if (key.code == SpecialKeyCode.ENTER) describeKey(key, enterAction) else describeKey(key)
-                // Grid mode: no gap between cells, square corners, and a hairline border in
-                // theme.gridBorderColor — the same single color, at full opacity, on every key
-                // regardless of type (shift/backspace/symbols/emoji/enter included). Previously
-                // derived two different alpha levels from keyTextColor (dimmer for special keys),
-                // which read as an inconsistency/bug rather than an intentional cue — real user
-                // feedback, removed.
-                val keyShapeForMode = if (isGridMode) {
-                    androidx.compose.foundation.shape.RoundedCornerShape(0.dp)
-                } else {
-                    androidx.compose.foundation.shape.RoundedCornerShape(8.dp)
-                }
-                val gridBorderColor = theme.gridBorderColor.toComposeColor()
-                Box(
-                    modifier = Modifier
-                        .weight(key.widthWeight)
-                        .fillMaxHeight()
-                        .let { m ->
-                            if (accessibleMode) {
-                                m.clickable(onClickLabel = keyDescription) { onKeyTap(key.code) }
-                                    .semantics { contentDescription = keyDescription }
-                            } else {
-                                m.semantics { contentDescription = keyDescription }
-                            }
-                        }
-                        .padding(horizontal = if (isGridMode) 0.dp else 1.5.dp, vertical = if (isGridMode) 0.dp else 1.5.dp)
-                        .background(keyBackground, keyShapeForMode)
-                        // Home-row tint layered on top of the cell's own opaque fill, not
-                        // instead of the row's own background behind it. Real bug, fixed:
-                        // middleRowStripeColor previously only ever painted the row's own
-                        // container Box, which every key's opaque fill completely covers once
-                        // keys have solid backgrounds (Grid mode, or Normal mode's "Key
-                        // backgrounds" toggle) — the home-row highlight was invisible in both
-                        // cases. middleRowStripeColor is a low-alpha tint by design (see
-                        // OmakeyTheme's own preset values), so drawing it as a second background
-                        // layer composites correctly over whatever's already filled.
-                        .let { m -> if (isGridMode && isHomeRow && homeRowTinted) m.background(theme.middleRowStripeColor.toComposeColor(), keyShapeForMode) else m }
-                        .let { m -> if (isGridMode) m.gridCellBorder(gridBorderColor, theme.gridBorderWidth.toDp(), includeBottom = gridCellBottomBorder) else m },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    val isActiveShift = key.code == SpecialKeyCode.SHIFT && shiftOn
-                    // Fleksy-style treatment: special (non-space) keys sit dimmed by default and
-                    // light up to full brightness the moment they're actually held — makes the
-                    // letter keys (always full brightness) read as the primary content and the
-                    // control keys as secondary, plus gives a clear "yes, I registered your
-                    // press" cue for keys like backspace that have no other visual feedback.
-                    val isDimmable = key.keyType == dev.omakey.core.layout.KeyType.SPECIAL && !isSpace
-                    // Resolved against whatever this key's background actually turned out to be:
-                    // the spacebar, a pressed grid cell and the caps-lock key can all be carrying a
-                    // system accent colour that theme.keyTextColor was never chosen against, and
-                    // drawing the label in it regardless is how a label ends up invisible. For
-                    // every preset this returns keyTextColor unchanged — see OmakeyTheme.labelOn.
-                    val labelSurface = keyBackgroundSpec ?: theme.keyboardBackground
-                    val labelSpec = theme.labelOn(labelSurface)
-                    val labelColor = labelSpec.toComposeColor()
-                    // Fades are worked out against the real surface and stop at the WCAG floor
-                    // (3:1 for the control-key icons, 4.5:1 for text) — flat alphas fell well
-                    // below it on light themes. See OmakeyTheme.fadedLabelOn.
-                    val tint = when {
-                        // Caps lock sits on the accent fill, so its icon takes the on-accent colour.
-                        // Checked before active shift, which is also true while caps lock is on:
-                        // the old order drew the icon in the same colour as its own background.
-                        isCapsLockKey -> theme.onAccent.toComposeColor()
-                        // The accent as a tint on this key, lifted to 3:1 against it if needed.
-                        isActiveShift -> theme.accentOn(labelSurface).toComposeColor()
-                        isDimmable && !isPressed -> theme.fadedLabelOn(labelSurface, 0.5f, ThemeDerivation.MIN_UI_CONTRAST).toComposeColor()
-                        // The language name on the spacebar is a quiet reminder, not a label to
-                        // read on every keystroke — faded so it doesn't compete with the letters.
-                        isSpace -> theme.fadedLabelOn(labelSurface, SPACEBAR_LABEL_ALPHA).toComposeColor()
-                        else -> labelColor
-                    }
-                    val icon = keyIcon(key, capsLockOn, enterAction)
-                    val hint = if (showSecondarySymbols && icon == null) key.secondarySymbol else null
-                    if (icon != null) {
-                        Icon(imageVector = icon, contentDescription = keyDescription, tint = tint, modifier = Modifier.size(20.dp))
-                    } else {
-                        Text(
-                            text = label,
-                            color = tint,
-                            fontFamily = fontFamily,
-                            fontSize = fontSize,
-                            // Nudged down to leave the top of the key to the hint.
-                            modifier = if (hint != null) Modifier.padding(top = 10.dp) else Modifier,
-                        )
-                    }
-                    if (hint != null) {
-                        Text(
-                            // A letter hint (ъ on х) follows the keycaps' case, like the label does.
-                            text = if (hint.length == 1 && (alwaysShowUppercaseLetters || shiftOn || capsLockOn)) hint.uppercase() else hint,
-                            // Faded from the key's label, but never below 4.5:1 (hints only
-                            // appear on keys without an icon, so labelSpec is what it sits beside).
-                            color = theme.fadedLabelOn(labelSurface, SECONDARY_SYMBOL_ALPHA).toComposeColor(),
-                            fontFamily = fontFamily,
-                            fontSize = 10.sp,
-                            maxLines = 1,
-                            modifier = Modifier.align(Alignment.TopCenter).padding(top = 3.dp),
-                        )
-                    }
-                }
+                KeyCell(
+                    key = key,
+                    isPressedState = isPressedState,
+                    shiftOn = shiftOn,
+                    capsLockOn = capsLockOn,
+                    theme = theme,
+                    accessibleMode = accessibleMode,
+                    showKeyBackgrounds = showKeyBackgrounds,
+                    isHomeRow = isHomeRow,
+                    homeRowTinted = homeRowTinted,
+                    onKeyTap = onKeyTap,
+                    fontFamily = fontFamily,
+                    enterAction = enterAction,
+                    alwaysShowUppercaseLetters = alwaysShowUppercaseLetters,
+                    gridCellBottomBorder = gridCellBottomBorder,
+                    showSecondarySymbols = showSecondarySymbols,
+                    liftWhenPressed = liftPressedKey && key.keyType == dev.omakey.core.layout.KeyType.CHARACTER,
+                    modifier = Modifier.weight(key.widthWeight),
+                )
             }
         }
     }
 }
+
+/** One key of [KeyRowView]. Its own composable so that a press or release recomposes just this
+ * key: [isPressedState] is read only here. */
+@Composable
+private fun KeyCell(
+    key: KeyDefinition,
+    isPressedState: androidx.compose.runtime.State<Boolean>,
+    shiftOn: Boolean,
+    capsLockOn: Boolean,
+    theme: OmakeyTheme,
+    accessibleMode: Boolean,
+    showKeyBackgrounds: Boolean,
+    isHomeRow: Boolean,
+    homeRowTinted: Boolean,
+    onKeyTap: (Int) -> Unit,
+    fontFamily: androidx.compose.ui.text.font.FontFamily?,
+    enterAction: Int,
+    alwaysShowUppercaseLetters: Boolean,
+    gridCellBottomBorder: Boolean,
+    showSecondarySymbols: Boolean,
+    liftWhenPressed: Boolean,
+    modifier: Modifier,
+) {
+    val label = key.label.let {
+        if (it.length != 1) return@let it
+        if (alwaysShowUppercaseLetters || shiftOn || capsLockOn) it.uppercase() else it.lowercase()
+    }
+    val fontSize = when {
+        key.label.length == 1 -> 24.sp
+        key.code == SpecialKeyCode.SPACE -> 12.sp
+        else -> 15.sp
+    }
+    val isSpace = key.code == SpecialKeyCode.SPACE
+    val isCapsLockKey = key.code == SpecialKeyCode.SHIFT && capsLockOn
+    val isPressed = isPressedState.value
+    val isGridMode = dev.omakey.core.theme.LocalKeyboardLayoutMode.current == dev.omakey.core.theme.LayoutMode.GRID
+    // Kept as a ColorSpec rather than resolved straight to a Compose Color, because
+    // the label colour below has to be chosen against whatever this works out to —
+    // see theme.labelOn. Null means the key paints no fill of its own.
+    val keyBackgroundSpec = when {
+        // Grid mode's whole point is a solid fill on press, so it takes priority over
+        // every other background rule here (including the spacebar's own accent color
+        // and the "borderless" showKeyBackgrounds toggle, which is a Normal-mode-only
+        // preference — a borderless grid isn't a grid).
+        // Every key fills with the theme's key tap colour while held, in both layout
+        // modes and whether or not key backgrounds are shown — it used to happen in Grid
+        // mode only, so the same theme looked different to tap depending on a layout
+        // toggle, and "key tap colour" meant nothing in Normal mode.
+        isPressed -> theme.keyBackgroundPressed
+        isSpace -> theme.spacebarAccentColor
+        // Caps lock gets its own persistent highlight, same visual language as a
+        // physical caps-lock LED — distinguishes "locked on" from a plain momentary
+        // press, which only brightens the icon (see isPressed below). Uses
+        // keyBackgroundPressed (the same accent-ish color isActiveShift's icon tint
+        // and the accent-drag popup's highlighted cell already use), not
+        // keySpecialBackground — on a custom theme, keySpecialBackground is only a
+        // small nudge off the base key color (see buildCustomTheme's smallNudge),
+        // which read as flat, barely-distinguishable "weird grey" instead of a clear
+        // locked-on indicator (real bug report).
+        isCapsLockKey -> theme.accent
+        !isGridMode && !showKeyBackgrounds -> null
+        // Grid mode deliberately has only 4 meaningfully distinct colors — background,
+        // border, spacebar accent, and the home-row tint below — not a separate "key
+        // color"/"special key color" on top. Real user feedback: keeping keyBackground
+        // and keySpecialBackground as distinct fields there just meant two theme
+        // settings doing the same visual job (every cell is "boxed" by its border
+        // regardless of key type), for no benefit.
+        isGridMode -> theme.keyboardBackground
+        key.keyType == dev.omakey.core.layout.KeyType.SPECIAL -> theme.keySpecialBackground
+        else -> theme.keyBackground
+    }
+    val keyBackground = keyBackgroundSpec?.toComposeColor() ?: Color.Transparent
+    val keyDescription = if (key.code == SpecialKeyCode.ENTER) describeKey(key, enterAction) else describeKey(key)
+    // Grid mode: no gap between cells, square corners, and a hairline border in
+    // theme.gridBorderColor — the same single color, at full opacity, on every key
+    // regardless of type (shift/backspace/symbols/emoji/enter included). Previously
+    // derived two different alpha levels from keyTextColor (dimmer for special keys),
+    // which read as an inconsistency/bug rather than an intentional cue — real user
+    // feedback, removed.
+    val keyShapeForMode = if (isGridMode) {
+        androidx.compose.foundation.shape.RoundedCornerShape(0.dp)
+    } else {
+        androidx.compose.foundation.shape.RoundedCornerShape(8.dp)
+    }
+    val gridBorderColor = theme.gridBorderColor.toComposeColor()
+    Box(
+        modifier = modifier
+            .fillMaxHeight()
+            // "Key lift": the pressed key rises and grows over its neighbours, drawn above them.
+            // Scale and offset are draw-phase only; the key's touch area is unchanged.
+            .let { m ->
+                if (liftWhenPressed && isPressed) {
+                    m.zIndex(1f).graphicsLayer {
+                        scaleX = KEY_LIFT_SCALE
+                        scaleY = KEY_LIFT_SCALE
+                        translationY = -KEY_LIFT_RISE.toPx()
+                        shadowElevation = 4.dp.toPx()
+                        shape = keyShapeForMode
+                    }
+                } else {
+                    m
+                }
+            }
+            .let { m ->
+                if (accessibleMode) {
+                    m.clickable(onClickLabel = keyDescription) { onKeyTap(key.code) }
+                        .semantics { contentDescription = keyDescription }
+                } else {
+                    m.semantics { contentDescription = keyDescription }
+                }
+            }
+            .padding(horizontal = if (isGridMode) 0.dp else 1.5.dp, vertical = if (isGridMode) 0.dp else 1.5.dp)
+            .background(keyBackground, keyShapeForMode)
+            // Home-row tint layered on top of the cell's own opaque fill, not
+            // instead of the row's own background behind it. Real bug, fixed:
+            // middleRowStripeColor previously only ever painted the row's own
+            // container Box, which every key's opaque fill completely covers once
+            // keys have solid backgrounds (Grid mode, or Normal mode's "Key
+            // backgrounds" toggle) — the home-row highlight was invisible in both
+            // cases. middleRowStripeColor is a low-alpha tint by design (see
+            // OmakeyTheme's own preset values), so drawing it as a second background
+            // layer composites correctly over whatever's already filled.
+            .let { m -> if (isGridMode && isHomeRow && homeRowTinted) m.background(theme.middleRowStripeColor.toComposeColor(), keyShapeForMode) else m }
+            .let { m -> if (isGridMode) m.gridCellBorder(gridBorderColor, theme.gridBorderWidth.toDp(), includeBottom = gridCellBottomBorder) else m },
+        contentAlignment = Alignment.Center,
+    ) {
+        val isActiveShift = key.code == SpecialKeyCode.SHIFT && shiftOn
+        // Fleksy-style treatment: special (non-space) keys sit dimmed by default and
+        // light up to full brightness the moment they're actually held — makes the
+        // letter keys (always full brightness) read as the primary content and the
+        // control keys as secondary, plus gives a clear "yes, I registered your
+        // press" cue for keys like backspace that have no other visual feedback.
+        val isDimmable = key.keyType == dev.omakey.core.layout.KeyType.SPECIAL && !isSpace
+        // Resolved against whatever this key's background actually turned out to be:
+        // the spacebar, a pressed grid cell and the caps-lock key can all be carrying a
+        // system accent colour that theme.keyTextColor was never chosen against, and
+        // drawing the label in it regardless is how a label ends up invisible. For
+        // every preset this returns keyTextColor unchanged — see OmakeyTheme.labelOn.
+        val labelSurface = keyBackgroundSpec ?: theme.keyboardBackground
+        val labelSpec = theme.labelOn(labelSurface)
+        val labelColor = labelSpec.toComposeColor()
+        // Fades are worked out against the real surface and stop at the WCAG floor
+        // (3:1 for the control-key icons, 4.5:1 for text) — flat alphas fell well
+        // below it on light themes. See OmakeyTheme.fadedLabelOn.
+        val tint = when {
+            // Caps lock sits on the accent fill, so its icon takes the on-accent colour.
+            // Checked before active shift, which is also true while caps lock is on:
+            // the old order drew the icon in the same colour as its own background.
+            isCapsLockKey -> theme.onAccent.toComposeColor()
+            // The accent as a tint on this key, lifted to 3:1 against it if needed.
+            isActiveShift -> theme.accentOn(labelSurface).toComposeColor()
+            isDimmable && !isPressed -> theme.fadedLabelOn(labelSurface, 0.5f, ThemeDerivation.MIN_UI_CONTRAST).toComposeColor()
+            // The language name on the spacebar is a quiet reminder, not a label to
+            // read on every keystroke — faded so it doesn't compete with the letters.
+            isSpace -> theme.fadedLabelOn(labelSurface, SPACEBAR_LABEL_ALPHA).toComposeColor()
+            else -> labelColor
+        }
+        val icon = keyIcon(key, capsLockOn, enterAction)
+        val hint = if (showSecondarySymbols && icon == null) key.secondarySymbol else null
+        if (icon != null) {
+            Icon(imageVector = icon, contentDescription = keyDescription, tint = tint, modifier = Modifier.size(20.dp))
+        } else {
+            Text(
+                text = label,
+                color = tint,
+                fontFamily = fontFamily,
+                fontSize = fontSize,
+                // Nudged down to leave the top of the key to the hint.
+                modifier = if (hint != null) Modifier.padding(top = 10.dp) else Modifier,
+            )
+        }
+        if (hint != null) {
+            Text(
+                // A letter hint (ъ on х) follows the keycaps' case, like the label does.
+                text = if (hint.length == 1 && (alwaysShowUppercaseLetters || shiftOn || capsLockOn)) hint.uppercase() else hint,
+                // Faded from the key's label, but never below 4.5:1 (hints only
+                // appear on keys without an icon, so labelSpec is what it sits beside).
+                color = theme.fadedLabelOn(labelSurface, SECONDARY_SYMBOL_ALPHA).toComposeColor(),
+                fontFamily = fontFamily,
+                fontSize = 10.sp,
+                maxLines = 1,
+                modifier = Modifier.align(Alignment.TopCenter).padding(top = 3.dp),
+            )
+        }
+    }
+}
+
+/** How much a pressed letter grows and rises with the "Key lift" tap preview. */
+private const val KEY_LIFT_SCALE = 1.18f
+private val KEY_LIFT_RISE = 6.dp
 
 /** How faded the language name on the spacebar is — see KeyRowView's tint. */
 private const val SPACEBAR_LABEL_ALPHA = 0.4f

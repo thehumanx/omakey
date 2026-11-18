@@ -47,7 +47,7 @@ ever leaves your phone.
 
 ## App Updates / Plans and PSA
 - I've publicly shared this keyboard only on Reddit threads (besides my website) and few kind volunteers have tried and provided feedback on fixes/improvements and features. 
-- Languages beyond English arrived in 5.0.0: Spanish, French, Brazilian Portuguese and Nepali, each a small optional download. 5.1.0 adds Italian and Russian, 5.2.0 fixes what a Russian user reported, 5.3.0 is a round of fixes and Fleksy touches from user feedback, 5.3.1 fixes autocorrect in search boxes, and 5.4.0 adds your own long-press symbols, an optional space after punctuation, a choice of what the bar above the keys shows, and a new icon. 5.5.0 adds a number pad and password-manager logins in the suggestion bar, 5.6.0 adds search in Settings, a spacebar swipe to change language, colours that stay readable on every theme, and better romanized Nepali, and 5.7.0 is a round of closed-beta fixes: contractions on space, better Russian spelling fixes, no red underlines in other languages, a key of your choice next to the spacebar, and roomier Settings. More to come.
+- Languages beyond English arrived in 5.0.0: Spanish, French, Brazilian Portuguese and Nepali, each a small optional download. 5.1.0 adds Italian and Russian, 5.2.0 fixes what a Russian user reported, 5.3.0 is a round of fixes and Fleksy touches from user feedback, 5.3.1 fixes autocorrect in search boxes, and 5.4.0 adds your own long-press symbols, an optional space after punctuation, a choice of what the bar above the keys shows, and a new icon. 5.5.0 adds a number pad and password-manager logins in the suggestion bar, 5.6.0 adds search in Settings, a spacebar swipe to change language, colours that stay readable on every theme, and better romanized Nepali, and 5.7.0 is a round of closed-beta fixes: contractions on space, better Russian spelling fixes, no red underlines in other languages, a key of your choice next to the spacebar, and roomier Settings. 5.8.0 makes the spacebar easier to hit, calms the vibration, speeds up typing on slower phones, offers four key popup styles and a key of your choice in place of the emoji key, and drops the stray apostrophe key in Italian. More to come.
 - The next build will also be released on the Google Play Store. If you'd like to help test it, reach out to omakey@iambishistha.com.
 - I am prioritizing more on optimizing the UX and autocorrection/prediction engine as its being written from the scratch.
 - The keyboard is optimized for battery usage as well. Fleksy used to take around 5-10%, while this takes just around 1%.
@@ -109,9 +109,10 @@ ever leaves your phone.
   small above its letter, so you can type `1` or `@` without leaving the letters. Off by default.
 - Your own long-press symbols: list up to 10 you use most (`@ # $ _ &`, say) and holding any letter
   shows exactly those, in your order. Settings → Keyboard → Symbols.
-- Pick the key next to the spacebar: your language's own (a full stop, or "।" in Nepali), a comma,
-  or any single character you like. What it replaces moves to its long-press. Settings → Keyboard
-  → Buttons.
+- Pick the keys on both sides of the spacebar. On the right: your language's own (a full stop, or
+  "।" in Nepali), a comma, or any single character you like; what it replaces moves to its
+  long-press. On the left: emoji, the language switch, or any single character; emoji then moves
+  to the bar above the keys. Settings → Keyboard → Buttons.
 - Type a symbol, then hit space — it drops you straight back into letters, no manual switch back
   needed.
 - A number pad opens by itself in boxes that only take numbers: prices, codes from a text
@@ -120,8 +121,8 @@ ever leaves your phone.
   → Number pad.
 - The Enter key adapts to what you're typing into — "Go," "Search," "Send," "Next," "Done" —
   instead of always being a plain return key.
-- A small preview bubble shows above your finger on every keypress, so you always know what
-  landed. Turn it off in Settings if you'd rather not see it.
+- Every keypress shows you what landed: a preview bubble above your finger, a slimmer, lighter
+  bubble, or the key itself lifting up. Pick the one you like in Settings, or turn it off.
 - Built to keep up with fast, sloppy typing — fingers overlapping mid-word won't throw it off.
 - Optional double-tap (or double-swipe-right) space for a period, off by default.
 - Optional space after punctuation, off by default: `. , ! ? ; :` add the space for you. Type a
@@ -195,7 +196,8 @@ only carry the ones you use. Settings → Languages → "Get more languages" lis
   rather type the script directly. Numbers come out in Nepali digits (१२३), with 123 a long-press
   away.
 - **Italian** — accents put back for you ("perche" becomes "perché", and the wrong-way "perchè"
-  too), with an apostrophe key for "l'", "c'è" and "un'altra", which are understood as two words.
+  too), and "l'", "c'è" and "un'altra" understood as two words. The apostrophe is a long-press on
+  the full stop, as on other keyboards.
 - **Russian** — three keyboards: the standard ЙЦУКЕН, a phonetic one with each letter where the
   English letter that sounds like it sits (я on Q, в on W), and a translit one: type "privet" in
   English letters and get "привет", whichever way you spell it ("horosho" or "khorosho").
@@ -204,8 +206,8 @@ With more than one language turned on, a globe button appears at the right of th
 tap it to step through every language and layout, hold it to pick one. Only use some of a
 language's layouts? Switch the others off under that language in Settings → Languages, and the
 globe skips them. The spacebar quietly shows
-where you are ("PT BR - QWERTY"). Prefer the globe down by the spacebar? Settings → Keyboard swaps
-it with the emoji button. The keyboard tells Android which language you're typing, so the system
+where you are ("PT BR - QWERTY"). Prefer the globe down by the spacebar? Put it in the emoji key's
+place under Settings → Keyboard → Buttons. The keyboard tells Android which language you're typing, so the system
 spell checker doesn't underline Russian or Spanish as misspelt English. Each language learns its own words, so switching never mixes one
 language's vocabulary into another. Removing a language keeps what it
 learned, in case you add it back.

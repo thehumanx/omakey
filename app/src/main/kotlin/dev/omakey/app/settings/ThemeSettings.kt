@@ -670,7 +670,7 @@ internal fun ThemePreviewMock(
                 theme = theme,
                 accessibleMode = false,
                 showKeyBackgrounds = showKeyBackgrounds,
-                pressedKeyCode = pressedCode,
+                pressedKeyCode = { pressedCode },
                 capsLockOn = capsLockOn,
                 // Matches KeyGrid's own homeRowIndex for QwertyEnUS (see KeyboardRoot.kt) — the
                 // ASDFGHJKL row (index 1), not the ZXCVBNM/shift row (real bug, fixed: this

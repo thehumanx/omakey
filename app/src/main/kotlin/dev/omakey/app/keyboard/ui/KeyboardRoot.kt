@@ -14,7 +14,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.captionBar
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.tappableElement
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -121,9 +124,12 @@ fun KeyboardRoot(
 
     // Which key (if any) is currently held down — special keys (shift, backspace, ?123, emoji,
     // enter) render dimmed by default and "light up" to full brightness while pressed, matching
-    // the Fleksy reference the theme is modeled on. Separate from `previewKey`'s enlarged bubble
-    // above, which is character-keys-only.
+    // the Fleksy reference the theme is modeled on. Separate from the tap preview's enlarged bubble
+    // (below), which is character-keys-only.
     var pressedKeyCode by remember { mutableStateOf<Int?>(null) }
+    // Passed down as a reader and a setter, never as the value: reading it here would recompose
+    // this whole keyboard on every key down and up.
+    val pressedKeyCodeStable = remember { { pressedKeyCode } }
     val keyLookupByCode = remember {
         { code: Int -> keyBoundsState.value.values.firstOrNull { (key, _) -> key.code == code }?.first }
     }
@@ -132,23 +138,39 @@ fun KeyboardRoot(
     // the long-press accent-drag popup (AccentDragPopup, inside KeyGrid) — this fires on every
     // ordinary tap, not just held punctuation/vowel keys. Only character keys get one; control keys (shift, space,
     // backspace, etc.) already show their own icon at full size, so a preview adds nothing there.
-    var previewKey by remember { mutableStateOf<Pair<KeyDefinition, Rect>?>(null) }
-    var previewToken by remember { mutableIntStateOf(0) }
-    val onPreviewKeyStable = remember {
+    //
+    // Held in a [TapPreviewState] that only the bubble itself reads (see [TapPreviewBubble]).
+    // It used to be a plain state value read right here, so every keystroke — show, then hide
+    // 180 ms later — recomposed this whole keyboard twice and built and tore down the bubble:
+    // typing lagged on low-end phones with the popup on. The setting is checked before anything
+    // is written, so with the popup off a keystroke costs nothing here at all.
+    val tapPreview = remember { TapPreviewState() }
+    val showTapPreview by androidx.compose.runtime.rememberUpdatedState(uiState.layoutSettings.tapPreviewStyle.showsBubble)
+    val previewableKey = remember {
         { code: Int ->
-            val match = keyBoundsState.value.values.firstOrNull { (key, _) -> key.code == code }
+            keyBoundsState.value.values.firstOrNull { (key, _) -> key.code == code }
                 ?.takeIf { (key, _) -> key.keyType == dev.omakey.core.layout.KeyType.CHARACTER }
-            if (match != null) {
-                previewKey = match
-                previewToken++
-            }
         }
     }
-    if (previewKey != null) {
-        val token = previewToken
-        androidx.compose.runtime.LaunchedEffect(token) {
-            delay(180)
-            if (previewToken == token) previewKey = null
+    // A tap that resolved without a finger-down of its own (a rollover finger, see KeyGrid):
+    // flash the bubble briefly.
+    val onPreviewKeyStable = remember {
+        { code: Int ->
+            if (showTapPreview) previewableKey(code)?.let { tapPreview.flash(it, scope) }
+        }
+    }
+    // The bubble follows the finger: up the moment it lands on a letter, gone just after it lifts.
+    // It used to appear only once the tap resolved on release and then hang on for 180 ms, which
+    // made it feel slow and heavy rather than instant.
+    val onPressedKeyChangeStable = remember {
+        { code: Int? ->
+            pressedKeyCode = code
+            if (showTapPreview) {
+                when (val match = code?.let(previewableKey)) {
+                    null -> if (code == null) tapPreview.release(scope) else tapPreview.hide()
+                    else -> tapPreview.hold(match)
+                }
+            }
         }
     }
 
@@ -292,9 +314,21 @@ fun KeyboardRoot(
             // Docked only: floating and one-handed keyboards are positioned by the user, and a
             // system-inset gap under a keyboard sitting in the middle of the screen is just a
             // stray band of keyboard colour.
+            // The navigation-bar inset alone is only the gesture pill's strip. When the system
+            // also shows its keyboard buttons there (hide-keyboard chevron, keyboard switcher —
+            // Samsung's "Show button to hide keyboard", Android 13+ gesture nav), that taller
+            // band is reported to the keyboard as a caption bar / tappable element, and the
+            // buttons were drawn on top of the bottom row (reported on a Galaxy S25 Ultra).
+            // Reserving the largest of the three gives them their own band, as Samsung's own
+            // keyboard does.
             .then(
                 if (placement == KeyboardPlacement.DOCKED) {
-                    Modifier.windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom))
+                    Modifier.windowInsetsPadding(
+                        WindowInsets.navigationBars
+                            .union(WindowInsets.captionBar)
+                            .union(WindowInsets.tappableElement)
+                            .only(WindowInsetsSides.Bottom),
+                    )
                 } else {
                     Modifier
                 },
@@ -475,12 +509,12 @@ fun KeyboardRoot(
                         ancestorCoordinatesStable = ancestorCoordinatesStable,
                         onKeysAreaPositioned = { keysAreaCoordinates = it },
                         onPreviewKey = onPreviewKeyStable,
-                        previewKey = previewKey,
+                        tapPreview = tapPreview,
                         onOpenSettings = onOpenSettings,
                         feedback = feedback,
                         fontFamily = fontFamily,
-                        pressedKeyCode = pressedKeyCode,
-                        onPressedKeyChange = { pressedKeyCode = it },
+                        pressedKeyCode = pressedKeyCodeStable,
+                        onPressedKeyChange = onPressedKeyChangeStable,
                     )
                 }
                 }
