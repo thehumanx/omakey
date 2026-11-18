@@ -233,7 +233,7 @@ learned, in case you add it back.
 - Full contraction support (im → I'm, weve → we've, shoudve → should've) with fuzzy matching for
   typos of contractions too. "dont" or "youre" fixes itself when you press space; a real word like
   "well" or "its" stays as typed, with the contraction offered in the bar. Chat shorthand ("pls",
-  "idk", "u") is left alone.
+  "idk", "u") and short abbreviations in capitals ("IM", "ID") are left alone.
 - Knows what usually comes next — suggestions are ranked by the words on either side, not just by
   which word is commonest overall.
 - Learns the words *you* use. Names, slang, jargon, project names: type one three times and it

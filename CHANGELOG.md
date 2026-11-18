@@ -20,9 +20,10 @@ Settings. Thanks to the closed-beta testers for the reports.
 
 ### Changed
 - **Contractions fix themselves when you press space.** "dont", "im", "youre" and "thats" become
-  "don't", "I'm", "you're" and "that's", and so do "cant", "wont" and "hes". Words that are real
-  on their own, like "well", "its", "were" and "id", stay as you typed them, with the contraction
-  waiting in the suggestion bar. Chat shorthand like "pls", "thx", "idk" and "u" is left alone.
+  "don't", "I'm", "you're" and "that's", and so do "cant", "wont", "hes" and "yall". Words that
+  are real on their own, like "well", "its", "were" and "id", stay as you typed them, with the
+  contraction waiting in the suggestion bar. Chat shorthand like "pls", "thx", "idk" and "u" is
+  left alone, and so are short abbreviations in capitals, like "IM" and "ID".
 - **Better Russian spelling fixes.** Common spelling slips are now fixed far more often and changed
   to the wrong word half as often: и for й, а for о, и for е, and a missing ь or ъ.
 - **No more red underlines in Russian and other languages.** Each language you turn on now tells
