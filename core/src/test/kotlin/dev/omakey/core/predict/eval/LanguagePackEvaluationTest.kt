@@ -64,6 +64,14 @@ import kotlin.random.Random
  *   correct words damaged            0.35 %
  *   translit, words as romanized     top-1 98.2 %   top-3 99.7 %
  *   translit, casual spellings       top-3 94.8 % (х as "h", щ "sch", ц "c", й "j", ё "e", ы "i")
+ * 2026-11-18, same pack, with the spelling-confusion table (`OrthographicConfusions`: й/и, о/а,
+ * е/и at 1.0, a left-out ь/ъ at 1.5) — swept over {0.6, 1.0, 1.5, 3.5} × {1.0, 1.5, 3.0}:
+ *   orthography (synthetic)          fixed 73.9 % → 85.1 %   wrong 20.3 % → 9.0 %
+ *   orthography offered in strip     84.5 % → 86.1 %
+ *   touch noise 0.35, ЙЦУКЕН         fixed 60.3 % → 60.0 %   wrong 7.9 % → 8.2 %
+ *   correct words damaged            0.34 % → 0.34 %
+ * The orthography set is generated from the same confusions the table encodes, so its gain is an
+ * upper bound on what real typing will see; the touch-noise cost is real.
  * The translit figures are optimistic: the typing is generated from the same romanization the
  * index is keyed on, so they measure the folding and ranking, not how varied real typing is.
  * Remaining misses are mostly "-tsya" verb endings and words outside the vocabulary.
@@ -388,6 +396,26 @@ class LanguagePackEvaluationTest {
         println("ru_RU touch noise 0.35 (phonetic): $phoneticNoise")
         println("ru_RU correct words damaged: %.2f %%".format(damage))
 
+        // Orthographic slips (й/и, dropped ь/ъ, a doubled consonant written once, unstressed
+        // vowels, -тся/-ться) — synthetic, see RussianOrthography. Only misspellings that are not
+        // themselves words: a real word is never rewritten silently, so those are the strip's job.
+        val orthoRandom = Random(66)
+        val orthography = measure(engine, sentences) { w ->
+            RussianOrthography.misspell(w, orthoRandom)?.takeIf { !index.isKnown(it) }
+        }
+        var orthoStripTotal = 0; var orthoStripOffered = 0
+        val orthoStripRandom = Random(66)
+        for (sentence in sentences.take(800)) for (i in sentence.indices) {
+            val word = sentence[i]
+            val typed = RussianOrthography.misspell(word, orthoStripRandom)?.takeIf { !index.isKnown(it) } ?: continue
+            orthoStripTotal++
+            val context = index.contextOf(sentence.getOrNull(i - 1), sentence.getOrNull(i - 2))
+            if (word in index.alternatives(typed, 3, context)) orthoStripOffered++
+        }
+        val orthoStripRate = 100.0 * orthoStripOffered / orthoStripTotal
+        println("ru_RU orthography (synthetic): $orthography")
+        println("ru_RU orthography offered in strip (top 3): %.1f %% of %d".format(orthoStripRate, orthoStripTotal))
+
         // Transliteration, built inside the installed pack as the keyboard builds it.
         val packDir = File((locale.languageModel as ModelSource.File).path).parentFile
         val scheme = dev.omakey.core.translit.RussianScheme
@@ -431,6 +459,8 @@ class LanguagePackEvaluationTest {
         assertTrue("touch-noise correction regressed: $noise", noise.fixedRate >= RU_NOISE_FIXED && noise.wrongRate <= RU_NOISE_WRONG)
         assertTrue("phonetic touch-noise correction regressed: $phoneticNoise", phoneticNoise.fixedRate >= RU_NOISE_FIXED && phoneticNoise.wrongRate <= RU_NOISE_WRONG)
         assertTrue("damage to correct words regressed: $damage", damage <= RU_DAMAGE)
+        assertTrue("orthographic correction regressed: $orthography", orthography.fixedRate >= RU_ORTHO_FIXED && orthography.wrongRate <= RU_ORTHO_WRONG)
+        assertTrue("orthographic strip recall regressed: $orthoStripRate", orthoStripRate >= RU_ORTHO_STRIP)
         assertTrue("transliteration regressed: top-1 $top1Rate top-3 $top3Rate", top1Rate >= RU_TRANSLIT_TOP1 && top3Rate >= RU_TRANSLIT_TOP3)
         assertTrue("casual-spelling transliteration regressed: $casualRate", casualRate >= RU_TRANSLIT_CASUAL_TOP3)
     }
@@ -486,6 +516,9 @@ private const val IT_DAMAGE = 0.3
 private const val RU_NOISE_FIXED = 58.0
 private const val RU_NOISE_WRONG = 9.5
 private const val RU_DAMAGE = 0.5
+private const val RU_ORTHO_FIXED = 83.0
+private const val RU_ORTHO_WRONG = 10.5
+private const val RU_ORTHO_STRIP = 84.0
 private const val RU_TRANSLIT_TOP1 = 96.0
 private const val RU_TRANSLIT_TOP3 = 99.0
 private const val RU_TRANSLIT_CASUAL_TOP3 = 92.0

@@ -54,7 +54,10 @@ object PackLoader {
         }
 
         val profile = try {
-            parse(inside(dir, manifest.profile), ProfileSpec.serializer()).toProfile()
+            dev.omakey.core.locale.OrthographicConfusions.applyDefaults(
+                parse(inside(dir, manifest.profile), ProfileSpec.serializer()).toProfile(),
+                manifest.id,
+            )
         } catch (e: IllegalArgumentException) {
             throw InvalidPackException("profile: ${e.message}", e)
         }

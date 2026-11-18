@@ -152,10 +152,17 @@ class AutocorrectIndex(
         model = null
         profile = languageProfile
         personal = personalModel
-        channel = if (languageProfile.equivalentLetters.isEmpty() && geometry === baseChannel.geometry) {
+        val plainLanguage = languageProfile.equivalentLetters.isEmpty() &&
+            languageProfile.confusableLetters.isEmpty() && languageProfile.omittableLetters.isEmpty()
+        channel = if (plainLanguage && geometry === baseChannel.geometry) {
             baseChannel
         } else {
-            baseChannel.forLanguage(geometry, languageProfile.equivalentLetters)
+            baseChannel.forLanguage(
+                geometry,
+                languageProfile.equivalentLetters,
+                languageProfile.confusableLetters,
+                languageProfile.omittableLetters.joinToString(""),
+            )
         }
         val letters = CharArray(languageModel.alphabetSize) { languageModel.alphabetChar(it) }
             .filter { it.isLetter() && languageProfile.isWordChar(it) }
@@ -644,9 +651,9 @@ class AutocorrectIndex(
         languageModel.copyWord(id, intended)
         val channel = channel
         val insertion = channel.insertion()
-        val deletion = channel.deletion()
         for (i in 0..typedLength) d[i][0] = i * insertion
-        for (j in 0..length) d[0][j] = j * deletion
+        d[0][0] = 0f
+        for (j in 1..length) d[0][j] = d[0][j - 1] + channel.deletion(intended[j - 1])
         for (i in 1..typedLength) {
             val typedChar = typed[i - 1]
             for (j in 1..length) {
@@ -654,7 +661,7 @@ class AutocorrectIndex(
                 val substitution = channel.substitutionAt(typedChar, intendedChar, taps, i - 1)
                 var value = minOf(
                     d[i - 1][j] + insertion,
-                    d[i][j - 1] + deletion,
+                    d[i][j - 1] + channel.deletion(intendedChar),
                     d[i - 1][j - 1] + substitution,
                 )
                 if (i > 1 && j > 1) {
