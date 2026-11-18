@@ -29,6 +29,8 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -59,6 +61,12 @@ class LocaleManager(
     /** The active language and its mapped model, once [load] has them — what [reloadPersonal]
      * rebuilds the learned words on top of. */
     @Volatile private var loaded: Pair<KeyboardLocale, LanguageModel>? = null
+
+    /** Serialises [load] and [reloadPersonal]: both suspend on the database, and a reload resuming
+     * after a language switch had finished would put the old language back behind autocorrect. */
+    // Declared before init: init launches load() immediately on Main.immediate.
+    private val loadLock = Mutex()
+
 
     override val enabled: StateFlow<List<KeyboardLocale>> =
         combine(registry.available, preferences.settings) { _, settings -> resolve(settings) }
@@ -125,37 +133,37 @@ class LocaleManager(
         return languages.firstOrNull { it.id == preferences.settings.value.activeId } ?: languages.first()
     }
 
-    private suspend fun load(locale: KeyboardLocale) {
-        predictionEngine.delegate = null
-        _transliterator.value = null
-        loaded = null
-        try {
-            val model = withContext(Dispatchers.IO) {
-                when (val source = locale.languageModel) {
-                    is ModelSource.Asset -> LanguageModel.load(context, source.name)
-                    is ModelSource.File -> LanguageModel.load(File(source.path))
+    private suspend fun load(locale: KeyboardLocale) = loadLock.withLock {
+            predictionEngine.delegate = null
+            _transliterator.value = null
+            loaded = null
+            try {
+                val model = withContext(Dispatchers.IO) {
+                    when (val source = locale.languageModel) {
+                        is ModelSource.Asset -> LanguageModel.load(context, source.name)
+                        is ModelSource.File -> LanguageModel.load(File(source.path))
+                    }
                 }
-            }
-            installPersonal(locale, model)
-            loaded = locale to model
-            val source = locale.languageModel
-            val transliterates = (listOf(locale.letterLayout) + locale.letterLayoutChoices).any { it.transliteration }
-            val scheme = TransliterationScheme.forLanguage(locale.language)
-            if (transliterates && scheme == null) Log.w(TAG, "${locale.id} has a transliteration layout but no scheme")
-            if (transliterates && scheme != null && source is ModelSource.File) {
-                // Built once per install, next to the model, then memory-mapped (see
-                // TransliterationIndex for why it's built here and not shipped in the pack).
-                val index = withContext(Dispatchers.IO) {
-                    TransliterationIndex.openOrBuild(File(File(source.path).parentFile, "translit.idx"), model, scheme)
+                installPersonal(locale, model)
+                loaded = locale to model
+                val source = locale.languageModel
+                val transliterates = (listOf(locale.letterLayout) + locale.letterLayoutChoices).any { it.transliteration }
+                val scheme = TransliterationScheme.forLanguage(locale.language)
+                if (transliterates && scheme == null) Log.w(TAG, "${locale.id} has a transliteration layout but no scheme")
+                if (transliterates && scheme != null && source is ModelSource.File) {
+                    // Built once per install, next to the model, then memory-mapped (see
+                    // TransliterationIndex for why it's built here and not shipped in the pack).
+                    val index = withContext(Dispatchers.IO) {
+                        TransliterationIndex.openOrBuild(File(File(source.path).parentFile, "translit.idx"), model, scheme)
+                    }
+                    _transliterator.value = Transliterator(model, index, scheme)
                 }
-                _transliterator.value = Transliterator(model, index, scheme)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Typing still works without a model; only suggestions and correction are lost.
+                Log.e(TAG, "Language model for ${locale.id} unavailable; typing works, suggestions won't", e)
             }
-        } catch (e: kotlinx.coroutines.CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            // Typing still works without a model; only suggestions and correction are lost.
-            Log.e(TAG, "Language model for ${locale.id} unavailable; typing works, suggestions won't", e)
-        }
     }
 
     /** Reads [locale]'s learned words from the database and puts them, with [model], behind
@@ -181,9 +189,9 @@ class LocaleManager(
     /** Settings edited the learned words: rebuild the active language's from the database, keeping
      * its already-mapped model. A language still loading picks the change up from the database
      * anyway. */
-    private suspend fun reloadPersonal() {
-        val (locale, model) = loaded ?: return
-        if (_active.value.id != locale.id) return
+    private suspend fun reloadPersonal() = loadLock.withLock {
+        val (locale, model) = loaded ?: return@withLock
+        if (_active.value.id != locale.id) return@withLock
         try {
             installPersonal(locale, model)
         } catch (e: kotlinx.coroutines.CancellationException) {

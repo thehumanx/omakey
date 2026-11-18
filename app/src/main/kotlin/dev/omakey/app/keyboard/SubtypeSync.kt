@@ -46,6 +46,11 @@ class SubtypeSync(
         }
     }
 
+    /** The keyboard is showing for a field. The switch in [start] runs during onCreate, before the
+     * system has bound this keyboard, where Android ignores it without an error; repeating it here
+     * is what makes the first one stick. Cheap: [switchSystemTo] returns early when they agree. */
+    fun onInputViewStarted() = switchSystemTo(localeManager.active.value)
+
     /** The system's current subtype changed — from its keyboard switcher, or as the echo of our own
      * [switchSystemTo]. Either way: follow it if it names a different enabled language. */
     fun onSystemSubtypeChanged(subtype: InputMethodSubtype?) {

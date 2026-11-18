@@ -452,6 +452,7 @@ class OmakeyInputMethodService :
         super.onStartInputView(info, restarting)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
         keyboardViewModel?.resetForNewField(info, restarting)
+        if (::subtypeSync.isInitialized) subtypeSync.onInputViewStarted()
         // Only listens for clipboard changes while the keyboard is actually on screen — see the
         // comment in onCreate() for why this isn't registered for the whole service lifetime.
         // onStartInputView can fire again without a matching onFinishInputView in between (e.g.

@@ -104,8 +104,10 @@ internal fun SettingsSection(title: String, titleModifier: Modifier = Modifier, 
 }
 
 /** Space above and below every row in a section card (closed-beta feedback: settings felt
- * congested; the 5.7.0 "grouped cards" redesign). */
-private val ROW_VERTICAL_PADDING = 14.dp
+ * congested; the 5.7.0 "grouped cards" redesign): 14dp in all for a setting row, split so most of
+ * it sits inside the row's own touch target — a tap near a divider still hits the row. */
+private val ROW_VERTICAL_PADDING = 4.dp
+private val ROW_INNER_PADDING = 10.dp
 
 /** Space between a row's text and the switch or caret at its end. It was 0, so long descriptions
  * ran right up to the switch. */
@@ -590,7 +592,8 @@ internal fun UnindexedSettingToggle(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .toggleable(value = checked, role = Role.Switch, onValueChange = onCheckedChange),
+            .toggleable(value = checked, role = Role.Switch, onValueChange = onCheckedChange)
+            .padding(vertical = ROW_INNER_PADDING),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         SettingText(title, description, Modifier.weight(1f))
@@ -614,7 +617,8 @@ internal fun UnindexedClickableSettingRow(title: String, description: String, on
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
+            .clickable(onClick = onClick)
+            .padding(vertical = ROW_INNER_PADDING),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         SettingText(title, description, Modifier.weight(1f))
@@ -902,7 +906,7 @@ internal fun SliderSetting(
     modifier: Modifier = Modifier,
     onValueChangeFinished: (() -> Unit)? = null,
 ) {
-    Column(modifier.fillMaxWidth()) {
+    Column(modifier.fillMaxWidth().padding(vertical = ROW_INNER_PADDING)) {
         SettingText(title, description)
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             SettingDescription(low)

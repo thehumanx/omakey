@@ -23,6 +23,12 @@ R8 is on for release builds. The bundle carries its own deobfuscation map, so Pl
 crash stack traces with nothing extra to upload. That also clears the "no deobfuscation file"
 warning.
 
+The GitHub APK has no such home for its map. After each release build, copy
+`app/build/outputs/mapping/sideloadRelease/mapping.txt` and
+`app/build/outputs/mapping/playRelease/mapping.txt` into `mappings/v<version>/` (git-ignored). A
+crash a tester pastes from the APK can only be decoded with the map from that exact build. Never
+attach the map to a release: it undoes the obfuscation.
+
 ## 2. Create the release
 
 1. Play Console → omakey → **Test and release → Testing → Closed testing**.
