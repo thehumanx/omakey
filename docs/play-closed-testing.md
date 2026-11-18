@@ -35,7 +35,7 @@ attach the map to a release: it undoes the obfuscation.
 2. Open the track your testers are on, then **Create new release**.
 3. **App bundles → Upload** and pick the `.aab`. Wait for the upload to finish processing. Errors
    show here, for example a versionCode that is too low.
-4. **Release name**: Play fills in the version (e.g. `49 (5.7.0)`). Keep it.
+4. **Release name**: Play fills in the version (e.g. `50 (5.7.0)`). Keep it.
 5. **Release notes**: short, plain words, at most 500 characters, inside the language tags Play
    shows:
    ```
