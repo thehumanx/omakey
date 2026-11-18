@@ -92,6 +92,7 @@ class OmakeyInputMethodService :
     private lateinit var themeRepository: ThemeRepository
     private lateinit var customThemePreferences: dev.omakey.core.theme.CustomThemePreferences
     private lateinit var learnedWordsSignal: dev.omakey.core.predict.LearnedWordsSignal
+    private lateinit var subtypeSync: SubtypeSync
     private lateinit var accessibilityPreferences: AccessibilityPreferences
     private lateinit var layoutPreferences: LayoutPreferences
     private lateinit var fontPreferences: FontPreferences
@@ -304,6 +305,7 @@ class OmakeyInputMethodService :
             scope = serviceScope,
             learnedWordsChanges = learnedWordsSignal.changes,
         )
+        subtypeSync = SubtypeSync(this, localeManager, serviceScope).also { it.start() }
         serviceScope.launch {
             // The old dictionary importer tracked its progress here. Left-over state is meaningless
             // now and would otherwise sit in the app's data directory forever.
@@ -573,6 +575,11 @@ class OmakeyInputMethodService :
     }
 
     override fun onEvaluateFullscreenMode(): Boolean = false
+
+    override fun onCurrentInputMethodSubtypeChanged(newSubtype: android.view.inputmethod.InputMethodSubtype?) {
+        super.onCurrentInputMethodSubtypeChanged(newSubtype)
+        if (::subtypeSync.isInitialized) subtypeSync.onSystemSubtypeChanged(newSubtype)
+    }
 
     /**
      * Where the keyboard itself is, in window coordinates — reported by `KeyboardRoot` on every
