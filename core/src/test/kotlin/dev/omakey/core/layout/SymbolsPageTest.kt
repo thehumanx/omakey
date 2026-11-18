@@ -39,10 +39,23 @@ class SymbolsPageTest {
     @Test
     fun `nothing reachable on the classic pages becomes unreachable`() {
         fun symbols(vararg layouts: KeyboardLayout) = layouts.flatMap { l -> l.rows.flatMap { it.keys } }
-            .filter { it.keyType == KeyType.CHARACTER }.map { it.committedText }.toSet() + Layouts.SymbolsExtraRow.keys.map { it.committedText }
+            .filter { it.keyType == KeyType.CHARACTER }.map { it.committedText }.toSet()
         val before = symbols(Layouts.ClassicSymbols1, Layouts.Symbols2)
         val after = symbols(Layouts.Symbols1, Layouts.Symbols2)
         assertTrue("lost: ${before - after}", after.containsAll(before))
+    }
+
+    /** Closed-beta report: there was no "%" anywhere on the grids. It lived only in the number tab
+     * shown above the symbols page, which can be turned off — and this test used to count that tab,
+     * which is how the gap went unnoticed. Only the grids count now. */
+    @Test
+    fun `every printable ASCII symbol is on the symbols grids`() {
+        val ascii = "!\"#\$%&'()*+,-./:;<=>?@[\\]^_`{|}~".toSet()
+        for (first in listOf(Layouts.Symbols1, Layouts.ClassicSymbols1)) {
+            val onGrid = listOf(first, Layouts.Symbols2).flatMap { l -> l.rows.flatMap { it.keys } }
+                .filter { it.keyType == KeyType.CHARACTER }.flatMap { it.committedText.toList() }.toSet()
+            assertEquals("missing with ${first.rows[1].keys.first().label}…", emptySet<Char>(), ascii - onGrid)
+        }
     }
 
     @Test

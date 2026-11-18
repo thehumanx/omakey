@@ -148,7 +148,9 @@ object Layouts {
         id = "symbols_2",
         homeRow = 1,
         rows = listOf(
-            KeyRow(listOf("~", "`", "|", "•", "√", "π", "÷", "×", "¶", "∆").map(::charKey)),
+            // "%" where "¶" was: it was on no grid at all (closed-beta report), and Gboard keeps it
+            // on its second page too. "¶" moved to a long-press on "•".
+            KeyRow(listOf("~", "`", "|").map(::charKey) + charKey("•", listOf("¶")) + listOf("√", "π", "÷", "×", "%", "∆").map(::charKey)),
             KeyRow(listOf("£", "¥", "€", "¢", "^", "°", "=", "{", "}", "\\").map(::charKey)),
             KeyRow(
                 listOf(
