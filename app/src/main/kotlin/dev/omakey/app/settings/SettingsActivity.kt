@@ -433,6 +433,7 @@ private fun SettingsScreen(
                         }
                         SettingsSectionKey.SUGGESTION_BAR -> TopStripPagesSection(topStripPreferences)
                         SettingsSectionKey.BUTTONS -> {
+                            SpacebarSideKeyRow(layoutSettings, layoutPreferences)
                             SwapEmojiLanguageToggle(layoutSettings, layoutPreferences)
                             TapPreviewToggle(layoutSettings, layoutPreferences)
                         }

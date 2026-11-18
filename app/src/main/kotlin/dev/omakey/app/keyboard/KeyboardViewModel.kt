@@ -38,6 +38,7 @@ import dev.omakey.core.layout.NumberPads
 import dev.omakey.core.layout.withDigits
 import dev.omakey.core.layout.withSymbolsPage
 import dev.omakey.core.layout.withPopupSymbols
+import dev.omakey.core.layout.withSpacebarSideKey
 import dev.omakey.core.layout.SpecialKeyCode
 import dev.omakey.core.predict.AutocorrectIndex
 import dev.omakey.core.predict.AutocorrectPreferences
@@ -1964,6 +1965,7 @@ class KeyboardViewModel(
             .let { if (fleksy) it.withSymbolsPage(Layouts.ClassicSymbols1, Layouts.Symbols1) else it }
             // Last, so the user's own symbols win over everything above.
             .withPopupSymbols(layoutPreferences.settings.value.popupSymbols)
+            .withSpacebarSideKey(layoutPreferences.settings.value.spacebarSideKey)
         if (localeController.enabled.value.size < 2) return stored
         // "FR - AZERTY": language and layout together, so the spacebar says exactly what the globe
         // key just switched to — two layouts of one language would otherwise look identical.

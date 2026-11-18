@@ -52,7 +52,9 @@ import dev.omakey.core.gesture.GesturePreferences
 import dev.omakey.core.gesture.GestureSettings
 import dev.omakey.core.layout.LayoutPreferences
 import dev.omakey.core.layout.LayoutSettings
+import dev.omakey.core.layout.DEFAULT_SPACEBAR_SIDE_KEY
 import dev.omakey.core.layout.MAX_POPUP_SYMBOLS
+import dev.omakey.core.layout.sanitizeSpacebarSideKey
 import dev.omakey.core.layout.popupSymbolsAsTyped
 import dev.omakey.core.predict.AutocorrectPreferences
 import dev.omakey.core.predict.AutocorrectSettings
@@ -814,4 +816,70 @@ private sealed interface UpdateCheckStatus {
     data object Checking : UpdateCheckStatus
     data object Failed : UpdateCheckStatus
     data class Checked(val result: dev.omakey.core.update.UpdateCheckResult) : UpdateCheckStatus
+}
+
+/** Choices offered as one tap; anything else goes in the field below them. */
+private val SPACEBAR_SIDE_CHOICES = listOf(DEFAULT_SPACEBAR_SIDE_KEY, ".", ",", "?", "!", "'", "-")
+
+/** The key right of the spacebar (closed-beta request): the language's own by default, or any one
+ * character. Same tile style as [EmojiSkinTonePicker]. */
+@Composable
+internal fun SpacebarSideKeyRow(settings: LayoutSettings, layoutPreferences: LayoutPreferences) {
+    val current = settings.spacebarSideKey
+    var custom by remember { mutableStateOf(current.takeIf { it !in SPACEBAR_SIDE_CHOICES }.orEmpty()) }
+    Column(rememberSettingHighlight(SettingKey.SPACEBAR_SIDE_KEY), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(text = SettingKey.SPACEBAR_SIDE_KEY.title, style = MaterialTheme.typography.bodyLarge)
+        Text(
+            text = "What the key to the right of the spacebar types. Hold it for the one it replaced.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            for (choice in SPACEBAR_SIDE_CHOICES) {
+                val selected = choice == current
+                val label = if (choice == DEFAULT_SPACEBAR_SIDE_KEY) "Auto" else choice
+                Box(
+                    modifier = Modifier
+                        .weight(if (choice == DEFAULT_SPACEBAR_SIDE_KEY) 1.6f else 1f)
+                        .height(44.dp)
+                        .background(
+                            if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                            RoundedCornerShape(8.dp),
+                        )
+                        .border(
+                            width = if (selected) 2.dp else 0.dp,
+                            color = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                            shape = RoundedCornerShape(8.dp),
+                        )
+                        .clickable {
+                            custom = ""
+                            layoutPreferences.setSpacebarSideKey(choice)
+                        }
+                        .semantics {
+                            contentDescription = if (choice == DEFAULT_SPACEBAR_SIDE_KEY) "Language default" else "Type $choice"
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(text = label, fontSize = if (choice == DEFAULT_SPACEBAR_SIDE_KEY) 14.sp else 20.sp)
+                }
+            }
+        }
+        OutlinedTextField(
+            value = custom,
+            onValueChange = { typed ->
+                // One character at most; the field refuses a second rather than saving something
+                // the keyboard would then ignore.
+                if (typed.isEmpty()) {
+                    custom = ""
+                    layoutPreferences.setSpacebarSideKey(DEFAULT_SPACEBAR_SIDE_KEY)
+                } else if (sanitizeSpacebarSideKey(typed) == typed) {
+                    custom = typed
+                    layoutPreferences.setSpacebarSideKey(typed)
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = { Text(text = "Or type any one character") },
+            singleLine = true,
+        )
+    }
 }

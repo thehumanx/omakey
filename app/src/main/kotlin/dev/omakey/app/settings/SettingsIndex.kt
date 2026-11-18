@@ -79,6 +79,7 @@ internal enum class SettingKey(
     BAR_NUMBERS("Numbers", SettingsSectionKey.SUGGESTION_BAR, listOf("digits", "number row")),
     BAR_TEXT_TOOLS("Text tools", SettingsSectionKey.SUGGESTION_BAR, listOf("undo", "redo", "copy", "cut", "paste", "select all")),
     AUTOFILL("Autofill suggestions", SettingsSectionKey.SUGGESTION_BAR, listOf("password", "login", "bitwarden")),
+    SPACEBAR_SIDE_KEY("Key next to the spacebar", SettingsSectionKey.BUTTONS, listOf("period", "comma", "full stop", "dot", ".")),
     SWAP_EMOJI_LANGUAGE("Swap emoji and language buttons", SettingsSectionKey.BUTTONS, listOf("switch", "globe")),
     TAP_PREVIEW("Show key press popup", SettingsSectionKey.BUTTONS, listOf("preview", "bubble", "magnify")),
     FLEKSY_SYMBOLS("Keep Fleksy secondary keys layout", SettingsSectionKey.SYMBOLS, listOf("?123", "symbols page")),
