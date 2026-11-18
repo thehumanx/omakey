@@ -66,6 +66,10 @@ class LanguageProfile(
      * Fixed at the word boundary when auto-capitalise or autocorrect is on, and always shown that
      * way in suggestions. See `AutoCapitalization`. */
     val alwaysCapitalized: Map<String, String> = emptyMap(),
+    /** Words autocorrect never silently rewrites even though the dictionary doesn't know them —
+     * chat shorthand like "pls" or "idk", which people type on purpose. Lookup form (lowercase).
+     * They still get alternatives in the suggestion strip. */
+    val keepAsTyped: Set<String> = emptySet(),
 ) {
     init {
         require(digits.length == 10) { "digits must be exactly ten characters, got ${digits.length}" }
@@ -121,6 +125,7 @@ class LanguageProfile(
             contractions = EnglishContractions.map,
             emojiFor = WordEmojiSuggestions::suggest,
             alwaysCapitalized = mapOf("i" to "I"),
+            keepAsTyped = EnglishShorthand.words,
         )
     }
 }
