@@ -21,3 +21,6 @@ keystore/
 
 # Working draft, not for publication — kept locally, deliberately untracked.
 docs/case-study-draft.md
+
+# R8 maps per release (decode obfuscated stack traces); private, never published
+mappings/

@@ -47,7 +47,7 @@ ever leaves your phone.
 
 ## App Updates / Plans and PSA
 - I've publicly shared this keyboard only on Reddit threads (besides my website) and few kind volunteers have tried and provided feedback on fixes/improvements and features. 
-- Languages beyond English arrived in 5.0.0: Spanish, French, Brazilian Portuguese and Nepali, each a small optional download. 5.1.0 adds Italian and Russian, 5.2.0 fixes what a Russian user reported, 5.3.0 is a round of fixes and Fleksy touches from user feedback, 5.3.1 fixes autocorrect in search boxes, and 5.4.0 adds your own long-press symbols, an optional space after punctuation, a choice of what the bar above the keys shows, and a new icon. 5.5.0 adds a number pad and password-manager logins in the suggestion bar, and 5.6.0 adds search in Settings, a spacebar swipe to change language, colours that stay readable on every theme, and better romanized Nepali. More to come.
+- Languages beyond English arrived in 5.0.0: Spanish, French, Brazilian Portuguese and Nepali, each a small optional download. 5.1.0 adds Italian and Russian, 5.2.0 fixes what a Russian user reported, 5.3.0 is a round of fixes and Fleksy touches from user feedback, 5.3.1 fixes autocorrect in search boxes, and 5.4.0 adds your own long-press symbols, an optional space after punctuation, a choice of what the bar above the keys shows, and a new icon. 5.5.0 adds a number pad and password-manager logins in the suggestion bar, 5.6.0 adds search in Settings, a spacebar swipe to change language, colours that stay readable on every theme, and better romanized Nepali, and 5.7.0 is a round of closed-beta fixes: contractions on space, better Russian spelling fixes, no red underlines in other languages, a key of your choice next to the spacebar, and roomier Settings. More to come.
 - The next build will also be released on the Google Play Store. If you'd like to help test it, reach out to omakey@iambishistha.com.
 - I am prioritizing more on optimizing the UX and autocorrection/prediction engine as its being written from the scratch.
 - The keyboard is optimized for battery usage as well. Fleksy used to take around 5-10%, while this takes just around 1%.
@@ -109,6 +109,9 @@ ever leaves your phone.
   small above its letter, so you can type `1` or `@` without leaving the letters. Off by default.
 - Your own long-press symbols: list up to 10 you use most (`@ # $ _ &`, say) and holding any letter
   shows exactly those, in your order. Settings → Keyboard → Symbols.
+- Pick the key next to the spacebar: your language's own (a full stop, or "।" in Nepali), a comma,
+  or any single character you like. What it replaces moves to its long-press. Settings → Keyboard
+  → Buttons.
 - Type a symbol, then hit space — it drops you straight back into letters, no manual switch back
   needed.
 - A number pad opens by itself in boxes that only take numbers: prices, codes from a text
@@ -202,7 +205,8 @@ tap it to step through every language and layout, hold it to pick one. Only use 
 language's layouts? Switch the others off under that language in Settings → Languages, and the
 globe skips them. The spacebar quietly shows
 where you are ("PT BR - QWERTY"). Prefer the globe down by the spacebar? Settings → Keyboard swaps
-it with the emoji button. Each language learns its own words, so switching never mixes one
+it with the emoji button. The keyboard tells Android which language you're typing, so the system
+spell checker doesn't underline Russian or Spanish as misspelt English. Each language learns its own words, so switching never mixes one
 language's vocabulary into another. Removing a language keeps what it
 learned, in case you add it back.
 
@@ -227,7 +231,9 @@ learned, in case you add it back.
 - Shows you the fix *before* you finish typing — "corrcet" shows "correct" mid-word.
 - Missing a space between two words ("thisis") gets split back apart automatically.
 - Full contraction support (im → I'm, weve → we've, shoudve → should've) with fuzzy matching for
-  typos of contractions too.
+  typos of contractions too. "dont" or "youre" fixes itself when you press space; a real word like
+  "well" or "its" stays as typed, with the contraction offered in the bar. Chat shorthand ("pls",
+  "idk", "u") and short abbreviations in capitals ("IM", "ID") are left alone.
 - Knows what usually comes next — suggestions are ranked by the words on either side, not just by
   which word is commonest overall.
 - Learns the words *you* use. Names, slang, jargon, project names: type one three times and it
@@ -289,7 +295,8 @@ Swipe to the Tools tab for:
   so you can see the tap colour, and the accent on Shift and caps lock.
 - **Grid layout mode**, independent of whichever color theme you're on — bordered, edge-to-edge
   cells with no gaps, a pressed key filling solid instead of just dimming. Border color and
-  thickness (Small/Medium/Large) are both yours to set.
+  thickness (Small/Medium/Large) are both yours to set. Left on automatic, the border is a soft
+  line that doesn't shout.
 - A full custom theme builder. Pick a background and the rest — keys, tap, accent, spacebar,
   home-row and grid border — is chosen to match it, light or dark, and kept readable. Change any of
   them on top, or reset one back to automatic. An HSV picker, a hex field you can type into or copy

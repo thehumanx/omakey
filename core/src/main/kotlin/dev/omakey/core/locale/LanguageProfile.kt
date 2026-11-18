@@ -66,7 +66,37 @@ class LanguageProfile(
      * Fixed at the word boundary when auto-capitalise or autocorrect is on, and always shown that
      * way in suggestions. See `AutoCapitalization`. */
     val alwaysCapitalized: Map<String, String> = emptyMap(),
+    /** Words autocorrect never silently rewrites even though the dictionary doesn't know them —
+     * chat shorthand like "pls" or "idk", which people type on purpose. Lookup form (lowercase).
+     * They still get alternatives in the suggestion strip. */
+    val keepAsTyped: Set<String> = emptySet(),
+    /** Letter groups people confuse when *spelling* (Russian й/и, unstressed о/а), priced by
+     * autocorrect like a near-miss rather than a far-apart key. See [OrthographicConfusions]. */
+    val confusableLetters: List<String> = emptyList(),
+    /** Letters commonly left out altogether (Russian ь, ъ), cheap for autocorrect to restore. */
+    val omittableLetters: Set<Char> = emptySet(),
 ) {
+    /** This profile with other spelling-confusion tables; everything else unchanged. */
+    fun withOrthography(confusable: List<String>, omittable: Set<Char>): LanguageProfile = LanguageProfile(
+        script = script,
+        hasCase = hasCase,
+        extraWordChars = extraWordChars,
+        capitalizeAfter = capitalizeAfter,
+        openingPunctuation = openingPunctuation,
+        doubleSpaceInserts = doubleSpaceInserts,
+        punctuationCycle = punctuationCycle,
+        contractions = contractions,
+        emojiFor = emojiFor,
+        equivalentLetters = equivalentLetters,
+        clitics = clitics,
+        autoApplyCorrections = autoApplyCorrections,
+        digits = digits,
+        alwaysCapitalized = alwaysCapitalized,
+        keepAsTyped = keepAsTyped,
+        confusableLetters = confusable,
+        omittableLetters = omittable,
+    )
+
     init {
         require(digits.length == 10) { "digits must be exactly ten characters, got ${digits.length}" }
     }
@@ -121,6 +151,7 @@ class LanguageProfile(
             contractions = EnglishContractions.map,
             emojiFor = WordEmojiSuggestions::suggest,
             alwaysCapitalized = mapOf("i" to "I"),
+            keepAsTyped = EnglishShorthand.words,
         )
     }
 }

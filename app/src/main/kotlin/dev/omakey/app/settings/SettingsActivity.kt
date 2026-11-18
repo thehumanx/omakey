@@ -408,9 +408,7 @@ private fun SettingsScreen(
                             if (Build.VERSION.SDK_INT >= SettingKey.SYSTEM_ACCENT.minSdk) {
                                 SettingToggle(
                                     key = SettingKey.SYSTEM_ACCENT,
-                                    description = "Use your device's Material You accent for the " +
-                                        "spacebar, caps lock and active buttons instead of the theme's " +
-                                        "own. The Accent theme already uses your device's colors throughout.",
+                                    description = "Colour the spacebar and active keys with your phone's wallpaper colour.",
                                     checked = useSystemAccent,
                                     onCheckedChange = themeRepository::setUseSystemAccent,
                                 )
@@ -425,14 +423,14 @@ private fun SettingsScreen(
                         SettingsSectionKey.SIZE_POSITION -> {
                             ClickableSettingRow(
                                 key = SettingKey.SIZE_POSITION,
-                                description = "Resize the keyboard and raise it off the bottom edge for " +
-                                    "easier one-handed thumb reach — drag to adjust both.",
+                                description = "Make the keyboard taller or shorter, or lift it off the bottom of the screen.",
                                 onClick = { showSizePositionOverlay = true },
                             )
                             EdgePaddingToggle(layoutSettings, layoutPreferences)
                         }
                         SettingsSectionKey.SUGGESTION_BAR -> TopStripPagesSection(topStripPreferences)
                         SettingsSectionKey.BUTTONS -> {
+                            SpacebarSideKeyRow(layoutSettings, layoutPreferences)
                             SwapEmojiLanguageToggle(layoutSettings, layoutPreferences)
                             TapPreviewToggle(layoutSettings, layoutPreferences)
                         }
@@ -457,8 +455,7 @@ private fun SettingsScreen(
                             ImplicitLearningToggle(incognitoPreferences)
                             ClickableSettingRow(
                                 key = SettingKey.LEARNED_WORDS,
-                                description = "Words your own typing has taught the keyboard — view, " +
-                                    "search, or remove any that shouldn't have been learned.",
+                                description = "Words the keyboard picked up from you. Edit or remove any.",
                                 onClick = { showLearnedWordsOverlay = true },
                             )
                         }
@@ -466,8 +463,7 @@ private fun SettingsScreen(
                             ClipboardHistoryToggle(clipboardPreferences)
                             ClickableSettingRow(
                                 key = SettingKey.CLIPBOARD_HISTORY,
-                                description = "Everything the keyboard has saved from your clipboard — " +
-                                    "view it, unpin or remove single entries, or clear the lot.",
+                                description = "What you copied. Pin, remove or clear it.",
                                 onClick = { showClipboardHistoryOverlay = true },
                             )
                         }
@@ -483,30 +479,18 @@ private fun SettingsScreen(
                                 // date" means "no newer tag", not "running the tagged code".
                                 text = "Version ${dev.omakey.app.BuildConfig.VERSION_NAME} " +
                                     "(build ${dev.omakey.app.BuildConfig.VERSION_CODE})",
-                                style = MaterialTheme.typography.bodySmall,
+                                style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                             // Play build: no update UI at all (see SELF_UPDATE in app/build.gradle.kts).
                             if (dev.omakey.app.BuildConfig.SELF_UPDATE) {
                             val autoCheckEnabled by updatePreferences.settings.collectAsState()
-                            Row(
-                                modifier = rememberSettingHighlight(SettingKey.AUTO_UPDATE_CHECKS).fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                            ) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(text = SettingKey.AUTO_UPDATE_CHECKS.title, style = MaterialTheme.typography.bodyLarge)
-                                    Text(
-                                        text = "Checks GitHub every 12 hours and notifies you if a new " +
-                                            "version is out. No background download or install.",
-                                        style = MaterialTheme.typography.bodySmall,
-                                    )
-                                }
-                                Switch(
-                                    checked = autoCheckEnabled.autoCheckEnabled,
-                                    onCheckedChange = onAutoUpdateCheckToggled,
-                                )
-                            }
+                            SettingToggle(
+                                key = SettingKey.AUTO_UPDATE_CHECKS,
+                                description = "Look for a new version twice a day and tell you. Nothing installs by itself.",
+                                checked = autoCheckEnabled.autoCheckEnabled,
+                                onCheckedChange = onAutoUpdateCheckToggled,
+                            )
                             UpdateCheckRow()
                             }
                         }
@@ -538,7 +522,11 @@ private fun SettingsScreen(
         TestKeyboardOverlay(onClose = { showTestOverlay = false }, onSwitchKeyboard = onSwitchKeyboard)
     }
     if (showLearnedWordsOverlay) {
-        LearnedWordsOverlay(wordDao = wordDao, onClose = { showLearnedWordsOverlay = false })
+        LearnedWordsOverlay(
+            wordDao = wordDao,
+            profileOf = { id -> languagePacks.registry[id]?.profile ?: dev.omakey.core.locale.LanguageProfile.English },
+            onClose = { showLearnedWordsOverlay = false },
+        )
     }
     if (showClipboardHistoryOverlay) {
         ClipboardHistoryOverlay(

@@ -26,6 +26,13 @@ data class ProfileSpec(
     /** The language's digits 0–9; null means the script's default (see
      * [LanguageProfile.defaultDigits]). */
     val digits: String? = null,
+    /** Shorthand autocorrect leaves alone ("pls"); see [LanguageProfile.keepAsTyped]. */
+    val keepAsTyped: List<String> = emptyList(),
+    /** See [LanguageProfile.confusableLetters]. Empty: the app's built-in table for the language
+     * applies ([dev.omakey.core.locale.OrthographicConfusions]). */
+    val confusableLetters: List<String> = emptyList(),
+    /** See [LanguageProfile.omittableLetters]; same fallback. */
+    val omittableLetters: String = "",
 ) {
     fun toProfile(): LanguageProfile {
         require(doubleSpaceInserts.length == 1) { "doubleSpaceInserts must be one character" }
@@ -46,6 +53,9 @@ data class ProfileSpec(
             clitics = clitics,
             autoApplyCorrections = autoApplyCorrections,
             digits = digits ?: LanguageProfile.defaultDigits(script),
+            keepAsTyped = keepAsTyped.map { it.lowercase() }.toSet(),
+            confusableLetters = confusableLetters,
+            omittableLetters = omittableLetters.toSet(),
         )
     }
 }

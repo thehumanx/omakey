@@ -28,8 +28,8 @@ android {
         // refuses same-or-lower versionCode as a downgrade and uninstalling first would wipe local
         // app data (learned words, settings, clipboard history). Bump versionName only when
         // actually cutting a release.
-        versionCode = 48
-        versionName = "5.6.0"
+        versionCode = 50
+        versionName = "5.7.0"
     }
 
     // Two distribution channels from one codebase. `sideload` is the GitHub Releases APK and keeps
@@ -71,7 +71,11 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // R8: shrinks and obfuscates. Play Console flags an app below 25 % obfuscation, and it
+            // cuts the APK. What must survive by name is listed in proguard-rules.pro.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             if (keystorePropertiesFile.exists()) {
                 signingConfig = signingConfigs.getByName("release")
             }

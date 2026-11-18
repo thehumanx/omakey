@@ -75,6 +75,9 @@ data class LayoutSettings(
     val numberPadNumber: Boolean = true,
     val numberPadPhone: Boolean = true,
     val numberPadDateTime: Boolean = true,
+    /** What the key right of the spacebar types: one character, or [DEFAULT_SPACEBAR_SIDE_KEY] for
+     * the language's own ("." / "।"). See [withSpacebarSideKey]. */
+    val spacebarSideKey: String = DEFAULT_SPACEBAR_SIDE_KEY,
 ) {
     /** Whether corner hints are drawn and preselected: see [popupSymbols]. */
     val secondarySymbolsShown: Boolean get() = showSecondarySymbols && popupSymbols.isEmpty()
@@ -118,6 +121,7 @@ class LayoutPreferences(context: Context) {
     fun setShowSecondarySymbols(show: Boolean) = update { it.copy(showSecondarySymbols = show) }
     fun setFleksySymbols(enabled: Boolean) = update { it.copy(fleksySymbols = enabled) }
     fun setPopupSymbols(input: String) = update { it.copy(popupSymbols = parsePopupSymbols(input)) }
+    fun setSpacebarSideKey(value: String) = update { it.copy(spacebarSideKey = sanitizeSpacebarSideKey(value)) }
     fun setNumberPad(enabled: Boolean) = update { it.copy(numberPad = enabled) }
     fun setNumberPadFor(kind: NumberPadKind, enabled: Boolean) = update {
         when (kind) {
@@ -166,6 +170,7 @@ class LayoutPreferences(context: Context) {
             putBoolean(KEY_NUMBER_PAD_NUMBER, next.numberPadNumber)
             putBoolean(KEY_NUMBER_PAD_PHONE, next.numberPadPhone)
             putBoolean(KEY_NUMBER_PAD_DATETIME, next.numberPadDateTime)
+            putString(KEY_SPACEBAR_SIDE_KEY, next.spacebarSideKey)
         }
     }
 
@@ -196,6 +201,7 @@ class LayoutPreferences(context: Context) {
         numberPadNumber = prefs.getBoolean(KEY_NUMBER_PAD_NUMBER, true),
         numberPadPhone = prefs.getBoolean(KEY_NUMBER_PAD_PHONE, true),
         numberPadDateTime = prefs.getBoolean(KEY_NUMBER_PAD_DATETIME, true),
+        spacebarSideKey = sanitizeSpacebarSideKey(prefs.getString(KEY_SPACEBAR_SIDE_KEY, null)),
     )
 
     private companion object {
@@ -208,6 +214,7 @@ class LayoutPreferences(context: Context) {
         const val KEY_NUMBER_PAD_NUMBER = "number_pad_number"
         const val KEY_NUMBER_PAD_PHONE = "number_pad_phone"
         const val KEY_NUMBER_PAD_DATETIME = "number_pad_datetime"
+        const val KEY_SPACEBAR_SIDE_KEY = "spacebar_side_key"
         const val KEY_HEIGHT = "keyboard_height_dp"
         const val KEY_KEY_BACKGROUNDS = "show_key_backgrounds"
         const val KEY_MIDDLE_STRIPE = "show_middle_row_stripe"

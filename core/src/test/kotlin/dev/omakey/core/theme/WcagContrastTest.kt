@@ -110,9 +110,11 @@ class WcagContrastTest {
         }
     }
 
-    @Test fun `derived grid borders reach 3 to 1 on the background`() {
+    /** Was 3:1 until 5.7.0, which testers found harsh. The border is a soft divider now; keys are
+     * told apart from the background by their own colour (ThemeDerivationTest pins both). */
+    @Test fun `derived grid borders are a soft line on the background`() {
         for (theme in customThemes) {
-            assertTrue(contrast(theme.gridBorderColor, theme.keyboardBackground) >= MIN_UI_CONTRAST)
+            assertTrue(contrast(theme.gridBorderColor, theme.keyboardBackground) in ThemeDerivation.GRID_BORDER_CONTRAST)
         }
     }
 

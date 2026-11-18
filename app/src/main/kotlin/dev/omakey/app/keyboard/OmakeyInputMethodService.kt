@@ -90,6 +90,9 @@ class OmakeyInputMethodService :
     private lateinit var extensionRegistry: LazyExtensionRegistry
     private lateinit var textEditor: TextEditor
     private lateinit var themeRepository: ThemeRepository
+    private lateinit var customThemePreferences: dev.omakey.core.theme.CustomThemePreferences
+    private lateinit var learnedWordsSignal: dev.omakey.core.predict.LearnedWordsSignal
+    private lateinit var subtypeSync: SubtypeSync
     private lateinit var accessibilityPreferences: AccessibilityPreferences
     private lateinit var layoutPreferences: LayoutPreferences
     private lateinit var fontPreferences: FontPreferences
@@ -261,6 +264,7 @@ class OmakeyInputMethodService :
             profile = { localeManager.active.value.profile },
         )
         themeRepository = ThemeRepository(applicationContext)
+        customThemePreferences = dev.omakey.core.theme.CustomThemePreferences(applicationContext)
         accessibilityPreferences = AccessibilityPreferences(applicationContext)
         layoutPreferences = LayoutPreferences(applicationContext)
         fontPreferences = FontPreferences(applicationContext)
@@ -290,6 +294,7 @@ class OmakeyInputMethodService :
         // Shared with Settings, so a pack installed there shows up here without a restart.
         localeRegistry = dev.omakey.app.languages.LanguagePacks.get(applicationContext).registry
         localePreferences = LocalePreferences(applicationContext)
+        learnedWordsSignal = dev.omakey.core.predict.LearnedWordsSignal(applicationContext)
         localeManager = LocaleManager(
             context = applicationContext,
             registry = localeRegistry,
@@ -298,7 +303,9 @@ class OmakeyInputMethodService :
             autocorrectIndex = autocorrectIndex,
             predictionEngine = predictionEngine,
             scope = serviceScope,
+            learnedWordsChanges = learnedWordsSignal.changes,
         )
+        subtypeSync = SubtypeSync(this, localeManager, serviceScope).also { it.start() }
         serviceScope.launch {
             // The old dictionary importer tracked its progress here. Left-over state is meaningless
             // now and would otherwise sit in the app's data directory forever.
@@ -400,6 +407,7 @@ class OmakeyInputMethodService :
             incognitoPreferences = incognitoPreferences,
             extensionRegistry = extensionRegistry,
             themeRepository = themeRepository,
+            customThemes = { customThemePreferences.themes.value },
             layoutPreferences = layoutPreferences,
             fontPreferences = fontPreferences,
             gesturePreferences = gesturePreferences,
@@ -444,6 +452,7 @@ class OmakeyInputMethodService :
         super.onStartInputView(info, restarting)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
         keyboardViewModel?.resetForNewField(info, restarting)
+        if (::subtypeSync.isInitialized) subtypeSync.onInputViewStarted()
         // Only listens for clipboard changes while the keyboard is actually on screen — see the
         // comment in onCreate() for why this isn't registered for the whole service lifetime.
         // onStartInputView can fire again without a matching onFinishInputView in between (e.g.
@@ -568,6 +577,11 @@ class OmakeyInputMethodService :
 
     override fun onEvaluateFullscreenMode(): Boolean = false
 
+    override fun onCurrentInputMethodSubtypeChanged(newSubtype: android.view.inputmethod.InputMethodSubtype?) {
+        super.onCurrentInputMethodSubtypeChanged(newSubtype)
+        if (::subtypeSync.isInitialized) subtypeSync.onSystemSubtypeChanged(newSubtype)
+    }
+
     /**
      * Where the keyboard itself is, in window coordinates — reported by `KeyboardRoot` on every
      * layout pass. Only consulted while floating.
@@ -675,6 +689,8 @@ class OmakeyInputMethodService :
         autocorrectPreferences.close()
         predictionPreferences.close()
         themeRepository.close()
+        customThemePreferences.close()
+        learnedWordsSignal.close()
         accessibilityPreferences.close()
         layoutPreferences.close()
         fontPreferences.close()

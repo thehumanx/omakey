@@ -127,7 +127,7 @@ internal fun LanguagesSection(localePreferences: LocalePreferences, languagePack
             val onCount = locale.letterLayoutChoices.count { it.id !in disabled }
             Text(
                 text = "Layouts — the globe key switches between the ones that are on",
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp),
             )
@@ -213,7 +213,7 @@ internal fun LanguagesSection(localePreferences: LocalePreferences, languagePack
                             Text(listOfNotNull(flagEmoji(entry.id), entry.nativeName).joinToString(" "), style = MaterialTheme.typography.bodyLarge)
                             Text(
                                 "${entry.displayName} · ${"%.1f".format(entry.sizeBytes / 1_000_000.0)} MB · ${entry.license}",
-                                style = MaterialTheme.typography.bodySmall,
+                                style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
@@ -225,7 +225,7 @@ internal fun LanguagesSection(localePreferences: LocalePreferences, languagePack
                         } else {
                             Text(
                                 "Needs a newer omakey",
-                                style = MaterialTheme.typography.bodySmall,
+                                style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
@@ -238,11 +238,11 @@ internal fun LanguagesSection(localePreferences: LocalePreferences, languagePack
 
     ClickableSettingRow(
         key = SettingKey.INSTALL_FROM_FILE,
-        description = "Install a language pack (.zip) you already have — for example one you built yourself.",
+        description = "Add a language from a .zip file you already have.",
         onClick = { filePicker.launch(arrayOf("application/zip", "application/octet-stream")) },
     )
 
-    message?.let { Text(it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(vertical = 4.dp)) }
+    message?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 4.dp)) }
 
     confirmRemove?.let { locale ->
         AlertDialog(

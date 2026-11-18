@@ -3,6 +3,47 @@
 All notable changes to omakey are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [5.7.0] — 2026-11-18
+
+Fixes from the closed beta: smarter contractions and Russian spelling, the missing % sign, no more
+red underlines on languages other than English, editable learned words, and calmer, roomier
+Settings. Thanks to the closed-beta testers for the reports.
+
+### Added
+- **Choose the key next to the spacebar** (Settings → Keyboard → Buttons). Keep your language's own
+  key (a full stop, or "।" in Nepali), or pick a comma, ?, !, ', - or any single character,
+  emoji included. The key it replaces moves to that key's long-press, so nothing goes missing.
+- **% is on the keyboard.** It's on the second symbols page, along with every other standard
+  symbol. A check now makes sure no symbol can go missing again.
+- **The theme tile in Quick Settings includes your own themes.** It steps through the built-in
+  themes, then your custom ones, then starts again.
+
+### Changed
+- **Contractions fix themselves when you press space.** "dont", "im", "youre" and "thats" become
+  "don't", "I'm", "you're" and "that's", and so do "cant", "wont", "hes" and "yall". Words that
+  are real on their own, like "well", "its", "were" and "id", stay as you typed them, with the
+  contraction waiting in the suggestion bar. Chat shorthand like "pls", "thx", "idk" and "u" is
+  left alone, and so are short abbreviations in capitals, like "IM" and "ID".
+- **Better Russian spelling fixes.** Common spelling slips are now fixed far more often and changed
+  to the wrong word half as often: и for й, а for о, и for е, and a missing ь or ъ.
+- **No more red underlines in Russian and other languages.** Each language you turn on now tells
+  Android which language you're typing, so the system spell checker checks Russian as Russian
+  instead of flagging every word as misspelt English.
+- **Softer borders on custom grid themes.** When the border colour is left on automatic, it's now
+  a gentle line instead of a hard outline. Keys stay clearly separate from the background.
+- **Settings are easier to read.** Each section is a card with more room around every row, a gap
+  between the text and its switch, and a thin line between rows. Every description is rewritten
+  in plain words, and tapping anywhere on a row flips its switch. Three settings have new names:
+  "Password manager logins", "Fleksy symbol layout" and "Delete the space separately". Search
+  still finds them by their old names.
+
+### Fixed
+- **Editing a learned word.** Changing a word to one that's already in the list crashed the
+  screen. Now the two are merged. Changes and removals reach the keyboard straight away instead
+  of after a restart, and a word with spaces, digits or symbols is refused with a short note.
+- **Built the way Google Play asks.** Release builds are now shrunk and obfuscated, which clears a
+  Play Console warning. Nothing changes in how the keyboard works.
+
 ## [5.6.0] — 2026-11-12
 
 Search for any setting, switch language with a swipe on the spacebar, colours that stay readable

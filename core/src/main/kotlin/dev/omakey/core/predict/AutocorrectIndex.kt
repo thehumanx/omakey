@@ -45,6 +45,9 @@ class AutocorrectIndex(
     private val maxBrowsableEdits: Int = MAX_BROWSABLE_EDITS,
     private val thirdEditMinLength: Int = THIRD_EDIT_MIN_LENGTH,
     private val browsableScoreMargin: Float = BROWSABLE_SCORE_MARGIN,
+    /** log10 of how much likelier a contraction must be than a real bare word for [correct] to
+     * apply it silently. See [contractionOnSpace]. */
+    private val contractionRatio: Float = CONTRACTION_RATIO,
 ) {
 
     @Volatile private var model: LanguageModel? = null
@@ -149,10 +152,17 @@ class AutocorrectIndex(
         model = null
         profile = languageProfile
         personal = personalModel
-        channel = if (languageProfile.equivalentLetters.isEmpty() && geometry === baseChannel.geometry) {
+        val plainLanguage = languageProfile.equivalentLetters.isEmpty() &&
+            languageProfile.confusableLetters.isEmpty() && languageProfile.omittableLetters.isEmpty()
+        channel = if (plainLanguage && geometry === baseChannel.geometry) {
             baseChannel
         } else {
-            baseChannel.forLanguage(geometry, languageProfile.equivalentLetters)
+            baseChannel.forLanguage(
+                geometry,
+                languageProfile.equivalentLetters,
+                languageProfile.confusableLetters,
+                languageProfile.omittableLetters.joinToString(""),
+            )
         }
         val letters = CharArray(languageModel.alphabetSize) { languageModel.alphabetChar(it) }
             .filter { it.isLetter() && languageProfile.isWordChar(it) }
@@ -336,6 +346,10 @@ class AutocorrectIndex(
             return correct(rest, cliticContext(clitic, context), null)?.let { clitic + it }
         }
         val lower = typed.toLookupForm()
+        if (lower in profile.keepAsTyped) return null
+        // Before the length gate: "im" and "id" are shorter than MIN_LENGTH. A two-letter word in
+        // capitals ("IM", "ID") is an abbreviation, not a shouted "I'm".
+        if (!isAbbreviation(typed)) contractionOnSpace(lower)?.let { return it }
         if (lower.length < MIN_LENGTH || lower.length > MAX_LENGTH) return null
         if (!profile.isWord(lower)) return null
         if (isKnown(lower)) return null // never "correct" an already-real word
@@ -344,6 +358,41 @@ class AutocorrectIndex(
         collectCandidates(lower, correctionFloor, context, maxEdits, taps, scored)
         correctSplitCandidate(lower, context)?.let { scored += it }
         return scored.maxByOrNull { it.score }?.text
+    }
+
+    /**
+     * The contraction [correct] applies silently, or null to leave the word to the ordinary path.
+     *
+     * Two cases, both from the same evidence the rest of correction uses:
+     *  - the typed word is not a word at all ("dont", "im", "youre") — the contraction is the only
+     *    sensible reading, and the general edit-distance search used to pick something worse
+     *    ("dont" → "font", "ive" → "ice");
+     *  - the typed word *is* a word, but the model rates the contraction at least
+     *    10^[contractionRatio] times more likely ("cant" next to "can't"). A real word the
+     *    contraction doesn't dominate ("well", "its", "were") is left alone; it is still offered
+     *    in the strip by [alternatives].
+     *
+     * Exact table keys only. [contractionFor]'s one-edit fuzzy match is right for the strip and
+     * wrong here: "wheras" is one edit from "wheres", and silently turned into "where's" instead
+     * of "whereas" (caught by the English golden file). A misspelt contraction ("shoudve") still
+     * reaches the apostrophe form through the ordinary search, which has it in the vocabulary.
+     *
+     * Returned exactly as the table writes it ("I'm"), so `matchCase` keeps its capital.
+     */
+    private fun isAbbreviation(typed: String): Boolean =
+        typed.length <= 2 && typed.count { it.isLetter() } > 1 && typed.none { it.isLowerCase() }
+
+    private fun contractionOnSpace(lower: String): String? {
+        val languageModel = model ?: return null
+        val contraction = profile.contractions[lower] ?: return null
+        if (!isKnown(lower)) return contraction
+        // A word the user taught the keyboard is theirs; never overrule it.
+        if (isUserAdded(lower)) return null
+        val bareId = languageModel.indexOf(lower)
+        val contractionId = languageModel.indexOf(contraction.toLookupForm())
+        if (bareId == LanguageModel.NO_WORD || contractionId == LanguageModel.NO_WORD) return null
+        val ratio = languageModel.unigramLogProbability(contractionId) - languageModel.unigramLogProbability(bareId)
+        return contraction.takeIf { ratio >= contractionRatio }
     }
 
     /** Real-vocabulary neighbours of [word] exactly one edit away — the candidate set a
@@ -606,9 +655,9 @@ class AutocorrectIndex(
         languageModel.copyWord(id, intended)
         val channel = channel
         val insertion = channel.insertion()
-        val deletion = channel.deletion()
         for (i in 0..typedLength) d[i][0] = i * insertion
-        for (j in 0..length) d[0][j] = j * deletion
+        d[0][0] = 0f
+        for (j in 1..length) d[0][j] = d[0][j - 1] + channel.deletion(intended[j - 1])
         for (i in 1..typedLength) {
             val typedChar = typed[i - 1]
             for (j in 1..length) {
@@ -616,7 +665,7 @@ class AutocorrectIndex(
                 val substitution = channel.substitutionAt(typedChar, intendedChar, taps, i - 1)
                 var value = minOf(
                     d[i - 1][j] + insertion,
-                    d[i][j - 1] + deletion,
+                    d[i][j - 1] + channel.deletion(intendedChar),
                     d[i - 1][j - 1] + substitution,
                 )
                 if (i > 1 && j > 1) {
@@ -685,5 +734,15 @@ class AutocorrectIndex(
         /** Fuzzy contraction matching only applies to keys at least this long — a 2-3 letter key
          * fuzzy-matched against arbitrary text collides with unrelated short words too readily. */
         const val MIN_FUZZY_CONTRACTION_LENGTH = 5
+
+        /**
+         * 1000×. Measured on the bundled English model (2026-11-18), log10 ratio of contraction to
+         * bare word: hes 5.8, shes 5.6, wheres 4.8, wont 4.5, cant 4.3, whens 3.9, whats 3.5,
+         * whys 3.3, hows 3.0 — all words almost nobody types meaning the bare form. Below: lets
+         * 2.4, ill 2.3, shed 1.8, id 0.8, hell 0.4, its 0.2, were −1.7, well −1.7 — real words
+         * typed on purpose ("it lets you", "I feel ill"). 3.0 is the gap between the two groups;
+         * everything below stays offered in the strip.
+         */
+        const val CONTRACTION_RATIO = 3.0f
     }
 }

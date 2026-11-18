@@ -39,6 +39,15 @@ class ChannelModel(
      * `EngineTuningTest` can search over it. */
     private val equivalentCost: Float = EQUIVALENT_COST,
     val languageModelWeight: Float = LANGUAGE_MODEL_WEIGHT,
+    /** Groups of letters people confuse in *spelling*, not by slipping onto a neighbouring key —
+     * Russian й/и, unstressed о/а. Priced at [confusableCost]: dearer than an accent, about an
+     * adjacent-key slip. From [dev.omakey.core.locale.LanguageProfile.confusableLetters]. */
+    private val confusableGroups: List<String> = emptyList(),
+    /** Letters commonly left out altogether (Russian ь, ъ): leaving one out costs [omissionCost]
+     * instead of [deletionCost]. */
+    private val omittableLetters: String = "",
+    private val confusableCost: Float = CONFUSABLE_COST,
+    private val omissionCost: Float = OMISSION_COST,
 ) {
 
     private val twoSigmaSquared = 2f * sigma * sigma
@@ -46,28 +55,33 @@ class ChannelModel(
     /** Group number (1-based, 0 = none) per character below [GROUP_TABLE_SIZE] — a table rather
      * than a map because [substitution] runs inside the correction DP. Null when there are no
      * groups, so English pays one null check. */
-    private val groupOf: IntArray? = if (equivalentGroups.isEmpty()) {
-        null
-    } else {
-        IntArray(GROUP_TABLE_SIZE).also { table ->
-            for ((group, letters) in equivalentGroups.withIndex()) {
-                for (c in letters) if (c.code < GROUP_TABLE_SIZE) table[c.code] = group + 1
-            }
-        }
-    }
+    private val groupOf: IntArray? = groupTable(equivalentGroups)
+    private val confusableGroupOf: IntArray? = groupTable(confusableGroups)
 
-    private fun areEquivalent(a: Char, b: Char): Boolean {
-        val table = groupOf ?: return false
-        if (a.code >= GROUP_TABLE_SIZE || b.code >= GROUP_TABLE_SIZE) return false
-        val group = table[a.code]
-        return group != 0 && group == table[b.code]
+    private fun areEquivalent(a: Char, b: Char): Boolean = sameGroup(groupOf, a, b)
+
+    /** The cheapest of the key-distance price and any spelling relationship between the letters. */
+    private fun related(typed: Char, intended: Char, spatial: Float): Float {
+        var cost = spatial
+        if (areEquivalent(typed, intended)) cost = minOf(cost, equivalentCost)
+        if (sameGroup(confusableGroupOf, typed, intended)) cost = minOf(cost, confusableCost)
+        return cost
     }
 
     /** The same model for another language: its keyboard and its equivalent letters, with every
      * tuned cost kept. */
-    fun forLanguage(geometry: KeyboardGeometry, equivalentGroups: List<String>): ChannelModel = ChannelModel(
+    fun forLanguage(
+        geometry: KeyboardGeometry,
+        equivalentGroups: List<String>,
+        confusableGroups: List<String> = emptyList(),
+        omittableLetters: String = "",
+    ): ChannelModel = ChannelModel(
         geometry = geometry,
         equivalentGroups = equivalentGroups,
+        confusableGroups = confusableGroups,
+        omittableLetters = omittableLetters,
+        confusableCost = confusableCost,
+        omissionCost = omissionCost,
         sigma = sigma,
         substitutionCap = substitutionCap,
         insertionCost = insertionCost,
@@ -84,7 +98,7 @@ class ChannelModel(
     fun substitution(typed: Char, intended: Char): Float {
         if (typed == intended) return 0f
         val spatial = minOf(geometry.squaredDistance(typed, intended) / twoSigmaSquared, substitutionCap)
-        return if (areEquivalent(typed, intended)) minOf(spatial, equivalentCost) else spatial
+        return related(typed, intended, spatial)
     }
 
     /**
@@ -104,11 +118,14 @@ class ChannelModel(
         if (taps == null || index < 0 || index >= taps.size) return substitution(typed, intended)
         val squaredDistance = geometry.squaredDistanceFromPoint(taps.x(index), taps.y(index), intended)
         val spatial = minOf(squaredDistance / twoSigmaSquared, substitutionCap)
-        return if (areEquivalent(typed, intended)) minOf(spatial, equivalentCost) else spatial
+        return related(typed, intended, spatial)
     }
 
     /** A character present in the intended word that never got typed. */
     fun deletion(): Float = deletionCost
+
+    /** [intended] present in the intended word but never typed: cheaper for an omittable letter. */
+    fun deletion(intended: Char): Float = if (omittableLetters.isNotEmpty() && intended in omittableLetters) omissionCost else deletionCost
 
     /** A character typed that isn't in the intended word. */
     fun insertion(): Float = insertionCost
@@ -160,5 +177,28 @@ class ChannelModel(
 
         /** Covers Latin, its extensions and Devanagari (U+0900–097F). */
         private const val GROUP_TABLE_SIZE = 0x1000
+
+        /** Spelling confusion (й/и): about an adjacent-key slip. Tuned in `LanguagePackEvaluationTest`. */
+        const val CONFUSABLE_COST = 1.0f
+
+        /** Leaving out an omittable letter (ь): half an ordinary missed letter. Tuned likewise. */
+        const val OMISSION_COST = 1.5f
+
+        private fun groupTable(groups: List<String>): IntArray? = if (groups.isEmpty()) {
+            null
+        } else {
+            IntArray(GROUP_TABLE_SIZE).also { table ->
+                for ((group, letters) in groups.withIndex()) {
+                    for (c in letters) if (c.code < GROUP_TABLE_SIZE) table[c.code] = group + 1
+                }
+            }
+        }
+
+        private fun sameGroup(table: IntArray?, a: Char, b: Char): Boolean {
+            if (table == null) return false
+            if (a.code >= GROUP_TABLE_SIZE || b.code >= GROUP_TABLE_SIZE) return false
+            val group = table[a.code]
+            return group != 0 && group == table[b.code]
+        }
     }
 }
