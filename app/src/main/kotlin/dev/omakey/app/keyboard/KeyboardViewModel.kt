@@ -39,6 +39,7 @@ import dev.omakey.core.layout.withDigits
 import dev.omakey.core.layout.withSymbolsPage
 import dev.omakey.core.layout.withPopupSymbols
 import dev.omakey.core.layout.withSpacebarSideKey
+import dev.omakey.core.theme.nextTheme
 import dev.omakey.core.layout.SpecialKeyCode
 import dev.omakey.core.predict.AutocorrectIndex
 import dev.omakey.core.predict.AutocorrectPreferences
@@ -87,6 +88,8 @@ class KeyboardViewModel(
     private val incognitoPreferences: IncognitoPreferences,
     val extensionRegistry: ExtensionRegistry,
     private val themeRepository: ThemeRepository,
+    /** The user's own themes, in Settings order, read when the Theme tile is tapped. */
+    private val customThemes: () -> List<dev.omakey.core.theme.OmakeyTheme> = { emptyList() },
     private val layoutPreferences: LayoutPreferences,
     fontPreferences: FontPreferences,
     gesturePreferences: GesturePreferences,
@@ -542,13 +545,9 @@ class KeyboardViewModel(
     fun setResizing(resizing: Boolean) =
         _uiState.update { it.copy(resizing = resizing, quickAccessOpen = false) }
 
-    /** Cycles the four built-in presets. Custom themes are deliberately not in the cycle — there can
-     * be any number of them, and a tile that might need twenty taps to get back where it started is
-     * not a quick action. Picking a custom theme stays a Settings job. */
+    /** The Theme tile: built-in presets, then the user's own themes — see [nextTheme]. */
     fun cycleTheme() {
-        val presets = Presets.all
-        val index = presets.indexOfFirst { it.id == themeRepository.currentTheme.value.id }
-        val next = presets[(index + 1).mod(presets.size)]
+        val next = nextTheme(themeRepository.currentTheme.value.id, Presets.all, customThemes())
         themeRepository.setTheme(next)
         showBanner(next.name)
     }

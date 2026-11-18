@@ -90,6 +90,7 @@ class OmakeyInputMethodService :
     private lateinit var extensionRegistry: LazyExtensionRegistry
     private lateinit var textEditor: TextEditor
     private lateinit var themeRepository: ThemeRepository
+    private lateinit var customThemePreferences: dev.omakey.core.theme.CustomThemePreferences
     private lateinit var accessibilityPreferences: AccessibilityPreferences
     private lateinit var layoutPreferences: LayoutPreferences
     private lateinit var fontPreferences: FontPreferences
@@ -261,6 +262,7 @@ class OmakeyInputMethodService :
             profile = { localeManager.active.value.profile },
         )
         themeRepository = ThemeRepository(applicationContext)
+        customThemePreferences = dev.omakey.core.theme.CustomThemePreferences(applicationContext)
         accessibilityPreferences = AccessibilityPreferences(applicationContext)
         layoutPreferences = LayoutPreferences(applicationContext)
         fontPreferences = FontPreferences(applicationContext)
@@ -400,6 +402,7 @@ class OmakeyInputMethodService :
             incognitoPreferences = incognitoPreferences,
             extensionRegistry = extensionRegistry,
             themeRepository = themeRepository,
+            customThemes = { customThemePreferences.themes.value },
             layoutPreferences = layoutPreferences,
             fontPreferences = fontPreferences,
             gesturePreferences = gesturePreferences,
@@ -675,6 +678,7 @@ class OmakeyInputMethodService :
         autocorrectPreferences.close()
         predictionPreferences.close()
         themeRepository.close()
+        customThemePreferences.close()
         accessibilityPreferences.close()
         layoutPreferences.close()
         fontPreferences.close()
