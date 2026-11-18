@@ -35,16 +35,16 @@ attach the map to a release: it undoes the obfuscation.
 2. Open the track your testers are on, then **Create new release**.
 3. **App bundles → Upload** and pick the `.aab`. Wait for the upload to finish processing. Errors
    show here, for example a versionCode that is too low.
-4. **Release name**: Play fills in the version (e.g. `50 (5.7.0)`). Keep it.
+4. **Release name**: Play fills in the version (e.g. `51 (5.8.0)`). Keep it.
 5. **Release notes**: short, plain words, at most 500 characters, inside the language tags Play
    shows:
    ```
    <en-US>
-   - Contractions like "dont" and "im" fix themselves when you press space
-   - Better Russian spelling fixes; no more red underlines in other languages
-   - % is back, and you can choose the key next to the spacebar
-   - Learned words can be edited again
-   - Calmer, roomier Settings and softer custom grid borders
+   - Spacebar is easier to hit, and vibration is gentler and stops when nothing is left to delete
+   - Faster typing on slower phones
+   - Key popup is instant, with four styles: Classic, Slim, Key lift or Off
+   - Choose the key in place of the emoji key: language, a comma or any character
+   - Samsung's keyboard buttons no longer cover the bottom row
    </en-US>
    ```
 6. **Next** shows the review page. Warnings (yellow) don't block a release. Errors (red) do. Read

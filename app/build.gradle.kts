@@ -28,8 +28,8 @@ android {
         // refuses same-or-lower versionCode as a downgrade and uninstalling first would wipe local
         // app data (learned words, settings, clipboard history). Bump versionName only when
         // actually cutting a release.
-        versionCode = 50
-        versionName = "5.7.0"
+        versionCode = 51
+        versionName = "5.8.0"
     }
 
     // Two distribution channels from one codebase. `sideload` is the GitHub Releases APK and keeps

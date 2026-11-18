@@ -3,7 +3,13 @@
 All notable changes to omakey are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased]
+## [5.8.0] — 2026-11-18
+
+Fixes and choices from new beta testers: an easier spacebar, gentler and calmer vibration, faster
+typing on slower phones, a key popup that's instant and comes in four styles, a key of your choice
+in place of the emoji key, and no more stray apostrophe key in Italian. Thanks to Maria for
+reporting the apostrophe key and for suggesting a choice of key in place of the emoji key, and to
+Prajesh for reporting the vibration and tapping bugs.
 
 ### Added
 - **Choose the key left of the spacebar** (Settings → Keyboard → Buttons → Key left of the
@@ -18,7 +24,8 @@ All notable changes to omakey are documented here. Format loosely follows
 - **Italian and French (QWERTY) keyboards drop the extra apostrophe key**, so the A–L row has its
   usual nine full-size keys, like other keyboards. The apostrophe is still a long-press on the full
   stop key, or put it next to the spacebar in Settings → Keyboard → Buttons. French AZERTY keeps
-  its apostrophe key. Arrives with the language pack update (Italian and French 1.0.1).
+  its apostrophe key. This comes with the Italian and French 1.0.1 language packs, which are
+  already available: the app offers the update.
 
 ### Fixed
 - **Typing is faster on slower phones.** Each keypress used to redraw the whole keyboard several
