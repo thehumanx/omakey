@@ -10,6 +10,7 @@ import dev.omakey.core.gesture.GesturePreferences
 import dev.omakey.core.gesture.GestureSettings
 import dev.omakey.core.input.TextEdit
 import dev.omakey.core.input.AutoCapitalization
+import dev.omakey.core.input.SavedSpelling
 import dev.omakey.core.input.PunctuationSpacing
 import dev.omakey.core.input.AutocorrectPolicy
 import dev.omakey.core.input.SwipeUpAction
@@ -18,7 +19,7 @@ import dev.omakey.core.input.TransliterationSession
 import dev.omakey.core.translit.Transliterator
 import dev.omakey.core.input.UndoHistory
 import dev.omakey.core.input.isSensitiveField
-import dev.omakey.core.predict.matchCase
+import dev.omakey.core.predict.WordCasing
 import dev.omakey.core.predict.splitCorrection
 import dev.omakey.core.input.WordTracker
 import dev.omakey.core.layout.KeyDefinition
@@ -154,7 +155,7 @@ class KeyboardViewModel(
     /** Owns candidate selection; this class owns *when* to ask and what to do with the answer.
      * Constructed here rather than injected because both its dependencies are already constructor
      * parameters — it is a regrouping of what this class already had, not a new collaborator. */
-    private val suggestionComposer = SuggestionComposer(autocorrectIndex, predictionEngine, SUGGESTION_LIMIT, profile = { profile })
+    private val suggestionComposer = SuggestionComposer(autocorrectIndex, predictionEngine, SUGGESTION_LIMIT, profile = { profile }, spellingOf = predictionEngine::spellingOf)
 
     /** When the most recent space was actually committed — 0 means "none yet this session, or
      * already consumed by a double-tap conversion." Powers [onSpace]'s double-tap-space-for-
@@ -809,6 +810,15 @@ class KeyboardViewModel(
         // Either branch below decides this word's fate explicitly; the staged implicit learn would
         // only duplicate or contradict it.
         discardPendingLearn()
+        // Saved exactly as written ("iPhone"), minus a capital the keyboard added itself at a
+        // sentence start; see SavedSpelling.
+        val spelling = SavedSpelling.of(
+            original,
+            textEditor.textBeforeCursor(AUTO_CAP_CONTEXT_CHARS + original.length + 2),
+            profile,
+            fieldCapsMode,
+            autocorrectPreferences.settings.value.autoCapitalizeEnabled,
+        )
         when {
             autocorrectIndex.isUserAdded(original) -> {
                 autocorrectIndex.unlearn(original)
@@ -817,10 +827,17 @@ class KeyboardViewModel(
             }
             !autocorrectIndex.isKnown(original) -> {
                 autocorrectIndex.learn(original)
-                scope.launch { predictionEngine.saveWord(original) }
+                scope.launch { predictionEngine.saveWord(spelling) }
                 // Saved means trusted: nothing should correct it at the next space any more.
                 revertedWord = null
-                showBanner("$original learned")
+                showBanner("$spelling learned")
+            }
+            // A dictionary word typed with capitals of its own ("iPhone" where the dictionary has
+            // "iphone"): the spelling is what the user wants kept.
+            spelling.any { it.isUpperCase() } -> {
+                scope.launch { predictionEngine.saveWord(spelling) }
+                revertedWord = null
+                showBanner("$spelling learned")
             }
             // A bundled dictionary word: nothing to learn or unlearn. Said so rather than silently
             // doing nothing — real user report: with no feedback here, swipe-up looked like it
@@ -1390,6 +1407,18 @@ class KeyboardViewModel(
         // A web address, an email, a password: changing a word there breaks it. See [AutocorrectPolicy].
         if (!fieldAllowsAutocorrect) return
         val settings = autocorrectPreferences.settings.value
+        // A learned word with a saved spelling ("bibek" → "Bibek", "iphone" → "iPhone") is written
+        // that way once finished, before a full stop too. Recorded as an autocorrect, so backspace
+        // takes it back. All caps typed is left alone.
+        if (settings.autoCapitalizeEnabled || settings.autocorrectEnabled) {
+            val spelled = predictionEngine.spellingOf(typed)
+                ?.let { WordCasing.forTyped(typed, typed.lowercase(), profile, predictionEngine::spellingOf) }
+            if (spelled != null && spelled != typed) {
+                commitCorrection(spelled) ?: return
+                lastAutocorrect = AutocorrectRecord(original = typed, corrected = spelled)
+                return
+            }
+        }
         // English "i" → "I" (and so "i'm" → "I'm": the apostrophe is what ends the "i"). Recorded
         // as an autocorrect, so backspace and swipe up take it back like any other. Not before a
         // full stop, where "i" is far more often "i.e." than a sentence ending in "I".
@@ -1404,7 +1433,7 @@ class KeyboardViewModel(
         if (!profile.autoApplyCorrections) return
         if (!settings.autocorrectEnabled) return
         val correctedLower = autocorrectIndex.correct(typed, correctionContext()) ?: return
-        val corrected = matchCase(typed, correctedLower)
+        val corrected = WordCasing.forTyped(typed, correctedLower, profile, predictionEngine::spellingOf)
         if (corrected == typed) return
         commitCorrection(corrected) ?: return
         lastAutocorrect = AutocorrectRecord(original = typed, corrected = corrected)

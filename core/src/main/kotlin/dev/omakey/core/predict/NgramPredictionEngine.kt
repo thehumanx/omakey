@@ -110,9 +110,13 @@ class NgramPredictionEngine(
         persist(word, explicit = false)
     }
 
+    /** Saved exactly as written: [word] with a capital ("iPhone") keeps that spelling. The caller
+     * has already dropped a capital the keyboard added itself (`SavedSpelling`). */
     override suspend fun saveWord(word: String) {
-        persist(word, explicit = true)
+        persist(word, explicit = true, display = withoutClitic(word.trim()).takeIf { w -> w.any { it.isUpperCase() } })
     }
+
+    override fun spellingOf(word: String): String? = personal.spellingOf(withoutClitic(word))
 
     override suspend fun deleteWord(word: String) {
         val normalized = withoutClitic(word.trim()).toLookupForm()
@@ -125,10 +129,10 @@ class NgramPredictionEngine(
      * every elided form of it. */
     private fun withoutClitic(word: String): String = profile.splitClitic(word)?.second ?: word
 
-    private suspend fun persist(word: String, explicit: Boolean) {
+    private suspend fun persist(word: String, explicit: Boolean, display: String? = null) {
         val normalized = withoutClitic(word.trim()).toLookupForm()
         if (normalized.isEmpty()) return
-        val entry = personal.record(normalized, explicit) ?: return
+        val entry = personal.record(normalized, explicit, display) ?: return
         wordDao.upsert(
             WordEntity(
                 word = entry.word,
@@ -137,6 +141,8 @@ class NgramPredictionEngine(
                 lastUsedTimestamp = entry.lastUsed,
                 explicit = entry.explicit,
                 locale = locale,
+                // Written back on every use: leaving it out would erase the user's spelling.
+                display = entry.display,
             ),
         )
     }

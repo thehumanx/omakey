@@ -116,7 +116,7 @@ class OmakeyDatabaseMigrationTest {
     @Test
     fun fresh_install_opens_at_current_version() {
         withMigratedDatabase { db ->
-            assertEquals(5, db.openHelper.readableDatabase.version)
+            assertEquals(6, db.openHelper.readableDatabase.version)
             assertNotNull(runBlocking { db.wordDao().allUserAdded(WordEntity.DEFAULT_LOCALE) })
         }
     }
@@ -149,6 +149,54 @@ class OmakeyDatabaseMigrationTest {
                 db.wordDao().delete("es_ES", "bishistha")
                 assertEquals("deleting in one language must not touch another", 2, db.wordDao().allUserAdded(WordEntity.DEFAULT_LOCALE).size)
             }
+        }
+    }
+
+    /**
+     * 5→6 adds `display` (the spelling a user saved, "iPhone"). Every v5 row keeps all its fields,
+     * in every language, and starts with no fixed spelling; a spelling can then be set and cleared.
+     */
+    @Test
+    fun migration_5_to_6_keeps_every_word_and_adds_no_spelling() {
+        createV5Database {
+            it.execSQL(
+                "INSERT INTO words (word, frequency, isUserAdded, lastUsedTimestamp, explicit, locale) VALUES " +
+                    "('bibek', 700, 1, 1000, 1, 'en_US'), ('москва', 250, 1, 3000, 0, 'ru_RU')",
+            )
+        }
+        withMigratedDatabase { db ->
+            runBlocking {
+                val english = db.wordDao().findExact("en_US", "bibek")!!
+                assertEquals(WordEntity("bibek", 700, true, 1000L, explicit = true, locale = "en_US", display = null), english)
+                val russian = db.wordDao().findExact("ru_RU", "москва")!!
+                assertEquals(WordEntity("москва", 250, true, 3000L, explicit = false, locale = "ru_RU", display = null), russian)
+
+                db.wordDao().setDisplay("en_US", "bibek", "Bibek")
+                assertEquals("Bibek", db.wordDao().findExact("en_US", "bibek")!!.display)
+                db.wordDao().setDisplay("en_US", "bibek", null)
+                assertEquals(null, db.wordDao().findExact("en_US", "bibek")!!.display)
+            }
+        }
+    }
+
+    /** A v5 database exactly as Room created it — statements from `core/schemas/…/5.json`. */
+    private fun createV5Database(populate: (SQLiteDatabase) -> Unit) {
+        val path = context.getDatabasePath(DB_NAME)
+        path.parentFile?.mkdirs()
+        val db = SQLiteDatabase.openOrCreateDatabase(path, null)
+        db.use {
+            it.execSQL(
+                "CREATE TABLE IF NOT EXISTS `words` (`word` TEXT NOT NULL, `frequency` INTEGER NOT NULL, " +
+                    "`isUserAdded` INTEGER NOT NULL, `lastUsedTimestamp` INTEGER NOT NULL, " +
+                    "`explicit` INTEGER NOT NULL, `locale` TEXT NOT NULL, PRIMARY KEY(`locale`, `word`))",
+            )
+            it.execSQL(
+                "CREATE TABLE IF NOT EXISTS `clipboard_history` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                    "`content` TEXT NOT NULL, `timestamp` INTEGER NOT NULL, `pinned` INTEGER NOT NULL, " +
+                    "`contentType` TEXT NOT NULL, `imagePath` TEXT)",
+            )
+            populate(it)
+            it.version = 5
         }
     }
 

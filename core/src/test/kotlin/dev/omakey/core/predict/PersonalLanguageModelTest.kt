@@ -215,4 +215,28 @@ class PersonalLanguageModelTest {
         assertFalse(personal.contains("bbk"))
         assertFalse(personal.isTrusted("bbk"))
     }
+
+    // --- a saved spelling ("iPhone") ------------------------------------------------------------
+
+    @Test
+    fun `a saved spelling survives the word being typed again`() {
+        // The trap: ordinary typing rewrites the row, and must not erase what the user saved.
+        personal.record("iphone", explicit = true, display = "iPhone")
+        repeat(3) { personal.record("iphone", explicit = false) }
+        assertEquals("iPhone", personal.spellingOf("IPHONE"))
+        assertEquals("iPhone", personal.entries().single { it.word == "iphone" }.display)
+    }
+
+    @Test
+    fun `a spelling loaded from the database is used`() {
+        personal.load(listOf(PersonalLanguageModel.Entry("bibek", 5f, now, explicit = true, display = "Bibek")), model)
+        assertEquals("Bibek", personal.spellingOf("bibek"))
+    }
+
+    @Test
+    fun `a word saved without capitals has no fixed spelling`() {
+        personal.record("bibek", explicit = true)
+        assertNull(personal.spellingOf("bibek"))
+        assertNull(personal.spellingOf("unknownword"))
+    }
 }

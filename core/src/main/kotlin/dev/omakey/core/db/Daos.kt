@@ -65,19 +65,27 @@ interface WordDao {
     @Query("UPDATE words SET word = :newWord WHERE locale = :locale AND word = :oldWord")
     suspend fun rename(locale: String, oldWord: String, newWord: String)
 
+    /** Settings' "Edit" when only the capitals changed: the word stays, its spelling changes
+     * ([WordEntity.display]; null clears it). */
+    @Query("UPDATE words SET display = :display WHERE locale = :locale AND word = :word")
+    suspend fun setDisplay(locale: String, word: String, display: String?)
+
     /**
-     * Settings' "Edit": renames [oldWord] to [newWord], merging into [newWord]'s row when that word
+     * Settings' "Edit": renames [oldWord] to [newWord] (spelled [display]), merging into [newWord]'s row when that word
      * is already learned ([LearnedWordEdits.merge]) instead of hitting the (locale, word) primary
      * key — which is what used to crash the screen. One transaction, so a crash midway can't lose
      * the word.
      */
     @Transaction
-    suspend fun renameOrMerge(locale: String, oldWord: String, newWord: String) {
-        if (oldWord == newWord) return
+    suspend fun renameOrMerge(locale: String, oldWord: String, newWord: String, display: String?) {
+        if (oldWord == newWord) {
+            setDisplay(locale, oldWord, display)
+            return
+        }
         val old = findExact(locale, oldWord) ?: return
         val existing = findExact(locale, newWord)
         delete(locale, oldWord)
-        upsert(LearnedWordEdits.merge(old, existing, newWord))
+        upsert(LearnedWordEdits.merge(old, existing, newWord, display))
     }
 }
 
