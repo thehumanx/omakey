@@ -3,6 +3,28 @@
 All notable changes to omakey are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [5.8.1] — 2026-11-20
+
+Two fixes from beta testers: learned words now keep your spelling, and Russian (and other
+languages) no longer get red underlines while you type. Thanks to Jablon for reporting that learned
+words couldn't be edited, and to Konstantin for reporting the red underlines again and helping track
+them down.
+
+### Fixed
+- **Learned words keep your spelling.** Edit a learned word to "Bibek" or "iPhone" in Settings →
+  Learned words and it stays that way: the keyboard writes it with your capitals whenever it
+  suggests, completes or corrects to it, in every language. Swiping up to save a word keeps the
+  capitals you typed too, including a word the dictionary only knows in lowercase. Typing it in
+  all caps still gives all caps. Editing a word's capitals used to do nothing.
+  Thanks to Jablon for reporting it.
+- **No more red underlines on Russian (and other languages) while omakey is your keyboard.**
+  Android's spell checker kept checking Russian against English even though omakey tells it which
+  language you're typing. omakey now switches the system spell checker off while it's your keyboard
+  (Android 12 and newer), the way some other keyboards do. omakey's own autocorrect still fixes
+  typos as you type. Thanks to Konstantin for reporting it again.
+  On Android 11 and older the system spell checker still runs; turn it off in Settings → Spell
+  checker if it underlines words you didn't misspell.
+
 ## [5.8.0] — 2026-11-18
 
 Fixes and choices from new beta testers: an easier spacebar, gentler and calmer vibration, faster
