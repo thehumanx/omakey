@@ -1,7 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  suppressesSpellChecker: while omakey is the keyboard, text boxes don't run the system spell
+  checker (Android 12+; older versions ignore it). Gboard's spell checker on "use system
+  languages" ignored the language omakey reports and underlined every Russian word in red, even
+  with the subtype set to ru_RU (reproduced on Android 17). omakey corrects as you type, so the
+  underlines added nothing but noise. See docs/internal/decisions.md §85.
+-->
 <input-method xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     android:settingsActivity="dev.omakey.app.settings.SettingsActivity"
-    android:supportsInlineSuggestions="true">
+    android:supportsInlineSuggestions="true"
+    android:suppressesSpellChecker="true"
+    tools:targetApi="s">
     <subtype
         android:label="@string/subtype_en_us"
         android:imeSubtypeLocale="en_US"
