@@ -6,7 +6,10 @@ package dev.omakey.core.locale
  * The system spellchecker checks text in the language of the keyboard's *current subtype*. omakey
  * used to declare a single English subtype, so typing Russian in Telegram was checked against an
  * English dictionary and every word got a red underline (closed-beta report). Declaring a subtype
- * per enabled language, and keeping the current one in step with the active language, fixes that.
+ * per enabled language, and keeping the current one in step with the active language, was meant to
+ * fix that. It doesn't on its own: Gboard's spell checker on "use system languages" ignored the
+ * ru_RU subtype (Android 17), so `method.xml` now sets `suppressesSpellChecker`. The subtypes stay
+ * for the system keyboard switcher and anything else that reads the keyboard's language.
  */
 data class SubtypeSpec(
     val localeId: String,

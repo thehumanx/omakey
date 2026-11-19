@@ -178,6 +178,7 @@ class LocaleManager(
                     count = it.frequency / WordEntity.COUNT_SCALE,
                     lastUsed = it.lastUsedTimestamp,
                     explicit = it.explicit,
+                    display = it.display,
                 )
             },
             model,

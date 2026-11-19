@@ -37,6 +37,10 @@ interface PredictionEngine {
      * touches the bundled vocabulary. */
     suspend fun deleteWord(word: String)
 
+    /** The spelling the user saved for [word] ("iPhone" for "iphone"), or null when it has none.
+     * Read on the typing path, so it must be a plain in-memory lookup. */
+    fun spellingOf(word: String): String? = null
+
     /**
      * `log P(word | previousWord)` from **observed** bigram evidence, or null when that pair was
      * never seen — which is deliberately distinct from "seen but unlikely". Callers use null to

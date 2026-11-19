@@ -469,7 +469,7 @@ internal fun LearnedWordsOverlay(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
-                        Text(text = entry.word, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                        Text(text = entry.display ?: entry.word, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                         if (showLanguage) {
                             Text(
                                 text = entry.locale.substringBefore('_'),
@@ -517,8 +517,11 @@ internal fun LearnedWordsOverlay(
     }
 
     wordBeingEdited?.let { entry ->
-        var editedWord by remember(entry.word) { mutableStateOf(entry.word) }
+        var editedWord by remember(entry.word) { mutableStateOf(entry.display ?: entry.word) }
         val normalised = LearnedWordEdits.normalise(editedWord, profileOf(entry.locale))
+        // A change in capitals alone ("bibek" → "Bibek") is a change: it used to be lowercased away
+        // and Save did nothing (5.8.0 report).
+        val changed = normalised != null && (normalised.word != entry.word || normalised.display != entry.display)
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { wordBeingEdited = null },
             title = { Text(text = "Edit word") },
@@ -535,11 +538,12 @@ internal fun LearnedWordsOverlay(
                 TextButton(
                     enabled = normalised != null,
                     onClick = {
-                        val newWord = normalised ?: return@TextButton
+                        val edit = normalised ?: return@TextButton
                         wordBeingEdited = null
-                        if (newWord != entry.word) {
+                        if (changed) {
                             scope.launch {
-                                wordDao.renameOrMerge(entry.locale, entry.word, newWord)
+                                // Same key: only the spelling changes (renameOrMerge handles that).
+                                wordDao.renameOrMerge(entry.locale, entry.word, edit.word, edit.display)
                                 signal.bump()
                                 reload()
                             }

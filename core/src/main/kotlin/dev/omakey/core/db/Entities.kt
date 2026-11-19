@@ -30,6 +30,10 @@ data class WordEntity(
      * learned in Spanish and the same string typed in English are separate entries and neither
      * language's suggestions are taught by the other (AGENTS.md §66 Phase 4). */
     val locale: String = DEFAULT_LOCALE,
+    /** The word as the user saved it ("iPhone", "Bibek"), or null when it has no fixed spelling and
+     * follows whatever was typed. [word] stays the lowercase lookup key; this is only how it is
+     * written. Set by an explicit save (Settings edit, swipe-up), never by ordinary typing. v6. */
+    val display: String? = null,
 ) {
     companion object {
         /** Every row that predates per-language data was English; migration 4→5 tags it so. */

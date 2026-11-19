@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [WordEntity::class, ClipboardEntity::class],
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 abstract class OmakeyDatabase : RoomDatabase() {
@@ -92,10 +92,21 @@ abstract class OmakeyDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Adds `words.display`: the spelling the user saved ("iPhone"), null for none. No DEFAULT,
+         * so the column matches what Room expects for a nullable field without `defaultValue`.
+         * Every existing word keeps all its fields and gets no fixed spelling.
+         */
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE words ADD COLUMN display TEXT")
+            }
+        }
+
         /** Exposed so `OmakeyDatabaseMigrationTest` exercises the migrations that actually ship
          * rather than a copy of them, and so a new migration can't be added to the test's chain
          * while being forgotten here (or the reverse). */
-        val MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+        val MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
 
         fun getInstance(context: Context): OmakeyDatabase =
             instance ?: synchronized(this) {

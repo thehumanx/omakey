@@ -31,6 +31,10 @@ class InMemoryWordDao(seed: List<WordEntity> = emptyList()) : WordDao {
 
     override suspend fun deleteAllUserAdded() { byWord.values.removeIf { it.isUserAdded } }
 
+    override suspend fun setDisplay(locale: String, word: String, display: String?) {
+        byWord[locale to word]?.let { byWord[locale to word] = it.copy(display = display) }
+    }
+
     override suspend fun rename(locale: String, oldWord: String, newWord: String) {
         byWord.remove(locale to oldWord)?.let { byWord[locale to newWord] = it.copy(word = newWord) }
     }

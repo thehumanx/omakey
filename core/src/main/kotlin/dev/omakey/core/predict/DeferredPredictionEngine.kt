@@ -63,6 +63,8 @@ class DeferredPredictionEngine : PredictionEngine {
         delegate?.deleteWord(word)
     }
 
+    override fun spellingOf(word: String): String? = delegate?.spellingOf(word)
+
     override suspend fun contextLogProbability(previousWord: String, word: String): Float? =
         delegate?.contextLogProbability(previousWord, word)
 }

@@ -73,6 +73,9 @@ class PersonalLanguageModel(private val clock: () -> Long = { System.currentTime
         /** Saved deliberately via the swipe-up gesture, as opposed to picked up from typing. Only
          * these can be un-learned by swiping up again, and only these are trusted on sight. */
         val explicit: Boolean,
+        /** How the user saved it ("iPhone"), or null for no fixed spelling. Carried on every
+         * [record] so typing a word never erases the spelling saved for it. */
+        val display: String? = null,
     )
 
     private val byWord = HashMap<String, Entry>()
@@ -110,7 +113,7 @@ class PersonalLanguageModel(private val clock: () -> Long = { System.currentTime
      * Only vocabulary rarer than [IMPLICIT_LEARNING_RANK], or absent from it entirely, is worth
      * remembering — that is where a personal signal actually changes an outcome.
      */
-    fun record(word: String, explicit: Boolean): Entry? {
+    fun record(word: String, explicit: Boolean, display: String? = null): Entry? {
         val lower = word.toLookupForm()
         if (lower.isEmpty()) return null
         val existing = byWord[lower]
@@ -125,6 +128,8 @@ class PersonalLanguageModel(private val clock: () -> Long = { System.currentTime
             // Explicitness is sticky: a word the user deliberately saved stays deliberately saved
             // even if it is later typed casually.
             explicit = explicit || existing?.explicit == true,
+            // A new spelling only from an explicit save; anything else keeps the saved one.
+            display = display ?: existing?.display,
         )
         index(updated)
         recomputeTotal()
@@ -139,6 +144,9 @@ class PersonalLanguageModel(private val clock: () -> Long = { System.currentTime
         totalCount -= removed.count
         if (totalCount < 0f) totalCount = 0f
     }
+
+    /** The spelling the user saved for [word] ("iPhone"), or null when it has none. */
+    fun spellingOf(word: String): String? = byWord[word.toLookupForm()]?.display
 
     fun contains(word: String): Boolean = word.toLookupForm() in byWord
 

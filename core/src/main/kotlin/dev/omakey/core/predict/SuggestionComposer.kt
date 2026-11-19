@@ -31,14 +31,17 @@ class SuggestionComposer(
     /** The active language, read per call — for words it always capitalises ("i'm" → "I'm"),
      * which the model stores lowercase like every other word. */
     private val profile: () -> LanguageProfile = { LanguageProfile.English },
+    /** The spelling the user saved for a word ("iPhone"), or null; see [WordCasing]. */
+    private val spellingOf: (String) -> String? = { null },
 ) {
 
-    /** [words] as the strip should show them: always-capitalised words cased, duplicates that
-     * casing creates ("i" and "I") dropped. */
+    /** [words] as the strip should show them: saved spellings and always-capitalised words cased,
+     * duplicates that casing creates ("i" and "I") dropped. Not skipped for languages without
+     * always-capitalised words: a Russian user's "Москва" needs it too. */
     private fun cased(words: List<String>): List<String> {
         val language = profile()
-        if (language.alwaysCapitalized.isEmpty()) return words
-        return words.map { AutoCapitalization.capitalizedSuggestion(it, language) }.distinctBy { it.lowercase() }
+        if (language.alwaysCapitalized.isEmpty() && words.none { spellingOf(it) != null }) return words
+        return words.map { WordCasing.forSuggestion(it, language, spellingOf) }.distinctBy { it.lowercase() }
     }
 
     /**
@@ -158,7 +161,7 @@ class SuggestionComposer(
                 when {
                     alt == contraction -> alt
                     alt.contains(' ') -> alt
-                    else -> matchCase(word, alt)
+                    else -> WordCasing.forTyped(word, alt, profile(), spellingOf)
                 }
             },
         )
