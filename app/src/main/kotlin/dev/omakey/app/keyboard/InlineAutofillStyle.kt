@@ -62,6 +62,9 @@ internal object InlineAutofillStyle {
     fun chipSize(context: Context): Size =
         Size(android.view.ViewGroup.LayoutParams.WRAP_CONTENT, px(context, INLINE_CHIP_HEIGHT_DP))
 
+    // Lint false positive: setBackground/setPadding/setLayoutMargin are public, documented methods
+    // of the androidx.autofill style builders, inherited from a restricted base class.
+    @android.annotation.SuppressLint("RestrictedApi")
     private fun styles(context: Context, theme: OmakeyTheme): Bundle {
         val fill = theme.keyBackground.argb.toInt()
         val label = theme.labelOn(theme.keyBackground).argb.toInt()

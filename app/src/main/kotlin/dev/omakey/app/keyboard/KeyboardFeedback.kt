@@ -105,6 +105,9 @@ class VibratorKeyboardFeedback(context: Context, private val preferences: Haptic
         if (settings.soundEnabled) playSound(kind, settings)
     }
 
+    // primitive() and preset() are reached only through hapticForm, which is chosen by
+    // Build.VERSION checks when this class is created; lint can't follow that.
+    @android.annotation.SuppressLint("NewApi")
     private fun vibrate(kind: FeedbackKind, strength: Float) {
         runCatching {
             val effect = when (hapticForm) {

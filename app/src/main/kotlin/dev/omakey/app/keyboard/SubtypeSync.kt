@@ -60,31 +60,49 @@ class SubtypeSync(
     }
 
     private fun register(specs: List<SubtypeSpec>) {
-        val additional = specs.filter { it.localeId != KeyboardLocale.EnUs.id }.map(::build).toTypedArray()
-        try {
+        safely("Couldn't register language subtypes") {
+            val additional = specs.filter { it.localeId != KeyboardLocale.EnUs.id }.map(::build).toTypedArray()
             @Suppress("DEPRECATION") // still the way for a keyboard to declare subtypes at runtime
             imm.setAdditionalInputMethodSubtypes(imeId, additional)
-        } catch (e: RuntimeException) {
-            Log.w(TAG, "Couldn't register language subtypes", e)
         }
         switchSystemTo(localeManager.active.value)
     }
 
+    /** Fails quietly when the subtype isn't known to the system yet (registration still in
+     * flight) or this build refuses it; the next language change or registration tries again. */
     private fun switchSystemTo(locale: KeyboardLocale) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return
-        val spec = locale.subtypeSpec()
-        val current = imm.currentInputMethodSubtype
-        if (current != null && current.hashCode() == build(spec).hashCode()) return
-        if (current != null && localeIdForLanguageTag(languageTagOf(current), listOf(locale)) == locale.id) return
-        try {
+        safely("Couldn't switch the system subtype to ${locale.id}") {
+            val spec = locale.subtypeSpec()
+            val current = imm.currentInputMethodSubtype
+            if (current != null && current.hashCode() == build(spec).hashCode()) return@safely
+            if (current != null && localeIdForLanguageTag(languageTagOf(current), listOf(locale)) == locale.id) return@safely
             service.switchInputMethod(imeId, build(spec))
-        } catch (e: RuntimeException) {
-            // The subtype isn't known to the system yet (registration still in flight) or this build
-            // refuses it; the next language change or registration tries again.
-            Log.w(TAG, "Couldn't switch the system subtype to ${locale.id}", e)
         }
     }
 
+    /**
+     * Telling the system the language is a nicety; the keyboard must work without it. Catches
+     * `LinkageError` as well as exceptions: a framework method missing on an older Android version
+     * (`NoSuchMethodError`) is exactly what crashed 5.7.0–5.8.1 at startup on Android 13 and older.
+     */
+    private inline fun safely(what: String, block: () -> Unit) {
+        try {
+            block()
+        } catch (e: RuntimeException) {
+            Log.w(TAG, what, e)
+        } catch (e: LinkageError) {
+            Log.w(TAG, what, e)
+        }
+    }
+
+    /**
+     * The name override is Android 14+ only. 5.7.0–5.8.1 called it unconditionally, and on
+     * Android 13 and older the missing method threw `NoSuchMethodError` the moment the keyboard
+     * started, which the `RuntimeException` catches above don't catch: omakey crashed as soon as it
+     * was chosen as the keyboard (Android 10 and a Galaxy S20 FE). Older versions name the subtype
+     * from its locale instead. Lint's NewApi check is now part of every release (AGENTS.md).
+     */
     private fun build(spec: SubtypeSpec): InputMethodSubtype =
         InputMethodSubtype.InputMethodSubtypeBuilder()
             .setSubtypeId(spec.subtypeId)
@@ -92,7 +110,7 @@ class SubtypeSync(
             .setSubtypeLocale(spec.localeId)
             .setSubtypeMode(MODE_KEYBOARD)
             .setIsAsciiCapable(spec.asciiCapable)
-            .setSubtypeNameOverride(spec.label)
+            .apply { if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) setSubtypeNameOverride(spec.label) }
             .setOverridesImplicitlyEnabledSubtype(false)
             .build()
 

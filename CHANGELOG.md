@@ -3,6 +3,17 @@
 All notable changes to omakey are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [5.8.2] — 2026-11-20
+
+An urgent fix: on Android 13 and older, omakey 5.7.0 to 5.8.1 crashed as soon as it was chosen as
+the keyboard. Thanks to the testers who reported it.
+
+### Fixed
+- **omakey no longer crashes when you choose it as your keyboard on Android 13 and older.** It
+  used something only Android 14 and newer have, and on older phones it closed the moment it
+  started. If you went back to an older version because of this, 5.8.2 is safe to install over it:
+  your learned words and settings are kept.
+
 ## [5.8.1] — 2026-11-20
 
 Two fixes from beta testers: learned words now keep your spelling, and Russian (and other
