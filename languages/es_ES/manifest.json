@@ -2,7 +2,7 @@
  "id": "es_ES",
  "displayName": "Spanish",
  "nativeName": "Español",
- "packVersion": "1.0.0",
+ "packVersion": "1.0.1",
  "packFormat": 1,
  "letterLayout": "qwerty_es",
  "layouts": [

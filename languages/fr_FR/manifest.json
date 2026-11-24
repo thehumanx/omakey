@@ -2,7 +2,7 @@
  "id": "fr_FR",
  "displayName": "French",
  "nativeName": "Français",
- "packVersion": "1.0.1",
+ "packVersion": "1.0.2",
  "packFormat": 1,
  "letterLayout": "azerty_fr",
  "letterLayoutChoices": [
