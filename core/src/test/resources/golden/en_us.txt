@@ -1,16 +1,16 @@
-correct	rainning	raining
+correct	rainning	null
 alts	rainning	raining,running,training,ranking,raising,ranging
-correct	wensday	wednesday
+correct	wensday	null
 alts	wensday	wednesday,wendy,weekday
 correct	increesing	increasing
 alts	increesing	increasing
-correct	hea	he
+correct	hea	null
 alts	hea	he,yes,her,usa,be,hes
 correct	countufersey	null
 alts	countufersey	
-correct	controversie	controversial
+correct	controversie	null
 alts	controversie	controversial,controversy
-correct	critisicsm	criticism
+correct	critisicsm	null
 alts	critisicsm	criticism,criticisms
 correct	critisizime	null
 alts	critisizime	criticizing,criticize
@@ -24,35 +24,35 @@ correct	heart	null
 alts	heart	hear,heard,heat,hearts,year,hart
 correct	ho	null
 alts	ho	
-correct	machein	machine
+correct	machein	null
 alts	machein	machine,michelin,machete
-correct	nazereth	nazareth
+correct	nazereth	null
 alts	nazereth	nazareth
-correct	finachial	financial
+correct	finachial	null
 alts	finachial	financial,facial
 correct	labratory	laboratory
 alts	labratory	laboratory
 correct	et	null
 alts	et	
-correct	appoximations	approximation
+correct	appoximations	null
 alts	appoximations	approximation,applications
 correct	pheunomia	null
 alts	pheunomia	pneumonia
 correct	phemonuime	null
 alts	phemonuime	
-correct	holesome	hole some
+correct	holesome	null
 alts	holesome	hole some,handsome,holes
-correct	polypropalene	polypropylene
+correct	polypropalene	null
 alts	polypropalene	polypropylene
-correct	geich	tech
+correct	geich	null
 alts	geich	tech,teach,beach,each,bench,geisha
-correct	thach	teach
+correct	thach	null
 alts	thach	teach,than,reach,that,tracy,tech
-correct	mest	meat
+correct	mest	null
 alts	mest	meat,meet,nest,met,most,must
 correct	exstent	extent
 alts	exstent	extent,existent,extend
-correct	axerdent	ardent
+correct	axerdent	null
 alts	axerdent	ardent,accident,arden,amendment,aberdeen,argent
 correct	huming	hiking
 alts	huming	hiking,humming,hunting,humping,buying,hiding
@@ -70,41 +70,41 @@ correct	think	null
 alts	think	thinks,thing,thank,thin,thick,thine
 correct	financial	null
 alts	financial	financially,financing,finances,finance,facial
-correct	finanialy	financial
+correct	finanialy	null
 alts	finanialy	financial,financially,finally
 correct	innoncent	innocent
 alts	innoncent	innocent
 correct	posible	possible
 alts	posible	possible
-correct	misdameanors	misdemeanor
+correct	misdameanors	null
 alts	misdameanors	misdemeanor
-correct	porle	pole
+correct	porle	null
 alts	porle	pole,pore,pope,poole,pile,pork
 correct	enimeus	null
 alts	enimeus	
 correct	anomalus	animals
 alts	anomalus	animals,anomalies,anomaly,animal
-correct	altidud	altitude
+correct	altidud	null
 alts	altidud	altitude
 correct	happi	happy
 alts	happi	happy,hanoi,hippo,happen,app,api
-correct	congratilation	congratulations
+correct	congratilation	null
 alts	congratilation	congratulations
-correct	amius	amos
+correct	amius	null
 alts	amius	amos,amid,anus,aims,angus,amiga
-correct	unnamos	unnamed
+correct	unnamos	null
 alts	unnamos	unnamed
-correct	turment	torment
+correct	turment	null
 alts	turment	torment,trent,urgent,torrent
 correct	tournamant	tournament
 alts	tournamant	tournament,tournaments
-correct	negocations	negotiations
+correct	negocations	null
 alts	negocations	medications,negotiations
-correct	agociate	associate
+correct	agociate	null
 alts	agociate	associate,advocate,associated,associates,allocate
-correct	mashe	made
+correct	mashe	null
 alts	mashe	made,mashed,maybe,mash,mass,maze
-correct	spirical	spiritual
+correct	spirical	null
 alts	spirical	special,spiritual,spiral,spherical,surgical,spatial
 correct	curent	current
 alts	curent	current,cutest,curing,cent,cure,urgent
@@ -112,27 +112,27 @@ correct	aconase	null
 alts	aconase	
 correct	homsick	homesick
 alts	homsick	homesick
-correct	virture	virtue
+correct	virture	null
 alts	virture	virtue,virtues,virtual,venture
 correct	origially	originally
 alts	origially	originally,initially,officially
-correct	btade	grade
+correct	btade	null
 alts	btade	grade,blade,base,trade,bade,brace
-correct	predend	pretend
+correct	predend	null
 alts	predend	pretend,present,prevent,pretends,prudent
 correct	landry	null
 alts	landry	laundry,larry,landed,land,lander,lady
 correct	natrual	natural
 alts	natrual	natural
-correct	contious	continue
+correct	contious	null
 alts	contious	continue,continuous,continues,contagious,contiguous,conscious
 correct	ordianailly	null
 alts	ordianailly	ordinarily
 correct	sat	null
 alts	sat	say,eat,way,day,at,war
-correct	suspecion	suspicion
+correct	suspecion	null
 alts	suspecion	suspicion,suspension,suspicions
-correct	susici	sushi
+correct	susici	null
 alts	susici	sushi,susie
 correct	eastablishing	establishing
 alts	eastablishing	establishing
@@ -140,53 +140,53 @@ correct	frame	null
 alts	frame	frames,came,fame,framed,game,france
 correct	pumes	pines
 alts	pumes	pines,pumps,pies,puma,pipes,piles
-correct	cementry	cemetery
+correct	cementry	null
 alts	cementry	cemetery,cement,coventry,carpentry,entry,centenary
-correct	onen	one
+correct	onen	null
 alts	onen	one,omen,open,own,none,ones
 correct	teachur	teacher
 alts	teachur	teacher,teach,teachers
 correct	ridicilous	ridiculous
 alts	ridicilous	ridiculous
-correct	credicus	credits
+correct	credicus	null
 alts	credicus	credits,credit,credited,credible,radius,critics
-correct	ternd	terms
+correct	ternd	null
 alts	ternd	terms,teens,trend,tend,teen,term
 correct	tearned	earned
 alts	tearned	earned,trained,teamed,termed,turned
 correct	berry	null
 alts	berry	betty,very,berth,beer,barry,hurry
-correct	oppist	oppose
+correct	oppist	null
 alts	oppist	oppose
-correct	obosite	onsite
+correct	obosite	null
 alts	obosite	onsite,opposite,obesity
-correct	croshay	crosby
+correct	croshay	null
 alts	croshay	crosby
-correct	curplas	curls
+correct	curplas	null
 alts	curplas	curls,cup las
 correct	surplise	surprise
 alts	surplise	surprise,surplus,supplies,suppose,surprised,supplied
 correct	oging	going
 alts	oging	going,lying,king,owing,loving
-correct	eguiped	equipped
+correct	eguiped	null
 alts	eguiped	equipped,guided
 correct	fressing	dressing
 alts	fressing	dressing,freezing,crossing,reading,feeding,freaking
-correct	resauce	reduce
+correct	resauce	null
 alts	resauce	reduce,rescue,resource,re sauce,resume,resale
 correct	represntatives	representatives
 alts	represntatives	representatives,representative
-correct	dormitly	dormitory
+correct	dormitly	null
 alts	dormitly	dormitory,formerly,directly,dorothy
-correct	domutory	dormitory
+correct	domutory	null
 alts	domutory	dormitory
 correct	manny	many
 alts	manny	many,mann,mandy,manly,any,nancy
-correct	obsirve	observe
+correct	obsirve	null
 alts	obsirve	observe,observed,observer,observes
-correct	sumer	summer
+correct	sumer	null
 alts	sumer	summer,super,sure,user,sumner,sucker
-correct	nobbly	bobby
+correct	nobbly	null
 alts	nobbly	bobby,hobby,nobody,noble,nobel,notably
 correct	adar	null
 alts	adar	afar,wear,radar,ada,adam,add
@@ -198,13 +198,13 @@ correct	sackaach	null
 alts	sackaach	scratch
 correct	sattfashed	null
 alts	sattfashed	attached
-correct	autorum	auto rm
+correct	autorum	null
 alts	autorum	auto rm
 correct	suplementary	supplementary
 alts	suplementary	supplementary
 correct	memeries	memories
 alts	memeries	memories,entries
-correct	yerned	turned
+correct	yerned	null
 alts	yerned	turned,earned,yelled
 correct	ruch	rich
 alts	ruch	rich,each,rush,touch,ruth,tech
@@ -214,11 +214,11 @@ correct	unparralled	null
 alts	unparralled	unparalleled
 correct	cases	null
 alts	cases	case,causes,cars,cares,cakes,ceases
-correct	deped	speed
+correct	deped	null
 alts	deped	speed,depend,deed,feed,seed,deep
-correct	accopaning	accompanying
+correct	accopaning	null
 alts	accopaning	accompanying,accounting,according,accompanied,accepting
-correct	disch	disc
+correct	disch	null
 alts	disch	disc,dish,fish,discs,disco,rich
 correct	sanct	want
 alts	sanct	want,sandy,dance,sang,act,san
@@ -234,13 +234,13 @@ correct	boetiful	null
 alts	boetiful	beautiful,boutique
 correct	befertl	null
 alts	befertl	
-correct	bautful	beautiful
+correct	bautful	null
 alts	bautful	beautiful
 correct	buetiful	null
 alts	buetiful	beautiful
 correct	dislike	null
 alts	dislike	dislikes,disliked
-correct	lod	old
+correct	lod	null
 alts	lod	old,los,lid,lie,low,of
 correct	bradcasting	broadcasting
 alts	bradcasting	broadcasting
@@ -248,15 +248,15 @@ correct	fonitmilny	null
 alts	fonitmilny	
 correct	alwasy	always
 alts	alwasy	always
-correct	colses	closes
+correct	colses	null
 alts	colses	closes,closed,close,codes,colors,copies
-correct	catelouge	catalogue
+correct	catelouge	null
 alts	catelouge	catalogue,catalogs,catalog
-correct	rehen	then
+correct	rehen	null
 alts	rehen	then,teen,even,rebel,rehab,regent
-correct	kicowledge	knowledge
+correct	kicowledge	null
 alts	kicowledge	knowledge
-correct	sicology	sociology
+correct	sicology	null
 alts	sicology	sociology,ecology,sicily
 correct	psycolledgy	null
 alts	psycolledgy	
@@ -264,29 +264,29 @@ correct	vinfihe	null
 alts	vinfihe	
 correct	cartill	carroll
 alts	cartill	carroll,car till
-correct	deternaned	determined
+correct	deternaned	null
 alts	deternaned	determined,determines,determine
 correct	benificatle	null
 alts	benificatle	
 correct	guding	hiding
 alts	guding	hiding,using,guiding,funding,giving,gliding
-correct	poen	porn
+correct	poen	null
 alts	poen	porn,open,poem,leon,pen,pine
 correct	booksand	books and
 alts	booksand	books and,boolean
-correct	crie	fire
+correct	crie	null
 alts	crie	fire,crow,crime,cried,free,grid
 correct	qunnia	null
 alts	qunnia	
-correct	comety	comedy
+correct	comety	null
 alts	comety	comedy,comet,comets,come,comfy,comes
 correct	indenfient	null
 alts	indenfient	indecent
-correct	darde	dared
+correct	darde	null
 alts	darde	dared,dated,date,dare,dares,are
-correct	intion	union
+correct	intion	null
 alts	intion	union,option,into,nation,notion,ignition
-correct	enneation	en nation
+correct	enneation	null
 alts	enneation	donation,enumeration,nation,emulation,en nation,education
 correct	fish	null
 alts	fish	dish,rush,fist,is,fishy,cash
@@ -300,11 +300,11 @@ correct	scheduel	schedule
 alts	scheduel	schedule,scheduled,schedules
 correct	sketualy	null
 alts	sketualy	sexual,sexually,sketchy
-correct	recommened	recommended
+correct	recommened	null
 alts	recommened	recommended,recommends,recommend
 correct	surprized	surprised
 alts	surprized	surprised,surprises,surprise
-correct	sitit	spirit
+correct	sitit	null
 alts	sitit	spirit,suit,sight,stir,situ,sit it
 correct	inrestable	null
 alts	inrestable	inflatable,irritable,inevitable
@@ -318,21 +318,21 @@ correct	specificaly	specifically
 alts	specificaly	specifically
 correct	considerable	null
 alts	considerable	considerably,considerate
-correct	questionerr	questioned
+correct	questionerr	null
 alts	questionerr	questioned,questions,question
-correct	waiked	walked
+correct	waiked	null
 alts	waiked	walked,waited,aimed,waived,wakes,walker
-correct	particial	patricia
+correct	particial	null
 alts	particial	patricia,particular,partial,practical,artificial
-correct	cisting	costing
+correct	cisting	null
 alts	cisting	costing,coating,citing,casting,visiting,fishing
-correct	anscious	anxious
+correct	anscious	null
 alts	anscious	anxious
-correct	pleage	please
+correct	pleage	null
 alts	pleage	please,leave,pledge,place,plate,peace
-correct	insteadily	instead il
+correct	insteadily	null
 alts	insteadily	instead,instead il,instantly
-correct	apraues	argues
+correct	apraues	null
 alts	apraues	argues
 correct	apperatious	null
 alts	apperatious	alterations,apparatus,aspirations
@@ -340,53 +340,53 @@ correct	gant	gang
 alts	gant	gang,hang,any,grant,giant,gay
 correct	eyewigs	null
 alts	eyewigs	
-correct	pecil	pencil
+correct	pecil	null
 alts	pecil	pencil,evil,peril,peck,pencils,perl
 correct	fin	null
 alts	fin	fun,in,run,tin,find,con
 correct	intelejent	null
 alts	intelejent	intelligent,intellect,intolerant
-correct	conter	confer
+correct	conter	null
 alts	conter	confer,center,counter,content,context,contest
-correct	insturements	instruments
+correct	insturements	null
 alts	insturements	instruments,instrument
-correct	ern	den
+correct	ern	null
 alts	ern	den,en,earn,even,er,seen
 correct	safrishtonly	null
 alts	safrishtonly	
 correct	benet	null
 alts	benet	bent,been,brent,best,beer,beet
-correct	oberatur	operator
+correct	oberatur	null
 alts	oberatur	operator,operate,overture,operated,operators,operates
 correct	dismantals	null
 alts	dismantals	
 correct	sergant	servant
 alts	sergant	servant,sergeant,servants
-correct	tonit	toni
+correct	tonit	null
 alts	tonit	toni,tony,font,tonic,toner,tout
 correct	doctuments	documents
 alts	doctuments	documents,document
-correct	curtesey	courtesy
+correct	curtesey	null
 alts	curtesey	courtesy,currency,cutest,curse,cursed,cures
 correct	courtiesy	courtesy
 alts	courtiesy	courtesy,counties,courtney
-correct	vacansey	vacancy
+correct	vacansey	null
 alts	vacansey	vacancy,vacant,vacancies
 correct	raft	null
 alts	raft	fact,draft,craft,eat,rat,act
 correct	shored	null
 alts	shored	shores,shore,showed,shared,stored,shoes
-correct	fumilea	futile
+correct	fumilea	null
 alts	fumilea	futile
-correct	falmilar	familiar
+correct	falmilar	null
 alts	falmilar	familiar,family
-correct	committies	committees
+correct	committies	null
 alts	committies	committees,committed,committee,communities,commit ties
-correct	temporalary	temporary
+correct	temporalary	null
 alts	temporalary	temporary,temporal
 correct	temararlly	null
 alts	temararlly	temporarily
-correct	puf	put
+correct	puf	null
 alts	puf	put,our,out,of,pic,pug
 correct	convenant	covenant
 alts	convenant	covenant,convenient,convent,covenants
@@ -394,7 +394,7 @@ correct	ackolejement	null
 alts	ackolejement	
 correct	govemont	null
 alts	govemont	governor,vermont,government,govern
-correct	chosing	choosing
+correct	chosing	null
 alts	chosing	choosing,closing,chasing,choking,coding,chewing
 correct	reconnissant	null
 alts	reconnissant	reconnaissance
@@ -402,7 +402,7 @@ correct	literlaly	literally
 alts	literlaly	literally
 correct	arigode	null
 alts	arigode	
-correct	bloing	blowing
+correct	bloing	null
 alts	bloing	blowing,going,bling,baking,long,booking
 correct	sckedule	schedule
 alts	sckedule	schedule,scheduled,schedules
@@ -410,23 +410,23 @@ correct	specinens	specimens
 alts	specinens	specimens,specimen
 correct	constuction	construction
 alts	constuction	construction
-correct	pobble	pebble
+correct	pobble	null
 alts	pobble	pebble,pole,probable,poole,pebbles,poodle
-correct	feburay	february
+correct	feburay	null
 alts	feburay	february
-correct	serched	searched
+correct	serched	null
 alts	serched	searched,served,searches
-correct	controvercial	controversial
+correct	controvercial	null
 alts	controvercial	controversial
 correct	egsadgert	null
 alts	egsadgert	
-correct	triampht	triumph
+correct	triampht	null
 alts	triampht	triumph,trumpet,tramp,triumphant
-correct	tripamph	triumph
+correct	tripamph	null
 alts	tripamph	triumph,trip mph,tramp
-correct	churchs	church
+correct	churchs	null
 alts	churchs	church,churches
-correct	tarrif	tariff
+correct	tarrif	null
 alts	tarrif	tariff,terri
 correct	era	null
 alts	era	ear,eta,war,sea,ea,er
@@ -440,7 +440,7 @@ correct	evenually	eventually
 alts	evenually	eventually
 correct	sate	null
 alts	sate	date,safe,sage,says,state,are
-correct	resnable	readable
+correct	resnable	null
 alts	resnable	readable,enable,reasonable,resale,reusable,reliable
 correct	apointments	appointments
 alts	apointments	appointments,appointment
@@ -452,31 +452,31 @@ correct	seens	seems
 alts	seens	seems,seen,sees,seeks,serbs,weeks
 correct	seumkote	null
 alts	seumkote	
-correct	stomoak	tom oak
+correct	stomoak	null
 alts	stomoak	tom oak
-correct	phace	have
+correct	phace	null
 alts	phace	have,place,peace,pace,phase,page
 correct	ulumnigh	null
 alts	ulumnigh	
-correct	alumanae	almanac
+correct	alumanae	null
 alts	alumanae	almanac,alumni,alliance,aluminum
 correct	decideatly	null
 alts	decideatly	
-correct	aniversiry	anniversary
+correct	aniversiry	null
 alts	aniversiry	anniversary,adversity
 correct	annervirsary	null
 alts	annervirsary	anniversary
 correct	anmersersy	null
 alts	anmersersy	
-correct	ediqutte	etiquette
+correct	ediqutte	null
 alts	ediqutte	etiquette
-correct	doo	do
+correct	doo	null
 alts	doo	do,zoo,door,dpi,dip,dog
-correct	leshire	leslie
+correct	leshire	null
 alts	leshire	leslie,les hire
-correct	awerea	were
+correct	awerea	null
 alts	awerea	were,andrea,area,aware
-correct	resved	reeves
+correct	resved	null
 alts	resved	reeves,rested,rescued,tested,reserved,rushed
 correct	speck	null
 alts	speck	speak,spec,specs,deck,sock,spell
@@ -484,13 +484,13 @@ correct	pachisions	null
 alts	pachisions	provisions,passions,partitions
 correct	hare	null
 alts	hare	hard,hate,are,bare,have,here
-correct	mountainouse	mountainous
+correct	mountainouse	null
 alts	mountainouse	mountainous
-correct	mountanes	mountains
+correct	mountanes	null
 alts	mountanes	mountains,montana,mounted,mountain,mounts
-correct	phto	photo
+correct	phto	null
 alts	phto	photo,onto,put,pro,php,hot
-correct	puple	purple
+correct	puple	null
 alts	puple	purple,pulls,pulled,pull,pipe,pole
 correct	month	null
 alts	month	monty,months,mouth,mont,north,moth
@@ -502,21 +502,21 @@ correct	trow	null
 alts	trow	grow,throw,row,from,tore,to
 correct	afaedaviate	null
 alts	afaedaviate	
-correct	affidavited	affidavit
+correct	affidavited	null
 alts	affidavited	affidavit
 correct	affevivat	null
 alts	affevivat	
 correct	sartenly	null
 alts	sartenly	sargent,safely,suddenly,quarterly,surely,stately
-correct	sutnly	surely
+correct	sutnly	null
 alts	sutnly	surely,supply,sunny
 correct	permenately	null
 alts	permenately	
-correct	permennently	permanently
+correct	permennently	null
 alts	permennently	permanently
-correct	reganded	regarded
+correct	reganded	null
 alts	reganded	regarded,demanded,retarded,regained,regard,regards
-correct	cullateral	collateral
+correct	cullateral	null
 alts	cullateral	collateral
 correct	cotaturall	null
 alts	cotaturall	
@@ -524,21 +524,21 @@ correct	yousel	house
 alts	yousel	house,houses,yourself,you'll
 correct	obselescence	null
 alts	obselescence	
-correct	nuisense	nonsense
+correct	nuisense	null
 alts	nuisense	nonsense,nuisance,universe,nurses,noises,ni sense
-correct	startch	starch
+correct	startch	null
 alts	startch	starch,stretch,start,search,scratch,started
-correct	souen	women
+correct	souen	null
 alts	souen	women,sour,south,spun,dozen,some
-correct	remmder	reminder
+correct	remmder	null
 alts	remmder	reminder,render,remember,reader,remover,remodel
-correct	brin	brim
+correct	brin	null
 alts	brin	brim,bring,bin,brain,brian,being
-correct	corresponce	correspond
+correct	corresponce	null
 alts	corresponce	correspond,corresponds
 correct	no	null
 alts	no	
-correct	oper	per
+correct	oper	null
 alts	oper	per,over,open,poet,opera,paper
 correct	episicle	null
 alts	episicle	episode,eligible
@@ -550,11 +550,11 @@ correct	fliying	flying
 alts	fliying	flying,flirting,filing,flowing,filling,lying
 correct	cot	null
 alts	cot	for,got,oct,cor,fit,cit
-correct	ferid	feed
+correct	ferid	null
 alts	ferid	feed,freud,farid,grid,felix,fred
 correct	thay	that
 alts	thay	that,they,than
-correct	transufere	transfers
+correct	transufere	null
 alts	transufere	transfers,transfer,transducer
 correct	prise	null
 alts	prise	prize,pride,prose,price,rise,praise
@@ -564,23 +564,23 @@ correct	chouativa	null
 alts	chouativa	croatia
 correct	star	null
 alts	star	stat,start,stars,stay,state,war
-correct	tackeling	tackling
+correct	tackeling	null
 alts	tackeling	tackling,traveling,tickling,talking
-correct	exerternal	external
+correct	exerternal	null
 alts	exerternal	external,eternal
 correct	shep	she
 alts	shep	she,sep,shop,step,sheep,ship
-correct	swollow	swallow
+correct	swollow	null
 alts	swollow	swallow,swallows,shallow,swollen
 correct	speciumen	specimen
 alts	speciumen	specimen,specimens
-correct	spessimen	specimen
+correct	spessimen	null
 alts	spessimen	specimen,session,specimens
 correct	asembly	assembly
 alts	asembly	assembly
 correct	cope	null
 alts	cope	cole,cold,cops,come,code,coke
-correct	elemetry	elementary
+correct	elemetry	null
 alts	elemetry	elementary,element,elements,elmer
 correct	yer	null
 alts	yer	her,yet,get,year,tee,eye
@@ -588,7 +588,7 @@ correct	move	null
 alts	move	more,mice,movie,moved,moves,mode
 correct	yo	null
 alts	yo	
-correct	welleings	wellbeing
+correct	welleings	null
 alts	welleings	selling,wellbeing,welding,weddings,willing
 correct	recression	regression
 alts	recression	regression,recession,repression,recreation,depression
@@ -596,7 +596,7 @@ correct	recrasistion	null
 alts	recrasistion	
 correct	srelod	null
 alts	srelod	
-correct	seist	west
+correct	seist	null
 alts	seist	west,seat,sexist,sets,swiss,assist
 correct	custermany	null
 alts	custermany	customary
@@ -606,41 +606,41 @@ correct	colored	null
 alts	colored	coloured,colors,color,cooled,closed,cooked
 correct	consicious	conscious
 alts	consicious	conscious,conspicuous,contiguous
-correct	concionse	concise
+correct	concionse	null
 alts	concionse	concise,convince,concorde,continue,condone,conscious
 correct	exepshanly	null
 alts	exepshanly	
-correct	famley	family
+correct	famley	null
 alts	famley	family,valley,fame,fallen,failed,foley
-correct	suprizingly	surprisingly
+correct	suprizingly	null
 alts	suprizingly	surprisingly
 correct	courtousies	null
 alts	courtousies	courthouse
 correct	curtesies	null
 alts	curtesies	currencies,curtains,curtis,curses
-correct	tallvon	tall von
+correct	tallvon	null
 alts	tallvon	tall von,tallinn
 correct	nought	bought
 alts	nought	bought,ought,night,brought
-correct	alashed	washed
+correct	alashed	null
 alts	alashed	washed,lasted,alarmed
 correct	acually	actually
 alts	acually	actually
 correct	lot	null
 alts	lot	log,pot,lit,kit,of,lost
-correct	hvea	he
+correct	hvea	null
 alts	hvea	he,have,her,hes,hives,head
-correct	temperaory	temporary
+correct	temperaory	null
 alts	temperaory	temporary,temperate,temperature
-correct	probalibity	probability
+correct	probalibity	null
 alts	probalibity	probability
-correct	hase	base
+correct	hase	null
 alts	hase	base,has,have,haze,vase,had
 correct	hundrd	hundred
 alts	hundrd	hundred,handed,hunted,hundreds,hungry
-correct	anticapate	anticipate
+correct	anticapate	null
 alts	anticapate	anticipate,anticipated
-correct	goce	give
+correct	goce	null
 alts	goce	give,vice,gone,home,good,god
 correct	lay	null
 alts	lay	pay,lat,lag,play,pat,at
@@ -650,47 +650,47 @@ correct	tress	null
 alts	tress	trees,stress,tread,these,tree,teens
 correct	recomendent	null
 alts	recomendent	recommending,recommended
-correct	certuis	certain
+correct	certuis	null
 alts	certuis	certain,curtis
 correct	probley	problem
 alts	probley	problem,problems,probe
 correct	condutions	conditions
 alts	condutions	conditions,condition
-correct	flagany	flag any
+correct	flagany	null
 alts	flagany	flag any
-correct	flagis	flags
+correct	flagis	null
 alts	flagis	flags,flag is,flavio,flats,flag,flaws
 correct	corce	force
 alts	corce	force,core,code,forced,forces,circle
 correct	convalescance	null
 alts	convalescance	
-correct	lifes	lives
+correct	lifes	null
 alts	lifes	lives,life,lies,likes,loves,lived
 correct	you	null
 alts	you	your,to,toy,tom,go,yo
 correct	intemised	null
 alts	intemised	intended,intense
-correct	semetree	see tree
+correct	semetree	null
 alts	semetree	semester,semesters,see tree,severed,severe
 correct	cherrys	cherry
 alts	cherrys	cherry,cheers,cheryl
-correct	ecomatic	ecstatic
+correct	ecomatic	null
 alts	ecomatic	romantic,exotic,economic,ecstatic,dramatic,comic
-correct	deared	dared
+correct	deared	null
 alts	deared	dared,dated,degree,desired,scared,shared
 correct	simpatacit	null
 alts	simpatacit	
-correct	sympothly	smoothly
+correct	sympothly	null
 alts	sympothly	smoothly,sympathy
 correct	abraod	abroad
 alts	abraod	abroad,afraid,broad,abrams
-correct	consherne	conserve
+correct	consherne	null
 alts	consherne	conserve,concerns,concerned,concern,converse,consent
 correct	conscientience	null
 alts	conscientience	
-correct	conscietinous	conscientious
+correct	conscietinous	null
 alts	conscietinous	conscientious
-correct	comcientious	conscientious
+correct	comcientious	null
 alts	comcientious	conscientious
 correct	stistictics	null
 alts	stistictics	statistics
@@ -698,19 +698,19 @@ correct	trancending	null
 alts	trancending	
 correct	proply	people
 alts	proply	people,polly,poppy,reply,properly,poly
-correct	vacontcies	vacancies
+correct	vacontcies	null
 alts	vacontcies	vacancies
 correct	acustom	custom
 alts	acustom	custom,customs
-correct	simia	sonia
+correct	simia	null
 alts	simia	sonia,sinai,simon,sims,samoa,sami
-correct	panflits	pan fits
+correct	panflits	null
 alts	panflits	panties,pundits,pants,panels,profits,pan fits
-correct	panflets	pan lets
+correct	panflets	null
 alts	panflets	packets,panthers,panels,panties,pamphlets,pants
-correct	amonia	ammonia
+correct	amonia	null
 alts	amonia	ammonia,among,monica,armenia,amanda,amelia
-correct	infonit	infinite
+correct	infonit	null
 alts	infonit	infinite,infinity,infant,info it
 correct	kernel	null
 alts	kernel	kernels,kennel,kern,keel,kennels,keynes
@@ -720,141 +720,141 @@ correct	melencally	null
 alts	melencally	medically,melancholy,mentally
 correct	flowing	null
 alts	flowing	closing,losing,growing,folding,floating,following
-correct	anouncing	announcing
+correct	anouncing	null
 alts	anouncing	announcing
 correct	pecturists	null
 alts	pecturists	
-correct	pictureque	picturesque
+correct	pictureque	null
 alts	pictureque	picturesque,picture que,pictures
-correct	porertry	poetry
+correct	porertry	null
 alts	porertry	poetry,pretty,poverty,property,portray,perry
-correct	peortry	poetry
+correct	peortry	null
 alts	peortry	poetry,perry,portray
 correct	bittle	bottle
 alts	bittle	bottle,battle,bottles,bottled,bitter
 correct	seleo	sleep
 alts	seleo	sleep,sleek,seek,seldom,sell,see
-correct	speicil	special
+correct	speicil	null
 alts	speicil	special,pencil,stencil
-correct	spechile	se chile
+correct	spechile	null
 alts	spechile	specials,species,special,specimen,specify,se chile
-correct	delegalis	delegates
+correct	delegalis	null
 alts	delegalis	delegates,delegate,delegated,delegation
-correct	gumitra	guitar
+correct	gumitra	null
 alts	gumitra	guitar
 correct	dov	null
 alts	dov	dog,doc,do,div,dob,dig
 correct	herslef	herself
 alts	herslef	herself
-correct	dede	deer
+correct	dede	null
 alts	dede	deer,deed,feed,see,seed,dee
 correct	dustr	dust
 alts	dustr	dust,dusty,dist,user,duet,duty
 correct	instead	null
 alts	instead	intend
-correct	galle	falls
+correct	galle	null
 alts	galle	falls,calls,gale,valley,fall,value
-correct	sarum	warm
+correct	sarum	null
 alts	sarum	warm,serum,drum,arm,sum,sam
-correct	scrambeled	scrambled
+correct	scrambeled	null
 alts	scrambeled	scrambled,scramble
 correct	siezing	sizing
 alts	siezing	sizing,siding,seeing,sitting,singing,sewing
-correct	comporable	comparable
+correct	comporable	null
 alts	comporable	comparable,comfortable
-correct	sande	sands
+correct	sande	null
 alts	sande	sands,sand,same,dance,sabre,safe
-correct	expenitture	expenditure
+correct	expenitture	null
 alts	expenitture	expenditure,expenditures
-correct	suficer	suffer
+correct	suficer	null
 alts	suficer	suffer,suffice
 correct	srfeise	null
 alts	srfeise	
-correct	scercly	scarcely
+correct	scercly	null
 alts	scercly	scarcely
 correct	scare	null
 alts	scare	care,scars,scared,share,score,scale
-correct	drest	rest
+correct	drest	null
 alts	drest	rest,dress,forest,drew,dream,fresh
 correct	recide	decide
 alts	recide	decide,revise,recipe,decided,reside,recite
-correct	emeetually	eventually
+correct	emeetually	null
 alts	emeetually	eventually
 correct	immediatly	immediately
 alts	immediatly	immediately,immediate
-correct	emtaly	metal
+correct	emtaly	null
 alts	emtaly	metal,metals,emily
 correct	lones	lines
 alts	lones	lines,ones,lined,loves,line,likes
-correct	homse	homes
+correct	homse	null
 alts	homse	homes,home,house,horse,homer,hose
 correct	eaqely	early
 alts	eaqely	early,rarely,safely,easily,eagerly
-correct	doutless	doubtless
+correct	doutless	null
 alts	doutless	doubtless,douglas,doubles,routes
-correct	hierachial	hierarchical
+correct	hierachial	null
 alts	hierachial	hierarchical
-correct	str	ste
+correct	str	null
 alts	str	ste,ate,std,art,star,at
-correct	cpn	con
+correct	cpn	null
 alts	cpn	con,com,can,von,pm,cob
-correct	altilen	allen
+correct	altilen	null
 alts	altilen	allen,alien,antigen
-correct	desireous	desires
+correct	desireous	null
 alts	desireous	desires,destroys,desired,delirious,desire us,desire
 correct	allcrester	null
 alts	allcrester	
-correct	drye	dry
+correct	drye	null
 alts	drye	dry,dye,due,free,dryer,date
 correct	enomince	null
 alts	enomince	romance,notice,engine,enhance,examine,entrance
-correct	suable	stable
+correct	suable	null
 alts	suable	stable,sable,able,enable,sale,unable
 correct	col	null
 alts	col	vol,cop,cpl,cold,co,for
-correct	tope	told
+correct	tope	null
 alts	tope	told,rope,role,top,tops,ripe
-correct	bungalowe	bungalow
+correct	bungalowe	null
 alts	bungalowe	bungalow,bangalore
 correct	unforgeterply	null
 alts	unforgeterply	
-correct	anir	air
+correct	anir	null
 alts	anir	air,and,amid,nor,anime,sir
 correct	anwser	answer
 alts	anwser	answer,answers
-correct	ansire	aside
+correct	ansire	null
 alts	ansire	aside,answer,assure,andre,anime,ansi
-correct	curosiety	curiosity
+correct	curosiety	null
 alts	curosiety	curiosity
-correct	guerrila	guerrilla
+correct	guerrila	null
 alts	guerrila	guerrilla,guerra
-correct	vigourous	vigorous
+correct	vigourous	null
 alts	vigourous	vigorous
-correct	disiplin	discipline
+correct	disiplin	null
 alts	disiplin	discipline,display,disciplines,disciplined
 correct	thourght	thought
 alts	thourght	thought,though,thoughts
 correct	shake	null
 alts	shake	shame,snake,shape,share,same,sake
-correct	needlwork	need work
+correct	needlwork	null
 alts	needlwork	need work,network
-correct	signinture	signature
+correct	signinture	null
 alts	signinture	signature,signatures
 correct	immense	null
 alts	immense	intense,incense,immune,immensely,immersed
-correct	girles	titles
+correct	girles	null
 alts	girles	titles,girls,files,giles,girl's,gilles
-correct	perqul	peril
+correct	perqul	null
 alts	perqul	peril,perl,peru
 correct	pecuilar	peculiar
 alts	pecuilar	peculiar
 correct	ansir	ansi
 alts	ansir	ansi,annie,air,angie,an sir,answer
-correct	siley	silly
+correct	siley	null
 alts	siley	silly,smiley,silent,sole,solely,silky
-correct	smeem	seem
+correct	smeem	null
 alts	smeem	seem,seen,semen,seek,see,sperm
-correct	definetley	definitely
+correct	definetley	null
 alts	definetley	definitely
 correct	diffineatily	null
 alts	diffineatily	
@@ -868,35 +868,35 @@ correct	facasenating	null
 alts	facasenating	
 correct	side	null
 alts	side	wide,size,sure,wife,wise,site
-correct	guartud	guard
+correct	guartud	null
 alts	guartud	guard,guarded
-correct	guareenteed	guaranteed
+correct	guareenteed	null
 alts	guareenteed	guaranteed,guarantees,guarantee
 correct	tree	null
 alts	tree	free,three,grew,trees,fred,true
 correct	regeted	revered
 alts	regeted	revered,reverted,deleted,rested,related,recited
-correct	areapanle	area pale
+correct	areapanle	null
 alts	areapanle	area pale
 correct	is	null
 alts	is	
-correct	unfortunet	unfortunate
+correct	unfortunet	null
 alts	unfortunet	unfortunate
 correct	life	null
 alts	life	live,lite,like,lice,love,line
-correct	dreasm	dreams
+correct	dreasm	null
 alts	dreasm	dreams,dream,dress,dread
-correct	ameable	am able
+correct	ameable	null
 alts	ameable	am able
-correct	amnible	audible
+correct	amnible	null
 alts	amnible	audible
-correct	intulectual	intellectual
+correct	intulectual	null
 alts	intulectual	intellectual,intellectuals
-correct	intolectual	intellectual
+correct	intolectual	null
 alts	intolectual	intellectual,intellectuals
 correct	dwon	down
 alts	dwon	down,won,don,win,son,soon
-correct	firett	first
+correct	firett	null
 alts	firett	first,forest,direct,fire,fired,fires
 correct	annouance	annoyance
 alts	annouance	annoyance,announce,announced
@@ -906,11 +906,11 @@ correct	abrusimate	null
 alts	abrusimate	
 correct	fome	come
 alts	fome	come,time,rome,done,fine,gone
-correct	diad	said
+correct	diad	null
 alts	diad	said,did,road,dad,died,dead
-correct	potatoe	potatoes
+correct	potatoe	null
 alts	potatoe	potatoes,potato
-correct	anticption	anticipation
+correct	anticption	null
 alts	anticption	anticipation,activation,animation,addiction
 correct	arond	around
 alts	arond	around,and,alone,wrong,arid,arnold
@@ -918,23 +918,23 @@ correct	gardan	garden
 alts	gardan	garden,guardian,german,gardens,gran
 correct	conventialy	null
 alts	conventialy	congenital,convention,conventional
-correct	convinenent	confinement
+correct	convinenent	null
 alts	convinenent	confinement
 correct	exsestible	null
 alts	exsestible	extensible
 correct	pin	null
 alts	pin	in,pun,pub,lib,on,pain
-correct	desgined	designed
+correct	desgined	null
 alts	desgined	designed,destined,designer,defined
 correct	ned	null
 alts	ned	bed,end,med,new,need,her
 correct	made	null
 alts	made	mare,make,maze,mad,are,mass
-correct	attourny	attorney
+correct	attourny	null
 alts	attourny	attorney,attorneys
 correct	reqiesting	requesting
 alts	reqiesting	requesting
-correct	stuped	styled
+correct	stuped	null
 alts	stuped	styled,stupid,super,striped,stopped,studied
 correct	containted	contained
 alts	containted	contained,container,containers,continued,confronted,contaminated
@@ -942,13 +942,13 @@ correct	wated	water
 alts	wated	water,wanted,wages,waited,wares,wasted
 correct	adjoined	null
 alts	adjoined	adjourned,adorned,admired
-correct	continos	continue
+correct	continos	null
 alts	continos	continue,contains,continuous,continues,contents,confined
-correct	undoubtoadly	undoubtedly
+correct	undoubtoadly	null
 alts	undoubtoadly	undoubtedly
 correct	craning	null
 alts	craning	cleaning,craving,caring,crashing,rating,raining
-correct	werh	were
+correct	werh	null
 alts	werh	were,with,web,week,wet,wed
 correct	esspely	null
 alts	esspely	
@@ -956,7 +956,7 @@ correct	especialiy	especially
 alts	especialiy	especially,specialty,specialist
 correct	espeshele	null
 alts	espeshele	
-correct	espially	especially
+correct	espially	null
 alts	espially	especially,equally,silly
 correct	conner	null
 alts	conner	corner,connect,confer,connie,canned,cover
@@ -966,7 +966,7 @@ correct	ranm	rank
 alts	ranm	rank,tank,ran,ram,damn,rang
 correct	inthusiman	null
 alts	inthusiman	inhuman,intrusion
-correct	neally	nearly
+correct	neally	null
 alts	neally	nearly,nelly,neatly,belly,newly,early
 correct	fraturnely	null
 alts	fraturnely	fraternity
@@ -976,11 +976,11 @@ correct	wander	null
 alts	wander	wonder,wanted,sender,wafer,water,warner
 correct	countamence	null
 alts	countamence	countenance
-correct	contenious	continuous
+correct	contenious	null
 alts	contenious	continuous,contagious
 correct	deportment	null
 alts	deportment	department,departments
-correct	atching	watching
+correct	atching	null
 alts	atching	watching,matching,aching,acting,thing
 correct	shale	null
 alts	shale	shape,shake,sale,shall,share,snake
@@ -988,7 +988,7 @@ correct	counseled	null
 alts	counseled	counselor,counselors,counsel,consoles
 correct	diffi	diff
 alts	diffi	diff,diffs,duff,duffy,differ
-correct	mony	mont
+correct	mony	null
 alts	mony	mont,money,mint,kong,many,mon
 correct	comfirm	confirm
 alts	comfirm	confirm,conform,comfort,confirms
@@ -1002,31 +1002,31 @@ correct	remantic	romantic
 alts	remantic	romantic,romantics
 correct	fell	null
 alts	fell	tell,cell,dell,full,feel,felt
-correct	fiel	fuel
+correct	fiel	null
 alts	fiel	fuel,file,girl,field,feel,fowl
 correct	doller	roller
 alts	doller	roller,dollar,rolled,seller,dolls,folder
 correct	full	null
 alts	full	fill,till,fully,fall,fell,fuel
-correct	suppertan	superman
+correct	suppertan	null
 alts	suppertan	superman,supports,supper tan,support,supper,supporting
-correct	carcas	carcass
+correct	carcas	null
 alts	carcas	carcass,caracas,canvas,cards,cars,cracks
 correct	afficiantly	null
 alts	afficiantly	
 correct	exfectionly	null
 alts	exfectionly	effectively
-correct	sucts	suits
+correct	sucts	null
 alts	sucts	suits,sucks,acts,sits,shots,suite
-correct	deterin	determine
+correct	deterin	null
 alts	deterin	determine,deter,deer in
 correct	desternaish	null
 alts	desternaish	
-correct	damd	same
+correct	damd	null
 alts	damd	same,dame,and,dams,sand,fame
-correct	pitelu	pixel
+correct	pitelu	null
 alts	pitelu	pixel,pixels,patel,pi tel
-correct	shair	hair
+correct	shair	null
 alts	shair	hair,shake,said,share,shit,stair
 correct	miniment	monument
 alts	miniment	monument,monuments
@@ -1034,13 +1034,13 @@ correct	facalty	faculty
 alts	facalty	faculty,facility
 correct	existionse	null
 alts	existionse	editions,existing,existence,emissions
-correct	lant	lang
+correct	lant	null
 alts	lant	lang,last,plant,any,land,lan
-correct	missual	missoula
+correct	missual	null
 alts	missual	missoula,miss al
-correct	biscit	visit
+correct	biscit	null
 alts	biscit	visit,biscuit,biscuits
-correct	biscutes	biscuits
+correct	biscutes	null
 alts	biscutes	biscuits,bitches,issues,bites,biscuit
 correct	exquiste	exquisite
 alts	exquiste	exquisite
@@ -1048,33 +1048,33 @@ correct	hoses	null
 alts	hoses	houses,horses,hides,homes,hopes,nodes
 correct	curcumstance	circumstance
 alts	curcumstance	circumstance,circumstances
-correct	benand	ben and
+correct	benand	null
 alts	benand	ben and,brand,beans,behind,band,began
 correct	cup	null
 alts	cup	up,cpu,cut,cups,cum,cu
 correct	mountian	mountain
 alts	mountian	mountain,mountains
-correct	refridgarator	refrigerator
+correct	refridgarator	null
 alts	refridgarator	refrigerator,refrigerators
 correct	refrigedator	refrigerator
 alts	refrigedator	refrigerator,refrigerators
-correct	pertickly	prickly
+correct	pertickly	null
 alts	pertickly	prickly,perfectly,partially,particle
-correct	thret	they
+correct	thret	null
 alts	thret	they,three,threat,threw,the,there
-correct	matureally	naturally
+correct	matureally	null
 alts	matureally	naturally,materially
 correct	matural	natural
 alts	matural	natural
-correct	repareds	repaired
+correct	repareds	null
 alts	repareds	related,relates,readers,repaired,regards,regarded
-correct	restrent	resident
+correct	restrent	null
 alts	restrent	resident,rest rent,reagent,resent,retreat,regret
-correct	pamphlit	pamphlet
+correct	pamphlit	null
 alts	pamphlit	pamphlet,pamphlets
 correct	triology	trilogy
 alts	triology	trilogy,theology
-correct	unnecesarily	unnecessarily
+correct	unnecesarily	null
 alts	unnecesarily	unnecessarily
 correct	politicains	politicians
 alts	politicains	politicians,politician
@@ -1082,15 +1082,15 @@ correct	rumitism	null
 alts	rumitism	
 correct	reumitisim	null
 alts	reumitisim	
-correct	devolopement	development
+correct	devolopement	null
 alts	devolopement	development
-correct	remestry	registry
+correct	remestry	null
 alts	remestry	registry,remedy,recently
-correct	circleling	circling
+correct	circleling	null
 alts	circleling	circling,circle ing,circulating
 correct	sclicking	clicking
 alts	sclicking	clicking,sticking
-correct	judgmerit	judgment
+correct	judgmerit	null
 alts	judgmerit	judgment,judgement,judgments
 correct	absolutley	absolutely
 alts	absolutley	absolutely
@@ -1112,7 +1112,7 @@ correct	harrish	harris
 alts	harrish	harris,harrison,harriet,harsh
 correct	lessons	null
 alts	lessons	lesson,lesions,persons
-correct	bankrupuy	bankrupt
+correct	bankrupuy	null
 alts	bankrupuy	bankrupt,bankruptcy
 correct	boring	null
 alts	boring	boeing,voting,hiring,bring,biting,being
@@ -1122,7 +1122,7 @@ correct	crope	crops
 alts	crope	crops,rope,crop,cope,role,corps
 correct	inconvenced	null
 alts	inconvenced	inconvenient
-correct	inconvenance	inconvenience
+correct	inconvenance	null
 alts	inconvenance	inconvenience
 correct	sacrelidy	null
 alts	sacrelidy	sacred
@@ -1136,31 +1136,31 @@ correct	plosiouspy	null
 alts	plosiouspy	
 correct	filousity	null
 alts	filousity	
-correct	preffered	preferred
+correct	preffered	null
 alts	preffered	preferred,preceded,offered,referred,prefers
-correct	kindergarner	kindergarten
+correct	kindergarner	null
 alts	kindergarner	kindergarten
 correct	octohedral	null
 alts	octohedral	
-correct	riecepts	receipts
+correct	riecepts	null
 alts	riecepts	receipts,recent,receipt,receptors,receptor,recipes
-correct	embarast	embarrass
+correct	embarast	null
 alts	embarast	embassy,embarrass
-correct	vaulgur	vulgar
+correct	vaulgur	null
 alts	vaulgur	vulgar
-correct	negrow	negro
+correct	negrow	null
 alts	negrow	negro,nero,narrow,ne grow
-correct	vistiten	visited
+correct	vistiten	null
 alts	vistiten	visited,citizen,visits,visit,visit en,vision
-correct	coft	fort
+correct	coft	null
 alts	coft	fort,gift,cost,corr,cory,cody
 correct	comfortble	comfortable
 alts	comfortble	comfortable
-correct	apparentally	apparently
+correct	apparentally	null
 alts	apparentally	apparently,apparent all
 correct	plimary	primary
 alts	plimary	primary,plenary
-correct	enthusastick	enthusiastic
+correct	enthusastick	null
 alts	enthusastick	enthusiastic
 correct	anthusiastic	null
 alts	anthusiastic	
@@ -1170,31 +1170,31 @@ correct	inthissiastic	null
 alts	inthissiastic	
 correct	reses	reads
 alts	reses	reads,trees,roses,reset,reeds,fees
-correct	orgin	origin
+correct	orgin	null
 alts	orgin	origin,organ,oregon,robin,login,orion
-correct	exisest	exists
+correct	exisest	null
 alts	exisest	exists,easiest,exist,existent
 correct	ecidious	null
 alts	ecidious	curious,decisions,delicious
-correct	laf	lat
+correct	laf	null
 alts	laf	lat,lac,lag,lad,par,la
-correct	chauffers	chauffeur
+correct	chauffers	null
 alts	chauffers	chargers,charters,chauffeur,chapters
 correct	arangement	arrangement
 alts	arangement	arrangement,arrangements,advancement
 correct	posistion	position
 alts	posistion	position,positions
-correct	lates	pages
+correct	lates	null
 alts	lates	pages,late,latest,later,plates,latex
 correct	mathematicaly	mathematical
 alts	mathematicaly	mathematical,mathematics
-correct	saft	sat
+correct	saft	null
 alts	saft	sat,say,safe,want,soft,salt
 correct	recommendations	null
 alts	recommendations	recommendation
-correct	discricion	discretion
+correct	discricion	null
 alts	discricion	discretion,description,discussion,distraction
-correct	eccomical	economical
+correct	eccomical	null
 alts	eccomical	economical,chemical,ecological
 correct	enochmical	null
 alts	enochmical	economical
@@ -1204,37 +1204,37 @@ correct	aboit	about
 alts	aboit	about
 correct	p	null
 alts	p	
-correct	dansios	daisies
+correct	dansios	null
 alts	dansios	daisies
-correct	verations	versions
+correct	verations	null
 alts	verations	versions,creation,version,variations,vacations,generations
 correct	limm	link
 alts	limm	link,like,line,lime,limo,lima
-correct	comparativily	comparatively
+correct	comparativily	null
 alts	comparativily	comparatively
-correct	fillicities	fill cities
+correct	fillicities	null
 alts	fillicities	fill cities
 correct	seph	sep
 alts	seph	sep,sell,sept,espn,self,seth
-correct	wonderous	wondrous
+correct	wonderous	null
 alts	wonderous	wondrous,wonders,wonderful,wondered
-correct	conceivce	conceive
+correct	conceivce	null
 alts	conceivce	conceive,conceived,convince
 correct	bircyls	null
 alts	bircyls	
-correct	consistont	consisting
+correct	consistont	null
 alts	consistont	consisting,consistent
-correct	sreet	street
+correct	sreet	null
 alts	sreet	street,steer,sweet,sheet,rest,steel
 correct	salmon	null
 alts	salmon	salon,saloon,simon,salons,samson,solomon
 correct	punishement	punishment
 alts	punishement	punishment
-correct	breah	breath
+correct	breah	null
 alts	breah	breath,break,bread,breach,bureau,great
 correct	tremendisle	null
 alts	tremendisle	tremendously
-correct	gaurnte	garnet
+correct	gaurnte	null
 alts	gaurnte	garnet
 correct	guanantee	guarantee
 alts	guanantee	guarantee,guaranteed,guarantees
@@ -1244,7 +1244,7 @@ correct	enquier	enquire
 alts	enquier	enquire,enquiry
 correct	spended	slender
 alts	spended	slender,spends,spencer,sounded,amended,sender
-correct	splet	sport
+correct	splet	null
 alts	splet	sport,split,sole,spot,set,poet
 correct	forhead	forehead
 alts	forhead	forehead,for head,forged,forced,formed
@@ -1258,7 +1258,7 @@ correct	inconvineant	null
 alts	inconvineant	inconvenient
 correct	inconvintner	null
 alts	inconvintner	
-correct	curtanse	curtains
+correct	curtanse	null
 alts	curtanse	curtains,cleanse,cranes,curtain,curse,crane
 correct	brig	null
 alts	brig	big,brit,bring,being,bit,bug
@@ -1268,9 +1268,9 @@ correct	thero	there
 alts	thero	there,hero,the,thee,three,her
 correct	intertaining	null
 alts	intertaining	interacting,intervening
-correct	freshmean	freshman
+correct	freshmean	null
 alts	freshmean	freshman,freshmen,fresh mean,freshness
-correct	rerreshment	refreshments
+correct	rerreshment	null
 alts	rerreshment	refreshments
 correct	countrys	country
 alts	countrys	country,country's,counters,county,countess,counted
@@ -1282,27 +1282,27 @@ correct	quicklyu	quickly
 alts	quicklyu	quickly
 correct	proceadure	procedure
 alts	proceadure	procedure,procedures
-correct	proceedger	proceeded
+correct	proceedger	null
 alts	proceedger	proceeded,procedure,proceeds
 correct	porsecced	null
 alts	porsecced	protected,projected,prosecuted,porsche,persecuted,possessed
-correct	spisific	specific
+correct	spisific	null
 alts	spisific	specific,pacific,specifics
-correct	ascape	scale
+correct	ascape	null
 alts	ascape	scale,as cape,shape,scope,asap,scare
 correct	dinnr	dinner
 alts	dinnr	dinner,diner,dinar,dunn,dine,donor
-correct	accomnadate	accommodate
+correct	accomnadate	null
 alts	accomnadate	accommodate,accommodated
-correct	denie	denis
+correct	denie	null
 alts	denie	denis,denied,denies,denise,dense,denim
-correct	satafactory	satisfactory
+correct	satafactory	null
 alts	satafactory	satisfactory
-correct	mofed	moved
+correct	mofed	null
 alts	mofed	moved,noted,more,modes,mixed,moves
 correct	consul	null
 alts	consul	consult,cons,console,consume,counsel,census
-correct	depo	depp
+correct	depo	null
 alts	depo	depp,drop,deli,dell,depot,demo
 correct	miscallaneous	miscellaneous
 alts	miscallaneous	miscellaneous
@@ -1312,29 +1312,29 @@ correct	micelanious	null
 alts	micelanious	miscellaneous
 correct	misolaoneous	null
 alts	misolaoneous	
-correct	miscellianious	miscellaneous
+correct	miscellianious	null
 alts	miscellianious	miscellaneous
-correct	adventagus	advantages
+correct	adventagus	null
 alts	adventagus	advantages,advantage,advantageous,adventures,adventurous
-correct	wugom	whom
+correct	wugom	null
 alts	wugom	whom,wagon
 correct	groops	troops
 alts	groops	troops,groups,grips,brooks,crops
-correct	pirls	pills
+correct	pirls	null
 alts	pirls	pills,pixels,oils,polls,ports,parks
-correct	figer	tiger
+correct	figer	null
 alts	figer	tiger,river,fiber,roger,finger,five
 correct	refond	refine
 alts	refond	refine,refund,record,refined,remind,recon
 correct	realistice	realistic
 alts	realistice	realistic
-correct	firtues	forties
+correct	firtues	null
 alts	firtues	forties,fifties,fortunes,virtue,fires,fixtures
-correct	ascertan	ascertain
+correct	ascertan	null
 alts	ascertan	ascertain
 correct	palce	place
 alts	palce	place,palace,pace,pale,page,places
-correct	necessorilly	necessarily
+correct	necessorilly	null
 alts	necessorilly	necessarily
 correct	distrect	district
 alts	distrect	district,distract,direct,districts
@@ -1342,13 +1342,13 @@ correct	unformanlly	null
 alts	unformanlly	normally
 correct	an	null
 alts	an	
-correct	enyu	eng
+correct	enyu	null
 alts	enyu	eng,emu,envy,en,end,ny
 correct	sority	sorry
 alts	sority	sorry,sort,sprite,society,sorts,sorority
-correct	surrowey	surrey
+correct	surrowey	null
 alts	surrowey	surrey,survey,sorrows,sorrow
-correct	shoar	shot
+correct	shoar	null
 alts	shoar	shot,short,soar,show,shoe,shear
 correct	sawr	saw
 alts	sawr	saw,war,sat,same,said,save
@@ -1356,41 +1356,41 @@ correct	animal	null
 alts	animal	animals,anomaly,anal,anime
 correct	considerd	considers
 alts	considerd	considers,consider,considered
-correct	hoech	hitch
+correct	hoech	null
 alts	hoech	hitch,hoc,heh,hoe,heck,hatch
 correct	pinacle	pinnacle
 alts	pinacle	pinnacle
-correct	morish	mariah
+correct	morish	null
 alts	morish	mariah,morris,mori,marsh,moist,morse
 correct	defernate	null
 alts	defernate	defense,decorate,defeats,defeat,defeated,desperate
 correct	deafernate	null
 alts	deafernate	desperate
-correct	unuaualy	unusual
+correct	unuaualy	null
 alts	unuaualy	unusual,unusually,uniquely
-correct	ecicity	ec city
+correct	ecicity	null
 alts	ecicity	ec city
 correct	effectinal	null
 alts	effectinal	effective,effectively
 correct	rigeosternt	null
 alts	rigeosternt	
-correct	approvebell	approve bell
+correct	approvebell	null
 alts	approvebell	approve bell
-correct	helecopeter	helicopter
+correct	helecopeter	null
 alts	helecopeter	helicopter,helicopters
 correct	carful	careful
 alts	carful	careful,carl
 correct	slipers	slippers
 alts	slipers	slippers,slopes,spiders,slides,slips,slipper
-correct	relif	relic
+correct	relif	null
 alts	relif	relic,relief,felix,reid,relied,relics
-correct	wheras	whereas
+correct	wheras	null
 alts	wheras	where's,whereas,where,wheels,wears,her as
-correct	sasse	waste
+correct	sasse	null
 alts	sasse	waste,sassy,sales,ease,saws,same
-correct	towl	town
+correct	towl	null
 alts	towl	town,goal,top,towel,tool,toll
-correct	commuciate	communicate
+correct	commuciate	null
 alts	commuciate	communicate,communists,communist,communicated,communicates
 correct	ov	null
 alts	ov	
@@ -1400,15 +1400,15 @@ correct	muncipalities	municipalities
 alts	muncipalities	municipalities
 correct	strenrus	null
 alts	strenrus	strengths,streets,trends,strength,strands,stress
-correct	requsted	requested
+correct	requsted	null
 alts	requsted	requested,required,resisted,trusted,register,requires
 correct	oppertunies	null
 alts	oppertunies	opportunities,opportunity
 correct	activeties	activities
 alts	activeties	activities
-correct	alwy	also
+correct	alwy	null
 alts	alwy	also,law,ally,lady,alt,alley
-correct	supplument	supplement
+correct	supplument	null
 alts	supplument	supplement,supplements
 correct	who	null
 alts	who	why,ago,so,whom,she,show
@@ -1418,7 +1418,7 @@ correct	trodgity	null
 alts	trodgity	trinity
 correct	embarassing	embarrassing
 alts	embarassing	embarrassing
-correct	extinguser	extinguisher
+correct	extinguser	null
 alts	extinguser	extinguisher,extinguished,extinguish
 correct	acationly	null
 alts	acationly	action,actions,actively
@@ -1426,19 +1426,19 @@ correct	ecnowledging	null
 alts	ecnowledging	
 correct	debarcher	null
 alts	debarcher	searched,searches,detached
-correct	enviornmentalist	environmentalists
+correct	enviornmentalist	null
 alts	enviornmentalist	environmentalists
 correct	hemmsering	null
 alts	hemmsering	
 correct	hidretik	null
 alts	hidretik	
-correct	predujice	prejudice
+correct	predujice	null
 alts	predujice	prejudice,reduce,produce,predict,prejudiced,prentice
 correct	predudiss	null
 alts	predudiss	prejudices,prejudice
 correct	fregidous	null
 alts	fregidous	regions,freedoms
-correct	consiquence	consequence
+correct	consiquence	null
 alts	consiquence	consequence,consequences,conscience
 correct	tempreches	null
 alts	tempreches	
@@ -1446,29 +1446,29 @@ correct	tempreter	null
 alts	tempreter	tempered,tempted,temperate,temper,template
 correct	prarie	prairie
 alts	prarie	prairie,paris,prague,rare,praise,parse
-correct	vocur	vogue
+correct	vocur	null
 alts	vocur	vogue,four,our,hour,focus,occur
-correct	reconnd	record
+correct	reconnd	null
 alts	reconnd	record,recon,rebound,recount
-correct	inconivnence	incontinence
+correct	inconivnence	null
 alts	inconivnence	incontinence,inconvenience
-correct	inconence	incidence
+correct	inconence	null
 alts	inconence	incidence,influence,innocence,inference,impotence
 correct	memornundem	null
 alts	memornundem	memorandum
-correct	delinquence	delinquency
+correct	delinquence	null
 alts	delinquence	delinquency,delinquent
-correct	deliquint	delinquent
+correct	deliquint	null
 alts	deliquint	delinquent
 correct	hide	null
 alts	hide	hire,nude,his,hose,bids,node
-correct	arte	rate
+correct	arte	null
 alts	arte	rate,are,arts,art,ate,rare
-correct	vereas	versa
+correct	vereas	null
 alts	vereas	versa,versus,verses,here's,vegas,vera
 correct	cancely	cancel
 alts	cancely	cancel,cancels,cancer,canceled
-correct	resley	really
+correct	resley	null
 alts	resley	really,reset,realty,reply,rely,resell
 correct	complied	null
 alts	complied	compiled,complies,compiler,complex,compile,composed
@@ -1476,23 +1476,23 @@ correct	compaded	compared
 alts	compaded	compared,compares,compare,composed
 correct	wick	null
 alts	wick	sick,suck,will,wifi,work,quick
-correct	affionate	affiliate
+correct	affionate	null
 alts	affionate	affiliate,affiliates,affiliated
-correct	pretn	perth
+correct	pretn	null
 alts	pretn	perth,rent,prey,parent,print,prem
-correct	poson	poison
+correct	poson	null
 alts	poson	poison,prison,posing,piston,porno,pooh
 correct	morning	null
 alts	morning	mornings,mourning,mining,moaning,joining,modding
-correct	indefenitely	indefinitely
+correct	indefenitely	null
 alts	indefenitely	indefinitely
-correct	exticise	exercise
+correct	exticise	null
 alts	exticise	exercise,excise,excuse,entities,excite,exercises
 correct	orentated	null
 alts	orentated	operated,related,oriented,ornate,repeated
-correct	higer	higher
+correct	higer	null
 alts	higer	higher,hover,huge,bigger,huber,hunger
-correct	annlazes	analyzes
+correct	annlazes	null
 alts	annlazes	analyzes,amazes,analyses,analyzed,annals,atlases
 correct	anaylusis	analysis
 alts	anaylusis	analysis
@@ -1504,47 +1504,47 @@ correct	exspidtion	null
 alts	exspidtion	expiration,expedition
 correct	essentual	essential
 alts	essentual	essential,essentials
-correct	scuccer	soccer
+correct	scuccer	null
 alts	scuccer	soccer,sucker,saucer
-correct	craly	carly
+correct	craly	null
 alts	craly	carly,crazy,crap,craft,crappy,crash
-correct	altometer	altogether
+correct	altometer	null
 alts	altometer	altogether,automated,alt meter,automate
-correct	outimeter	out meter
+correct	outimeter	null
 alts	outimeter	out meter,optimizer
-correct	vagabord	va gabor
+correct	vagabord	null
 alts	vagabord	gabor,va gabor
 correct	extraordunary	extraordinary
 alts	extraordunary	extraordinary
-correct	extrordanary	extraordinary
+correct	extrordanary	null
 alts	extrordanary	extraordinary
 correct	could	null
 alts	could	cold,coupe,coils,found,couple,child
-correct	remitt	remit
+correct	remitt	null
 alts	remitt	remit,remote,remix,remind,resist,recite
-correct	bulatine	blaine
+correct	bulatine	null
 alts	bulatine	blaine,byzantine,bullying,boating,bulletins,bursting
 correct	comfirmation	confirmation
 alts	comfirmation	confirmation
-correct	ceazzed	ceased
+correct	ceazzed	null
 alts	ceazzed	ceased
-correct	fokl	fool
+correct	fokl	null
 alts	fokl	fool,cool,folk,fill,tool,roll
 correct	large	null
 alts	large	larger,page,late,latte,lathe,are
 correct	annitials	null
 alts	annitials	animals,annals,annuities
-correct	galp	fall
+correct	galp	null
 alts	galp	fall,hall,gall,tall,call,all
 correct	galord	galore
 alts	galord	galore
 correct	possesion	possession
 alts	possesion	possession,possessions
-correct	wimmn	women
+correct	wimmn	null
 alts	wimmn	women,woman,simon,win,wimp
 correct	lomber	longer
 alts	lomber	longer,lumber,lover,lower
-correct	accrueded	accrued
+correct	accrueded	null
 alts	accrueded	accrued,accused,accorded,accredited
 correct	inantind	null
 alts	inantind	inactive,intend,inning,inviting
@@ -1558,7 +1558,7 @@ correct	ch	null
 alts	ch	
 correct	oar	null
 alts	oar	par,or,oat,of,our,pat
-correct	bonet	honey
+correct	bonet	null
 alts	bonet	honey,bone,none,bones,honest,bonnet
 correct	wing	null
 alts	wing	sing,song,wong,sign,win,with
@@ -1570,9 +1570,9 @@ correct	word	null
 alts	word	wore,world,wire,work,words,sore
 correct	avaiable	available
 alts	avaiable	available,variable
-correct	gneass	grass
+correct	gneass	null
 alts	gneass	grass,grease,glass,guess,gears,greasy
-correct	agencieces	agencies
+correct	agencieces	null
 alts	agencieces	agencies
 correct	work	null
 alts	work	worm,works,word,worn,world,wore
@@ -1584,9 +1584,9 @@ correct	perhpas	perhaps
 alts	perhpas	perhaps
 correct	fisrtly	firstly
 alts	fisrtly	firstly
-correct	nowe	nose
+correct	nowe	null
 alts	nowe	nose,now,jose,node,note,more
-correct	reclaimation	reclamation
+correct	reclaimation	null
 alts	reclaimation	reclamation
 correct	leanr	learn
 alts	leanr	learn,lean,leave,least,land,lane
@@ -1596,7 +1596,7 @@ correct	affeminate	null
 alts	affeminate	affiliate,affectionate
 correct	there	null
 alts	there	they're,three,here,these,threw,thee
-correct	muticual	mutual
+correct	muticual	null
 alts	muticual	mutual,musical,judicial,municipal,mystical,mythical
 taps	xapoflrnia	null
 taps-alts	xapoflrnia	
@@ -1608,11 +1608,11 @@ taps	mebtipbdd	null
 taps-alts	mebtipbdd	
 taps	qssumunh	null
 taps-alts	qssumunh	assuming
-taps	druemd	dried
+taps	druemd	null
 taps-alts	druemd	dried,drums,drum,druid,dread
 taps	xonsemt	consent
 taps-alts	xonsemt	consent
-taps	nrafford	nr afford
+taps	nrafford	null
 taps-alts	nrafford	nr afford
 taps	umbtelka	umbrella
 taps-alts	umbtelka	umbrella,umbrellas
@@ -1622,7 +1622,7 @@ taps	kochelpr	null
 taps-alts	kochelpr	kosher
 taps	dekkveeed	null
 taps-alts	dekkveeed	delivered
-taps	barow	brow
+taps	barow	null
 taps-alts	barow	brow,barrow,barks,bare,barlow,baron
 taps	hwlen	helen
 taps-alts	hwlen	helen,when,helena,glen
@@ -1630,7 +1630,7 @@ taps	executed	null
 taps-alts	executed	executes,excited,execute,expected,secured
 taps	stating	null
 taps-alts	stating	staying,staging,staring,starting,seating,saying
-taps	vobeted	voted
+taps	vobeted	null
 taps-alts	vobeted	voted,vomited
 taps	sixty	null
 taps-alts	sixty	sixth,dirty,situ,site,six,sit
@@ -1662,7 +1662,7 @@ taps	fifteenth	null
 taps-alts	fifteenth	fifteen,fourteenth
 taps	savings	null
 taps-alts	savings	saving,sayings,saints,saying,swings,sings
-taps	tamnje	tame
+taps	tamnje	null
 taps-alts	tamnje	tame
 taps	brennak	brennan
 taps-alts	brennak	brennan,break,brendan
@@ -1680,7 +1680,7 @@ taps	resigmqripn	null
 taps-alts	resigmqripn	
 taps	kbow	know
 taps-alts	kbow	know,knows,known
-taps	jdat	heat
+taps	jdat	null
 taps-alts	jdat	heat,meat,day,jest,jet,jay
 taps	leexs	leeds
 taps-alts	leexs	leeds,less,leads,lewis
@@ -1702,7 +1702,7 @@ taps	flow	null
 taps-alts	flow	low,flows,food,cow,los,flew
 taps	prah	pray
 taps-alts	prah	pray,pay,play,ray,part,oral
-taps	brnddit	bandit
+taps	brnddit	null
 taps-alts	brnddit	bandit
 taps	biatorical	historical
 taps-alts	biatorical	historical
@@ -1716,7 +1716,7 @@ taps	howard	null
 taps-alts	howard	board,heard,hard
 taps	joyve	joyce
 taps-alts	joyve	joyce,move
-taps	wasaff	was ff
+taps	wasaff	null
 taps-alts	wasaff	was ff
 taps	snseering	answering
 taps-alts	snseering	answering
@@ -1734,7 +1734,7 @@ taps	interests	null
 taps-alts	interests	interest,interested
 taps	wogn	sign
 taps-alts	wogn	sign,song,wong,wing,won,win
-taps	treaf	treat
+taps	treaf	null
 taps-alts	treaf	treat,great,tread,threat,treaty,treats
 taps	perfornance	performance
 taps-alts	perfornance	performance,performances
@@ -1758,7 +1758,7 @@ taps	asoed	asked
 taps-alts	asoed	asked,aside
 taps	nine	null
 taps-alts	nine	none,mine,bone,nike,june,bike
-taps	soubea	soybean
+taps	soubea	null
 taps-alts	soubea	soybean,scuba,sober
 taps	zhopper	shopper
 taps-alts	zhopper	shopper,shoppers,zipper
@@ -1770,7 +1770,7 @@ taps	traffic	null
 taps-alts	traffic	tragic
 taps	notjce	notice
 taps-alts	notjce	notice,noticed,notices
-taps	treasa	tread
+taps	treasa	null
 taps-alts	treasa	tread,treats,teresa,trees,treat,trash
 taps	olannong	planning
 taps-alts	olannong	planning
@@ -1796,7 +1796,7 @@ taps	orocexures	procedures
 taps-alts	orocexures	procedures,procedure
 taps	obiecyive	objective
 taps-alts	obiecyive	objective,objectives
-taps	callan	fallen
+taps	callan	null
 taps-alts	callan	fallen,calls,call an,call,called,clean
 taps	pgoenkc	null
 taps-alts	pgoenkc	
@@ -1822,7 +1822,7 @@ taps	ovtkbwr	null
 taps-alts	ovtkbwr	
 taps	loqned	loaned
 taps-alts	loqned	loaned,lined,owned,loaded,leaned,looked
-taps	rawhidd	raw hid
+taps	rawhidd	null
 taps-alts	rawhidd	raw hid
 taps	bebefucial	beneficial
 taps-alts	bebefucial	beneficial
@@ -1846,11 +1846,11 @@ taps	effectigely	effectively
 taps-alts	effectigely	effectively
 taps	snooze	null
 taps-alts	snooze	snoop,snore,snooker,sneeze
-taps	hately	barely
+taps	hately	null
 taps-alts	hately	barely,hardly,harley
 taps	commercial	null
 taps-alts	commercial	commercials,commercially
-taps	smigdles	smiles
+taps	smigdles	null
 taps-alts	smigdles	smiles,miles,smiled,smile,singles,middle
 taps	cogebtrjx	null
 taps-alts	cogebtrjx	
@@ -1862,7 +1862,7 @@ taps	djnned	dinner
 taps-alts	djnned	dinner
 taps	efficiejgly	efficiently
 taps-alts	efficiejgly	efficiently
-taps	newcp	new
+taps	newcp	null
 taps-alts	newcp	new,neck,news,newly,newer
 taps	cpokijg	cooking
 taps-alts	cpokijg	cooking
@@ -1880,7 +1880,7 @@ taps	harry	null
 taps-alts	harry	barry,hardy,hurry,hairy,hard,harvey
 taps	conversatioj	conversation
 taps-alts	conversatioj	conversation,conversations
-taps	retrade	trade
+taps	retrade	null
 taps-alts	retrade	trade,retarded,re trade
 taps	commissipn	commission
 taps-alts	commissipn	commission,commissions
@@ -1894,7 +1894,7 @@ taps	scaru	scary
 taps-alts	scaru	scary,scar,scare,scarf,scars,scat
 taps	anxjohs	anxious
 taps-alts	anxjohs	anxious
-taps	wivbz	wives
+taps	wivbz	null
 taps-alts	wivbz	wives,wiz
 taps	beltway	null
 taps-alts	beltway	betray
@@ -1904,7 +1904,7 @@ taps	eccgange	exchange
 taps-alts	eccgange	exchange,exchanges,exchanged
 taps	tells	null
 taps-alts	tells	tell,fell,feels,temps,falls,telly
-taps	purlize	prize
+taps	purlize	null
 taps-alts	purlize	prize
 taps	zure	sure
 taps-alts	zure	sure,ziri,dude,due
@@ -1940,7 +1940,7 @@ taps	meetings	null
 taps-alts	meetings	meeting
 taps	tbousame	null
 taps-alts	tbousame	thousand
-taps	hoalie	hole
+taps	hoalie	null
 taps-alts	hoalie	hole,hollis,hale,hotline,hoodie,hottie
 taps	confusdx	confused
 taps-alts	confusdx	confused,confuse
@@ -1954,7 +1954,7 @@ taps	artachmenr	attachment
 taps-alts	artachmenr	attachment,attachments
 taps	lawsyits	lawsuits
 taps-alts	lawsyits	lawsuits,lawsuit
-taps	eavues	eagles
+taps	eavues	null
 taps-alts	eavues	eagles,waves,elves
 taps	substitute	null
 taps-alts	substitute	substituted,substitutes
@@ -1974,19 +1974,19 @@ taps	event	null
 taps-alts	event	even,events,went,ever,recent,sent
 taps	griday	friday
 taps-alts	griday	friday
-taps	shiplerd	shipped
+taps	shiplerd	null
 taps-alts	shiplerd	shoppers,shipped,shipper,shopper,slippers,shielded
-taps	gptster	poster
+taps	gptster	null
 taps-alts	gptster	poster,gutter
-taps	namrs	names
+taps	namrs	null
 taps-alts	namrs	names,james,named,name,mars
-taps	fannin	fannie
+taps	fannin	null
 taps-alts	fannin	fannie,fan in,fanny
 taps	assistant	null
 taps-alts	assistant	assistants,assisting,assistance
 taps	continuing	null
 taps-alts	continuing	continuity,continuum,containing,convincing,contributing,combining
-taps	wilk	will
+taps	wilk	null
 taps-alts	wilk	will,silk,walk,wild,sick,wiki
 taps	tanya	null
 taps-alts	tanya	any,tanks,tampa,tan,anna,tang
@@ -2000,13 +2000,13 @@ taps	icims	icons
 taps-alts	icims	icons,icing
 taps	noyt	not
 taps-alts	noyt	not,boy,out,nor,note,boys
-taps	invooces	invoices
+taps	invooces	null
 taps-alts	invooces	invoices,involves,involved,invoice,involve,invoked
 taps	opening	null
 taps-alts	opening	openings,owning,pending,peeing
 taps	bfidveline	null
 taps-alts	bfidveline	
-taps	orhdt	orbit
+taps	orhdt	null
 taps-alts	orhdt	orbit
 taps	stfwnhth	null
 taps-alts	stfwnhth	strength
@@ -2024,11 +2024,11 @@ taps	round	null
 taps-alts	round	found,around,ground,fund
 taps	serious	null
 taps-alts	serious	seriously,series,sirius,sermons,seniors,serials
-taps	yjmimy	yummy
+taps	yjmimy	null
 taps-alts	yjmimy	yummy,jimmy
 taps	stuff	null
 taps-alts	stuff	stiff,staff,stuck,stuffy,stud,snuff
-taps	fibging	finding
+taps	fibging	null
 taps-alts	fibging	finding,fishing,fitting,forging,firing,filing
 taps	roget	null
 taps-alts	roget	roger,rover,right,rogers,forget
@@ -2046,7 +2046,7 @@ taps	full	null
 taps-alts	full	fill,till,film,fully,fall,fell
 taps	retyrn	return
 taps-alts	retyrn	return,returns
-taps	feez	fees
+taps	feez	null
 taps-alts	feez	fees,feed,reed,feds,fred,feel
 taps	conveniebt	convenient
 taps-alts	conveniebt	convenient
@@ -2060,7 +2060,7 @@ taps	revenues	null
 taps-alts	revenues	revenue,revenge
 taps	fptm	form
 taps-alts	fptm	form,firm,farm
-taps	ehran	earn
+taps	ehran	null
 taps-alts	ehran	earn,ran,era,ethan,enron,erin
 taps	allow	null
 taps-alts	allow	allows,alloy,all,slow,aloe,alloys
@@ -2086,15 +2086,15 @@ taps	nonkmize	null
 taps-alts	nonkmize	
 taps	eecrow	escrow
 taps-alts	eecrow	escrow
-taps	petw	pete
+taps	petw	null
 taps-alts	petw	pete,pets,pet,peter,pee,pegs
-taps	travy	tracy
+taps	travy	null
 taps-alts	travy	tracy,tract,track,tray,gray,trace
-taps	thrba	turbo
+taps	thrba	null
 taps-alts	thrba	turbo,threw,throw,tuba,three,thread
 taps	miwtake	mistake
 taps-alts	miwtake	mistake,mistakes,mistaken
-taps	fone	find
+taps	fone	null
 taps-alts	fone	find,fine,done,rome,fond,tone
 taps	allifatioms	null
 taps-alts	allifatioms	allocations,allegations
@@ -2106,9 +2106,9 @@ taps	aotld	world
 taps-alts	aotld	world,sold,would
 taps	recognized	null
 taps-alts	recognized	recognised,recognize,recognizes,recognise
-taps	uljng	using
+taps	uljng	null
 taps-alts	uljng	using,lung,long,lang
-taps	lawlsss	laws ss
+taps	lawlsss	null
 taps-alts	lawlsss	laws ss
 taps	pueblo	null
 taps-alts	pueblo	puerto,pablo
@@ -2130,7 +2130,7 @@ taps	minority	null
 taps-alts	minority	majority
 taps	cbeckiny	checking
 taps-alts	cbeckiny	checking
-taps	hdadway	had way
+taps	hdadway	null
 taps-alts	hdadway	had way
 taps	interoffice	null
 taps-alts	interoffice	interface
@@ -2192,17 +2192,17 @@ taps	general	null
 taps-alts	general	generals,genera,federal,funeral,central,generally
 taps	bkll	bill
 taps-alts	bkll	bill,hill,biol,bull,ball,bell
-taps	keffet	effect
+taps	keffet	null
 taps-alts	keffet	effect
 taps	overjjghg	null
 taps-alts	overjjghg	overnight,oversight
 taps	cafdgetia	null
 taps-alts	cafdgetia	cafeteria
-taps	rewerting	referring
+taps	rewerting	null
 taps-alts	rewerting	referring,rewriting,resting,reporting,resulting,repeating
 taps	rahge	range
 taps-alts	rahge	range,rate,rage,rang,ranges
-taps	tradeq	trades
+taps	tradeq	null
 taps-alts	tradeq	trades,trade,trader,traded,traces,grades
 taps	beyalc	behalf
 taps-alts	beyalc	behalf
@@ -2218,7 +2218,7 @@ taps	rorhot	forgot
 taps-alts	rorhot	forgot,robot
 taps	annivrrsary	anniversary
 taps-alts	annivrrsary	anniversary
-taps	paso	past
+taps	paso	null
 taps-alts	paso	past,pass,ask,last,pas,asp
 taps	sigjals	signals
 taps-alts	sigjals	signals,signal
@@ -2228,9 +2228,9 @@ taps	buddhisn	buddhism
 taps-alts	buddhisn	buddhism,buddhist
 taps	pnfe	once
 taps-alts	pnfe	once,one,life,page,knife,pace
-taps	loket	like
+taps	loket	null
 taps-alts	loket	like,poker,likes,pocket,liked,loot
-taps	zumplu	zulu
+taps	zumplu	null
 taps-alts	zumplu	zulu
 taps	apply	null
 taps-alts	apply	apple,ally,supply,applet,app,apples
@@ -2238,7 +2238,7 @@ taps	info	null
 taps-alts	info	into,unto,onto,inf,inc,in
 taps	temembef	remember
 taps-alts	temembef	remember
-taps	filjs	folks
+taps	filjs	null
 taps-alts	filjs	folks,films,files,fills,film,file
 taps	honeymoon	null
 taps-alts	honeymoon	
@@ -2276,7 +2276,7 @@ taps	rrzponds	responds
 taps-alts	rrzponds	responds,respond
 taps	found	null
 taps-alts	found	round,fund,find,fond,ground,could
-taps	weat	west
+taps	weat	null
 taps-alts	weat	west,wear,seat,what,eat,went
 taps	ubdecided	undecided
 taps-alts	ubdecided	undecided
@@ -2296,7 +2296,7 @@ taps	ahove	above
 taps-alts	ahove	above,have
 taps	like	null
 taps-alts	like	lime,life,likes,luke,live,liked
-taps	beimg	being
+taps	beimg	null
 taps-alts	beimg	being,bring
 taps	swven	seven
 taps-alts	swven	seven,even,when,seen,sven,steven
@@ -2310,7 +2310,7 @@ taps	mitpwy	null
 taps-alts	mitpwy	
 taps	lnoqs	knows
 taps-alts	lnoqs	knows,lows
-taps	siee	side
+taps	siee	null
 taps-alts	siee	side,wide,wire,died,wise,wife
 taps	dilogdbce	null
 taps-alts	dilogdbce	diligence
@@ -2318,15 +2318,15 @@ taps	nepjeve	null
 taps-alts	nepjeve	
 taps	mprris	morris
 taps-alts	mprris	morris
-taps	sosays	sprays
+taps	sosays	null
 taps-alts	sosays	sprays,so says,says,essays,stays,soaps
-taps	mkor	mood
+taps	mkor	null
 taps-alts	mkor	mood,moor,nor,motor,moore,mod
 taps	wjllqtd	null
 taps-alts	wjllqtd	
 taps	night	null
 taps-alts	night	might,nights,knight,bright,high,nigh
-taps	ebrkm	br km
+taps	ebrkm	null
 taps-alts	ebrkm	br km
 taps	details	null
 taps-alts	details	detail,detailed,retail,deals,emails
@@ -2336,7 +2336,7 @@ taps	taeget	target
 taps-alts	taeget	target,targets
 taps	ecojomic	economic
 taps-alts	ecojomic	economic,economics
-taps	uoles	holes
+taps	uoles	null
 taps-alts	uoles	holes,holds,hopes,hole,homes,holmes
 taps	move	null
 taps-alts	move	more,movie,moved,none,moves,mine
@@ -2346,15 +2346,15 @@ taps	heifbtened	heightened
 taps-alts	heifbtened	heightened
 taps	trust	null
 taps-alts	trust	trusts,test,thrust,fruit,true,truss
-taps	ajdes	sides
+taps	ajdes	null
 taps-alts	ajdes	sides,aides,aided,aires,andes,aids
 taps	paste	null
 taps-alts	paste	past,last,late,page,pasta,pastel
-taps	spapshkt	snapshot
+taps	spapshkt	null
 taps-alts	spapshkt	snapshot,snapshots
 taps	precludw	preclude
 taps-alts	precludw	preclude,prelude
-taps	fedmond	fed mon
+taps	fedmond	null
 taps-alts	fedmond	fed mon
 taps	norgh	north
 taps-alts	norgh	north
@@ -2372,7 +2372,7 @@ taps	thinoobg	null
 taps-alts	thinoobg	thinking
 taps	ernsirive	null
 taps-alts	ernsirive	sensitive
-taps	hopee	hoped
+taps	hopee	null
 taps-alts	hopee	hoped,hopes,hope,holes,hole,hopped
 taps	vestung	null
 taps-alts	vestung	
@@ -2382,7 +2382,7 @@ taps	bptrowing	borrowing
 taps-alts	bptrowing	borrowing
 taps	erop	drop
 taps-alts	erop	drop,stop,shop,drops
-taps	ddby	debt
+taps	ddby	null
 taps-alts	ddby	debt,deny,dry,derby,deb
 taps	assofiatez	associates
 taps-alts	assofiatez	associates,associated,associate
@@ -2932,7 +2932,7 @@ complete	which we dr	drive,drink,dress
 correct-ctx	we drafted	null
 next	we drafted	into,a,the
 complete	we drafted do	do,don't,does
-correct-ctx	drafted dox	did
+correct-ctx	drafted dox	null
 next	drafted dox	the,to,of
 complete	drafted dox an	and,an,any
 correct-ctx	dox and	null
@@ -2981,7 +2981,7 @@ complete	sent to ka	kabyle,kabylie,kansas
 correct-ctx	to katie	null
 next	to katie	price,holmes,fey
 complete	to katie ca	can,car,can't
-correct-ctx	katie caplan	ca plan
+correct-ctx	katie caplan	null
 next	katie caplan	the,to,of
 next	caplan as	a,the,well
 complete	caplan as we	well,we,were
@@ -3223,7 +3223,7 @@ complete	what we wa	want,wanted,was
 correct-ctx	we want	null
 next	we want	to,you,a
 complete	we want ne	new,need,never
-correct-ctx	want newco	neck
+correct-ctx	want newco	null
 next	want newco	the,to,of
 next	newco to	the,do,be
 next	to do	that,not,you
@@ -3996,7 +3996,7 @@ complete	on my ne	nerves,new,need
 correct-ctx	my new	null
 next	my new	car,job,house
 complete	my new sk	skura,skills,skin
-correct-ctx	new skytell	sky tell
+correct-ctx	new skytell	null
 next	new skytell	the,to,of
 complete	new skytell pa	page,part,party
 correct-ctx	skytell pager	null
@@ -4102,7 +4102,7 @@ complete	talk with ji	jim,jimmy,jill
 correct-ctx	with jim	null
 next	with jim	and,is,was
 complete	with jim fa	family,father,far
-correct-ctx	jim fallon	fallen
+correct-ctx	jim fallon	null
 next	jim fallon	the,to,of
 complete	jim fallon an	and,an,any
 correct-ctx	fallon and	null
@@ -4733,7 +4733,7 @@ complete	anything please co	contact,come,complete
 correct-ctx	please contact	null
 next	please contact	me,us,with
 complete	please contact ox	oxford,oxygen,oxide
-correct-ctx	contact oxley	oleg
+correct-ctx	contact oxley	null
 next	contact oxley	the,to,of
 complete	contact oxley di	didn't,did,different
 correct-ctx	oxley directly	null
@@ -5160,7 +5160,7 @@ next	but there	was,is,are
 next	there is	a,no,nothing
 next	is no	longer,one,use
 complete	is no fi	first,find,file
-correct-ctx	no financeable	finance able
+correct-ctx	no financeable	null
 next	no financeable	the,to,of
 complete	no financeable va	value,various,vacation
 correct-ctx	financeable value	null
@@ -5841,7 +5841,7 @@ complete	as i to	to,told,tom
 correct-ctx	i told	null
 next	i told	tom,you,me
 complete	i told ly	lyrics,lying,lynn
-correct-ctx	told lyn	on
+correct-ctx	told lyn	null
 next	null we	have,are,can
 complete	null we ar	are,aren't,around
 correct-ctx	we are	null
@@ -6057,7 +6057,7 @@ correct-ctx	review with	null
 next	review with	the,a,you
 next	with el	que,harrach,salvador
 complete	with el pa	page,part,party
-correct-ctx	el paso	past
+correct-ctx	el paso	null
 next	null not	to,be,a
 complete	null not su	sure,supposed,such
 correct-ctx	not sure	null
@@ -6242,7 +6242,7 @@ complete	card from ka	kabyle,kabylie,kansas
 correct-ctx	from karen	null
 next	from karen	and,is,doesn't
 complete	from karen he	he,her,here
-correct-ctx	karen heathman	heat man
+correct-ctx	karen heathman	null
 next	karen heathman	the,to,of
 next	heathman in	the,a,this
 next	in my	life,room,opinion
@@ -6685,7 +6685,7 @@ complete	status of th	the,this,their
 correct-ctx	of the	null
 next	of the	most,world,house
 complete	of the pe	people,person,personal
-correct-ctx	the pemex	peed
+correct-ctx	the pemex	null
 next	the pemex	the,to,of
 complete	the pemex di	didn't,did,different
 correct-ctx	pemex discussions	null
@@ -7366,7 +7366,7 @@ complete	did you me	me,message,member
 correct-ctx	you mean	null
 next	you mean	you,that,by
 complete	you mean ox	oxford,oxygen,oxide
-correct-ctx	mean oxley	oleg
+correct-ctx	mean oxley	null
 next	null i	have,don't,think
 complete	null i ca	can,can't,cant
 correct-ctx	i can	null
@@ -7605,7 +7605,7 @@ correct-ctx	are welcome	null
 next	are welcome	to,here,back
 next	welcome in	this,my,our
 complete	welcome in pa	particular,page,part
-correct-ctx	in palacios	palaces
+correct-ctx	in palacios	null
 next	in palacios	the,to,of
 complete	in palacios th	the,that,this
 correct-ctx	palacios this	null
@@ -7846,7 +7846,7 @@ complete	about the cu	current,customer,cut
 correct-ctx	the current	null
 next	the current	situation,political,president
 complete	the current in	information,in,into
-correct-ctx	current intercompany	inter company
+correct-ctx	current intercompany	null
 next	current intercompany	the,to,of
 complete	current intercompany no	not,no,now
 correct-ctx	intercompany notes	null
@@ -7944,7 +7944,7 @@ complete	should be cy	cycle,cycling,cyprus
 correct-ctx	be cynthia	null
 next	be cynthia	to,was
 complete	be cynthia ba	back,based,bad
-correct-ctx	cynthia barow	barks
+correct-ctx	cynthia barow	null
 next	cynthia barow	the,to,of
 complete	cynthia barow in	in,information,into
 correct-ctx	barow instead	null

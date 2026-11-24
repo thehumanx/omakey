@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Debug builds install beside the Play copy (applicationIdSuffix ".dev"); this name tells
+         the two apart in the launcher and the keyboard picker. -->
+    <string name="app_name">omakey dev</string>
+</resources>

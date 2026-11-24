@@ -13,6 +13,8 @@ package dev.omakey.core.predict.eval
 class EngineEvaluator(
     private val spellPairs: List<EvalCorpus.SpellPair>,
     private val sentences: List<List<String>>,
+    /** Correctly-typed words outside the vocabulary — see [Report.unknownWordDamage]. */
+    private val unknownWords: List<String> = EvalCorpus.unknownWords(),
 ) {
 
     data class Report(
@@ -35,6 +37,17 @@ class EngineEvaluator(
         /** Correctly-spelled words that auto-apply changed anyway. The metric users feel most
          * sharply, and the one a naive accuracy chase always makes worse. */
         val falseCorrectionRate: Double,
+        /**
+         * Of correctly-typed words the vocabulary does *not* know — names, slang, brands, jargon
+         * ([EvalCorpus.unknownWords], plus every distinct word of the sentence corpus that is not
+         * in the dictionary) — the share auto-apply changed. [falseCorrectionRate] hides this: it
+         * counts tokens, and real text is overwhelmingly common words that can never be touched,
+         * so "bibek" → "bike" or "refinancing" → "financing" barely moves it. Users meet exactly
+         * these words, and a keyboard that rewrites them reads as "autocorrect suggests different
+         * words". Counted per distinct word.
+         */
+        val unknownWordDamage: Double,
+        val unknownWordCount: Int,
         /** Next word present in the top 3 with no prefix typed. */
         val nextWordRecall: Double,
         /** Next word present in the top 3 after its first two characters are typed. */
@@ -55,6 +68,7 @@ class EngineEvaluator(
             appendLine("-".repeat(72))
             appendLine("DAMAGE (correctly-typed words)")
             appendLine(row("  falsely corrected", falseCorrectionRate))
+            appendLine(row("  unknown words changed (of $unknownWordCount)", unknownWordDamage))
             appendLine("-".repeat(72))
             appendLine("PREDICTION")
             appendLine(row("  next word in top 3 (no prefix)", nextWordRecall))
@@ -103,6 +117,10 @@ class EngineEvaluator(
             }
         }
 
+        // Distinct words outside the vocabulary, from both sources. Every one is typed as meant.
+        val unknown = (unknownWords + sentences.flatten()).distinct().filterNot { target.isKnown(it) }
+        val unknownChanged = unknown.count { target.correct(it) != null }
+
         var predictionOpportunities = 0
         var nextWordHits = 0
         var completionOpportunities = 0
@@ -141,6 +159,8 @@ class EngineEvaluator(
             missRate = missed.toDouble() / n,
             suggestionRecall = offered.toDouble() / n,
             falseCorrectionRate = falselyCorrected.toDouble() / typedCorrectly.coerceAtLeast(1),
+            unknownWordDamage = unknownChanged.toDouble() / unknown.size.coerceAtLeast(1),
+            unknownWordCount = unknown.size,
             nextWordRecall = nextWordHits.toDouble() / predictionOpportunities.coerceAtLeast(1),
             completionRecall = completionHits.toDouble() / completionOpportunities.coerceAtLeast(1),
             medianCorrectionMicros = latencies.sorted().getOrElse(latencies.size / 2) { 0L },

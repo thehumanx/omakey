@@ -66,7 +66,7 @@ class LanguageProfileTest {
     fun `English keeps exactly the rules it had before profiles existed`() {
         // Moved verbatim out of KeyboardViewModel/AutocorrectIndex; GoldenBehaviourTest covers the
         // engine side, this covers the constants that aren't on the engine path.
-        assertEquals(listOf('.', ',', '!', '?', ';', ':', '\'', '"'), english.punctuationCycle)
+        assertEquals(listOf('.', ',', '?', '!', ';', ':', '\'', '"'), english.punctuationCycle)
         assertEquals('.', english.doubleSpaceInserts)
         assertEquals(setOf('.', '!', '?'), english.capitalizeAfter)
         assertTrue(english.hasCase)

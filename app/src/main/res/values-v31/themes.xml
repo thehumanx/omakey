@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Android 12+: the system splash, in the design's ground colour with the launcher icon. -->
+    <style name="Theme.Omakey.Splash" parent="Theme.Omakey">
+        <item name="android:windowSplashScreenBackground">@color/omakey_ground</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">@color/omakey_ground</item>
+    </style>
+</resources>

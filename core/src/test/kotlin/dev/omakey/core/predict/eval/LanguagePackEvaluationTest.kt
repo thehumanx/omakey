@@ -76,7 +76,22 @@ import kotlin.random.Random
  * index is keyed on, so they measure the folding and ranking, not how varied real typing is.
  * Remaining misses are mostly "-tsya" verb endings and words outside the vocabulary.
  *
- * For comparison, English on its own tap-noise simulation is 66 % / 13 % with 0.73 % damage (§51.1).
+ * 2026-11-23, every pack, after `AutocorrectIndex` gained its confidence gates (a minimum score and
+ * a margin over the runner-up, with exact accent restorations exempt from the margin) — the fix
+ * for autocorrect "changing words into different words". Fixed / wrong, before → after:
+ *                      accent restoration          touch noise 0.35            damage
+ *   es_ES              91.8 / 6.8 → 91.8 / 1.0     61.1 / 6.0 → 56.6 / 1.1     0.54 → 0.18 %
+ *   fr_FR              87.6 / 9.1 → 87.6 / 4.5     57.8 / 6.0 → 54.2 / 0.9     0.23 → 0.12 %
+ *   pt_BR              93.3 / 2.8 → 93.3 / 0.7     63.9 / 7.2 → 59.3 / 1.1     0.38 → 0.10 %
+ *   it_IT              95.3 / 4.7 → 95.3 / 0.3     64.9 / 6.6 → 60.9 / 1.8     0.17 → 0.04 %
+ *   ru_RU ЙЦУКЕН                                   60.0 / 8.2 → 56.4 / 1.4     0.35 → 0.05 %
+ *   ru_RU orthography  85.2 / 9.0 → 79.3 / 1.6
+ * Touch noise gives up about four fixes for every five to seven wrong words it stops producing;
+ * accent restoration loses nothing. The floors below were moved to these numbers on purpose,
+ * the wrong-rate ceilings tightened with them so the gain cannot quietly erode.
+ *
+ * For comparison, English on its own tap-noise simulation is 66 % / 13 % with 0.73 % damage (§51.1),
+ * and 59.6 % / 2.5 % after the gates.
  * The remaining accent misses are mostly vocabulary coverage (rare verb forms, proper names).
  * Floors below sit just under these.
  */
@@ -203,10 +218,10 @@ class LanguagePackEvaluationTest {
         println("es_ES correct words damaged: %.2f %% of %d".format(damage, clean))
 
         val offeredRate = 100.0 * pairOffered / pairTotal
-        assertTrue("accent restoration regressed: $accents", accents.fixedRate >= 89.0 && accents.wrongRate <= 8.5)
+        assertTrue("accent restoration regressed: $accents", accents.fixedRate >= 89.0 && accents.wrongRate <= 2.5)
         assertTrue("accented real words stopped being offered: $offeredRate", offeredRate >= 76.0)
-        assertTrue("touch-noise correction regressed: $noise", noise.fixedRate >= 58.0 && noise.wrongRate <= 8.0)
-        assertTrue("damage to correct words regressed: $damage", damage <= 0.7)
+        assertTrue("touch-noise correction regressed: $noise", noise.fixedRate >= 54.0 && noise.wrongRate <= 2.5)
+        assertTrue("damage to correct words regressed: $damage", damage <= 0.35)
     }
 
     @Test
@@ -251,9 +266,9 @@ class LanguagePackEvaluationTest {
         println("fr_FR touch noise 0.35 (AZERTY): $noise")
         println("fr_FR correct words damaged: %.2f %% of %d".format(damage, clean))
 
-        assertTrue("accent restoration regressed: $accents", accents.fixedRate >= 85.0 && accents.wrongRate <= 11.0)
-        assertTrue("touch-noise correction regressed: $noise", noise.fixedRate >= 54.0 && noise.wrongRate <= 8.0)
-        assertTrue("damage to correct words regressed: $damage", damage <= 0.4)
+        assertTrue("accent restoration regressed: $accents", accents.fixedRate >= 85.0 && accents.wrongRate <= 6.0)
+        assertTrue("touch-noise correction regressed: $noise", noise.fixedRate >= 52.0 && noise.wrongRate <= 2.5)
+        assertTrue("damage to correct words regressed: $damage", damage <= 0.3)
     }
 
     @Test
@@ -501,23 +516,23 @@ class LanguagePackEvaluationTest {
 
 // Portuguese floors, set just under the measured values in the class doc.
 private const val PT_ACCENT_FIXED = 91.0
-private const val PT_ACCENT_WRONG = 4.0
+private const val PT_ACCENT_WRONG = 2.0
 private const val PT_OFFERED = 48.0
-private const val PT_NOISE_FIXED = 61.0
-private const val PT_NOISE_WRONG = 9.0
-private const val PT_DAMAGE = 0.5
+private const val PT_NOISE_FIXED = 57.0
+private const val PT_NOISE_WRONG = 2.5
+private const val PT_DAMAGE = 0.3
 
 // Italian and Russian floors, set just under the measured values in the class doc.
 private const val IT_ACCENT_FIXED = 93.0
-private const val IT_ACCENT_WRONG = 6.5
-private const val IT_NOISE_FIXED = 60.0
-private const val IT_NOISE_WRONG = 9.0
-private const val IT_DAMAGE = 0.3
-private const val RU_NOISE_FIXED = 58.0
-private const val RU_NOISE_WRONG = 9.5
-private const val RU_DAMAGE = 0.5
-private const val RU_ORTHO_FIXED = 83.0
-private const val RU_ORTHO_WRONG = 10.5
+private const val IT_ACCENT_WRONG = 1.5
+private const val IT_NOISE_FIXED = 58.5
+private const val IT_NOISE_WRONG = 3.0
+private const val IT_DAMAGE = 0.2
+private const val RU_NOISE_FIXED = 54.0
+private const val RU_NOISE_WRONG = 3.0
+private const val RU_DAMAGE = 0.25
+private const val RU_ORTHO_FIXED = 77.0
+private const val RU_ORTHO_WRONG = 3.0
 private const val RU_ORTHO_STRIP = 84.0
 private const val RU_TRANSLIT_TOP1 = 96.0
 private const val RU_TRANSLIT_TOP3 = 99.0

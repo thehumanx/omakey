@@ -147,7 +147,7 @@ class LanguageProfile(
             hasCase = true,
             capitalizeAfter = setOf('.', '!', '?'),
             doubleSpaceInserts = '.',
-            punctuationCycle = listOf('.', ',', '!', '?', ';', ':', '\'', '"'),
+            punctuationCycle = listOf('.', ',', '?', '!', ';', ':', '\'', '"'),
             contractions = EnglishContractions.map,
             emojiFor = WordEmojiSuggestions::suggest,
             alwaysCapitalized = mapOf("i" to "I"),

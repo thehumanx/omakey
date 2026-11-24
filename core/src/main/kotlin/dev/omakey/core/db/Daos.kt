@@ -141,3 +141,32 @@ interface ClipboardDao {
     @Query("SELECT imagePath FROM clipboard_history WHERE imagePath IS NOT NULL")
     suspend fun referencedImagePaths(): List<String>
 }
+
+/** The `snippets` table, in the user's order. See [SnippetEntity]. */
+@Dao
+interface SnippetDao {
+    @Query("SELECT * FROM snippets ORDER BY position")
+    fun observeAll(): kotlinx.coroutines.flow.Flow<List<SnippetEntity>>
+
+    @Query("SELECT * FROM snippets ORDER BY position")
+    suspend fun all(): List<SnippetEntity>
+
+    @Query("SELECT * FROM snippets WHERE id = :id LIMIT 1")
+    suspend fun findById(id: Long): SnippetEntity?
+
+    @Insert
+    suspend fun insert(e: SnippetEntity): Long
+
+    /** One transaction (Room runs a list insert as one): an import lands whole or not at all. */
+    @Insert
+    suspend fun insertAll(list: List<SnippetEntity>)
+
+    @androidx.room.Update
+    suspend fun update(e: SnippetEntity)
+
+    @Query("DELETE FROM snippets WHERE id = :id")
+    suspend fun delete(id: Long)
+
+    @androidx.room.Update
+    suspend fun updateAll(list: List<SnippetEntity>)
+}

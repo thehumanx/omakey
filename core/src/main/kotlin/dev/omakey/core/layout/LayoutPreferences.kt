@@ -76,6 +76,19 @@ data class LayoutSettings(
     /** What the key right of the spacebar types: one character, or [DEFAULT_SPACEBAR_SIDE_KEY] for
      * the language's own ("." / "।"). See [withSpacebarSideKey]. */
     val spacebarSideKey: String = DEFAULT_SPACEBAR_SIDE_KEY,
+    /** Compact mode (quick access "Compact" tile): the letter layout's bottom row is hidden and
+     * swipe right types a space. Off by default. See [CompactMode]. */
+    val compactMode: Boolean = false,
+    /** Split the docked keyboard on wide screens (≥ [SplitLayout.WIDE_SCREEN_DP]: unfolded
+     * foldables, tablets, phones in landscape). On by default, like Gboard on a foldable's inner
+     * screen. The quick access "Split" tile flips this or [splitOnNarrow], whichever screen class
+     * the keyboard is on. See [SplitLayout]. */
+    val splitOnWide: Boolean = true,
+    /** Split on narrow screens too. Off by default. */
+    val splitOnNarrow: Boolean = false,
+    /** On a split keyboard, repeat an odd row's middle key (G, V on QWERTY) on both halves, as
+     * Gboard does. */
+    val splitDuplicateKeys: Boolean = true,
 ) {
     /** Whether corner hints are drawn and preselected: see [popupSymbols]. */
     val secondarySymbolsShown: Boolean get() = showSecondarySymbols && popupSymbols.isEmpty()
@@ -115,6 +128,11 @@ class LayoutPreferences(context: Context) {
     fun setAlwaysShowUppercaseLetters(show: Boolean) = update { it.copy(alwaysShowUppercaseLetters = show) }
     fun setTapPreviewStyle(style: TapPreviewStyle) = update { it.copy(tapPreviewStyle = style) }
     fun setEdgePadding(enabled: Boolean) = update { it.copy(edgePadding = enabled) }
+    fun setCompactMode(enabled: Boolean) = update { it.copy(compactMode = enabled) }
+    fun setSplitDuplicateKeys(enabled: Boolean) = update { it.copy(splitDuplicateKeys = enabled) }
+
+    /** The quick access "Split" tile. See [SplitLayout.toggled]. */
+    fun toggleSplit(screenWidthDp: Int) = update { SplitLayout.toggled(it, screenWidthDp) }
     fun setEmojiSlotKey(value: String) = update { it.copy(emojiSlotKey = sanitizeEmojiSlotKey(value)) }
     fun setShowSecondarySymbols(show: Boolean) = update { it.copy(showSecondarySymbols = show) }
     fun setFleksySymbols(enabled: Boolean) = update { it.copy(fleksySymbols = enabled) }
@@ -174,6 +192,10 @@ class LayoutPreferences(context: Context) {
             putBoolean(KEY_NUMBER_PAD_PHONE, next.numberPadPhone)
             putBoolean(KEY_NUMBER_PAD_DATETIME, next.numberPadDateTime)
             putString(KEY_SPACEBAR_SIDE_KEY, next.spacebarSideKey)
+            putBoolean(KEY_COMPACT_MODE, next.compactMode)
+            putBoolean(KEY_SPLIT_ON_WIDE, next.splitOnWide)
+            putBoolean(KEY_SPLIT_ON_NARROW, next.splitOnNarrow)
+            putBoolean(KEY_SPLIT_DUPLICATE_KEYS, next.splitDuplicateKeys)
         }
     }
 
@@ -211,9 +233,13 @@ class LayoutPreferences(context: Context) {
         numberPadPhone = prefs.getBoolean(KEY_NUMBER_PAD_PHONE, true),
         numberPadDateTime = prefs.getBoolean(KEY_NUMBER_PAD_DATETIME, true),
         spacebarSideKey = sanitizeSpacebarSideKey(prefs.getString(KEY_SPACEBAR_SIDE_KEY, null)),
+        compactMode = prefs.getBoolean(KEY_COMPACT_MODE, false),
+        splitOnWide = prefs.getBoolean(KEY_SPLIT_ON_WIDE, true),
+        splitOnNarrow = prefs.getBoolean(KEY_SPLIT_ON_NARROW, false),
+        splitDuplicateKeys = prefs.getBoolean(KEY_SPLIT_DUPLICATE_KEYS, true),
     )
 
-    private companion object {
+    internal companion object {
         const val PREFS_NAME = "omakey_layout_prefs"
         const val KEY_SWAP_EMOJI_LANGUAGE = "swap_emoji_and_language"
         const val KEY_EMOJI_SLOT = "emoji_slot_key"
@@ -225,6 +251,10 @@ class LayoutPreferences(context: Context) {
         const val KEY_NUMBER_PAD_PHONE = "number_pad_phone"
         const val KEY_NUMBER_PAD_DATETIME = "number_pad_datetime"
         const val KEY_SPACEBAR_SIDE_KEY = "spacebar_side_key"
+        const val KEY_COMPACT_MODE = "compact_mode"
+        const val KEY_SPLIT_ON_WIDE = "split_on_wide"
+        const val KEY_SPLIT_ON_NARROW = "split_on_narrow"
+        const val KEY_SPLIT_DUPLICATE_KEYS = "split_duplicate_keys"
         const val KEY_HEIGHT = "keyboard_height_dp"
         const val KEY_KEY_BACKGROUNDS = "show_key_backgrounds"
         const val KEY_MIDDLE_STRIPE = "show_middle_row_stripe"

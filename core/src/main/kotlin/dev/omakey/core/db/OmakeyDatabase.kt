@@ -8,13 +8,22 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
-    entities = [WordEntity::class, ClipboardEntity::class],
-    version = 6,
+    entities = [WordEntity::class, ClipboardEntity::class, SnippetEntity::class],
+    version = 7,
     exportSchema = true,
 )
 abstract class OmakeyDatabase : RoomDatabase() {
     abstract fun wordDao(): WordDao
     abstract fun clipboardDao(): ClipboardDao
+    abstract fun snippetDao(): SnippetDao
+
+    /** Folds the write-ahead log into the database file and empties it, so text deleted under
+     * secure_delete is gone from disk too. See SnippetRepository's wipeFreedSpace. */
+    fun checkpointAndTruncate() {
+        // Stepped (moveToFirst), or the checkpoint never runs. Its first column is "busy": a reader
+        // holding the log open stops the truncate; the next write tries again.
+        openHelper.writableDatabase.query("PRAGMA wal_checkpoint(TRUNCATE)").use { it.moveToFirst() }
+    }
 
     companion object {
         @Volatile private var instance: OmakeyDatabase? = null
@@ -103,10 +112,23 @@ abstract class OmakeyDatabase : RoomDatabase() {
             }
         }
 
+        /** Adds the `snippets` table (the Snippets page, Fleksy-style quick input). Words and
+         * clipboard history are untouched. The statement is Room's own from `7.json`. */
+        private const val SNIPPETS_CREATE_SQL =
+            "CREATE TABLE IF NOT EXISTS `snippets` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`name` TEXT NOT NULL, `text` TEXT, `secretCipher` BLOB, `secretIv` BLOB, `shortcut` TEXT, " +
+                "`position` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL)"
+
+        private val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(SNIPPETS_CREATE_SQL)
+            }
+        }
+
         /** Exposed so `OmakeyDatabaseMigrationTest` exercises the migrations that actually ship
          * rather than a copy of them, and so a new migration can't be added to the test's chain
          * while being forgotten here (or the reverse). */
-        val MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+        val MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
 
         fun getInstance(context: Context): OmakeyDatabase =
             instance ?: synchronized(this) {
@@ -114,7 +136,19 @@ abstract class OmakeyDatabase : RoomDatabase() {
                     context.applicationContext,
                     OmakeyDatabase::class.java,
                     "omakey.db",
-                ).addMigrations(*MIGRATIONS).build().also { instance = it }
+                ).addMigrations(*MIGRATIONS)
+                    // Freed pages are overwritten with zeros, so deleted text (a snippet made a
+                    // password, a removed snippet or clip, a forgotten word) doesn't linger in
+                    // the file. A query, not execSQL: the PRAGMA returns a row, so it is stepped.
+                    .addCallback(object : RoomDatabase.Callback() {
+                        override fun onOpen(db: SupportSQLiteDatabase) {
+                            // Stepped, not just compiled: a cursor that is closed unread never runs
+                            // its statement. Android's SQLite usually has this on already; this
+                            // makes sure of it on this connection.
+                            db.query("PRAGMA secure_delete = ON").use { it.moveToFirst() }
+                        }
+                    })
+                    .build().also { instance = it }
             }
     }
 }

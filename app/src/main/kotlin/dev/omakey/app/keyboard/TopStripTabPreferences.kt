@@ -20,13 +20,37 @@ data class TopStripSettings(
      * autofill). On by default; off, omakey doesn't ask for them and the manager falls back to
      * its own popup. */
     val autofillSuggestions: Boolean = true,
+    /** The user's order for every page after Suggestions, which always comes first (it's where
+     * typing happens). As stored; see [movableOrder] for the cleaned-up version. */
+    val order: List<TopStripTab> = MOVABLE_DEFAULT,
 ) {
+    /** [order] with Suggestions, repeats and unknown pages removed, and any page it is missing
+     * (one added by a later version) appended in the default order. */
+    val movableOrder: List<TopStripTab>
+        get() = order.filter { it != TopStripTab.SUGGESTIONS }.distinct().let { kept ->
+            kept + MOVABLE_DEFAULT.filter { it !in kept }
+        }
+
     /** The pages shown, in swipe order. Never empty. */
     val pages: List<TopStripTab>
-        get() = PAGE_ORDER.filter { it !in hidden }.ifEmpty { PAGE_ORDER }
+        get() = (listOf(TopStripTab.SUGGESTIONS) + movableOrder).filter { it !in hidden }.ifEmpty { PAGE_ORDER }
+
+    /** The order after moving [page] [by] places (−1 earlier, +1 later), stopping at either end.
+     * Suggestions doesn't move. */
+    fun moved(page: TopStripTab, by: Int): List<TopStripTab> {
+        val list = movableOrder.toMutableList()
+        val from = list.indexOf(page)
+        if (from < 0) return list
+        list.add((from + by).coerceIn(0, list.lastIndex), list.removeAt(from))
+        return list
+    }
 
     companion object {
-        val PAGE_ORDER = listOf(TopStripTab.SUGGESTIONS, TopStripTab.NUMBERS, TopStripTab.TOOLS)
+        private val MOVABLE_DEFAULT = listOf(TopStripTab.SNIPPETS, TopStripTab.NUMBERS, TopStripTab.TOOLS)
+
+        // Snippets sits next to Suggestions: one swipe from typing to your saved text. A new page
+        // starts shown on existing installs, since only the hidden set is stored.
+        val PAGE_ORDER = listOf(TopStripTab.SUGGESTIONS, TopStripTab.SNIPPETS, TopStripTab.NUMBERS, TopStripTab.TOOLS)
     }
 }
 
@@ -49,6 +73,11 @@ class TopStripTabPreferences(context: Context) {
         store.edit { putStringSet(KEY_HIDDEN, hidden.map { it.name }.toSet()) }
     }
 
+    /** Moves a page earlier (−1) or later (+1) in the bar; Suggestions stays first. */
+    fun movePage(page: TopStripTab, by: Int) {
+        store.edit { putString(KEY_ORDER, settings.value.moved(page, by).joinToString(",") { it.name }) }
+    }
+
     fun setAutofillSuggestions(enabled: Boolean) {
         store.edit { putBoolean(KEY_AUTOFILL, enabled) }
     }
@@ -63,7 +92,13 @@ class TopStripTabPreferences(context: Context) {
         val hidden = prefs.getStringSet(KEY_HIDDEN, null).orEmpty()
             .mapNotNull { name -> runCatching { TopStripTab.valueOf(name) }.getOrNull() }
             .toSet()
-        return TopStripSettings(tab, hidden, autofillSuggestions = prefs.getBoolean(KEY_AUTOFILL, true))
+        val order = prefs.getString(KEY_ORDER, null)?.split(',')
+            ?.mapNotNull { name -> runCatching { TopStripTab.valueOf(name) }.getOrNull() }
+        return TopStripSettings(
+            tab, hidden,
+            autofillSuggestions = prefs.getBoolean(KEY_AUTOFILL, true),
+            order = order ?: TopStripSettings().order,
+        )
     }
 
     private companion object {
@@ -71,5 +106,6 @@ class TopStripTabPreferences(context: Context) {
         const val KEY_TAB = "top_strip_tab"
         const val KEY_HIDDEN = "hidden_pages"
         const val KEY_AUTOFILL = "autofill_suggestions"
+        const val KEY_ORDER = "page_order"
     }
 }

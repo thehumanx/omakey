@@ -64,7 +64,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
@@ -117,6 +121,16 @@ class KeyboardViewModel(
     // The active language's transliterator, when it has one and it has loaded (Nepali typed in
     // Latin letters). Read per use: it changes with the language.
     private val transliterator: () -> Transliterator? = { null },
+    // The user's snippets (the Snippets page above the keys); null leaves the page empty.
+    private val snippetRepository: dev.omakey.core.snippets.SnippetRepository? = null,
+    // Opens a snippet's edit form (null id: a new snippet) in omakey's own, non-exported screen.
+    private val openSnippetEditor: (Long?) -> Unit = {},
+    // Whether the phone is locked right now, read live (KeyguardManager). The cached
+    // [deviceLocked] decides which chips are drawn; this is the last word at tap time.
+    private val isDeviceLockedNow: () -> Boolean = { false },
+    // omakey's own package: its screens (the snippet form) are never learned from. See
+    // isSensitiveField.
+    private val ownPackage: String? = null,
 ) {
     private fun locale(): KeyboardLocale = localeController.active.value
 
@@ -204,6 +218,11 @@ class KeyboardViewModel(
      * commit (e.g. pressing space right after the revert) from immediately re-correcting the
      * same word right back to the version the user just explicitly rejected. */
     private var revertedWord: String? = null
+
+    /** Set by [maybeAutocorrectBufferedWord] when the word at this boundary is [revertedWord] being
+     * kept, and read (then cleared) by the [flushWordBuffer] that always follows it, which stages
+     * the word to be learned as kept over a correction rather than as an ordinary use. */
+    private var keepingRevertedWord = false
 
     /** Word/character-level undo/redo (Tools tab "Undo"/"Redo", also wired to Ctrl+Z/Ctrl+Shift+Z-
      * equivalent gestures) — scoped to raw text mutation: a word finishing (space/punctuation/
@@ -312,6 +331,21 @@ class KeyboardViewModel(
         updateEmojiSuggestions(committed)
     }
 
+    // Declared above init on purpose: init can refresh suggestions synchronously (the model is
+    // already loaded when the input view is recreated), and that reads these. Declared below, they
+    // were still null then.
+    /** The focused field is one omakey must not remember anything from (a password, omakey's own
+     * screens). Short codes are never offered there. */
+    private var fieldSensitive = false
+
+    /** A password field: the only place short codes aren't offered (see isPasswordField). */
+    private var passwordField = false
+
+    /** Every snippet, codes included, for matching what was just typed. */
+    private val allSnippets: StateFlow<List<dev.omakey.core.snippets.Snippet>> =
+        (snippetRepository?.snippets ?: kotlinx.coroutines.flow.flowOf(emptyList()))
+            .stateIn(scope, kotlinx.coroutines.flow.SharingStarted.Eagerly, emptyList())
+
     init {
         // Keeps an already-open keyboard in sync if the user changes theme/layout settings from
         // Settings while the IME view is alive (same process, different Activity).
@@ -397,6 +431,105 @@ class KeyboardViewModel(
         }
     }
 
+    // --- snippets ------------------------------------------------------------------------------
+    // Whether the phone is locked (a reply typed from a lock-screen notification). The service
+    // sets it each time the keyboard opens and when the phone is unlocked. Secrets hide while it
+    // is true: the phone's lock is what protects them.
+    private val deviceLocked = MutableStateFlow(false)
+
+    fun setDeviceLocked(locked: Boolean) {
+        deviceLocked.value = locked
+    }
+
+    /** The chips on the Snippets page: every snippet, in the user's order, minus secrets while
+     * the phone is locked. Separate from [uiState] so a snippet edit doesn't touch typing state. */
+    val snippetChips: StateFlow<List<dev.omakey.core.snippets.Snippet>> =
+        (snippetRepository?.snippets ?: kotlinx.coroutines.flow.flowOf(emptyList()))
+            .combine(deviceLocked) { all, locked -> dev.omakey.core.snippets.SnippetRules.visible(all, locked) }
+            .stateIn(scope, kotlinx.coroutines.flow.SharingStarted.Eagerly, emptyList())
+
+    /**
+     * Types snippet [s]. Through [extensionHost] like a clipboard-history tap: one batch, one undo
+     * step, and never autocorrected, learned or kept as a suggestion. The lock is checked again
+     * here, so a chip drawn before the phone locked still can't type a secret. A secret that
+     * can't be opened types nothing and opens its edit form instead.
+     */
+    fun onSnippetTap(s: dev.omakey.core.snippets.Snippet) {
+        val repository = snippetRepository ?: return
+        if (s.secret && (deviceLocked.value || isDeviceLockedNow())) {
+            deviceLocked.value = true
+            return
+        }
+        scope.launch {
+            val text = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { repository.textToType(s.id) }
+            when {
+                text == null -> openSnippetEditor(s.id)
+                // A secret is typed exactly as saved; only plain snippets fill in placeholders. The
+                // undo history is then cleared, so the password isn't held there (where undo/redo
+                // could also bring it back) after it's typed.
+                s.secret -> {
+                    extensionHost.insertText(text)
+                    undoHistory.clear()
+                    _uiState.update { it.copy(canUndo = false, canRedo = false) }
+                }
+                else -> extensionHost.insertText(expandPlaceholders(text))
+            }
+        }
+    }
+
+    /** Opens the edit form for snippet [id], or the add form when null. */
+    fun editSnippet(id: Long?) = openSnippetEditor(id)
+
+
+    /** Offers the snippet whose short code was just typed (see SnippetCodes), or clears the offer. */
+    private fun updateSnippetOffer() {
+        val snippets = allSnippets.value
+        // No offer in a password field, over a selection (accepting would replace it), mid
+        // composition (romanized Nepali's composing word isn't text yet), or when no snippet has a
+        // code at all, which also spares a read of the field on every keystroke.
+        val offer = if (snippetRepository == null || passwordField || selectionActive ||
+            (transliterating() && translit.isComposing) || snippets.none { it.shortcut != null }
+        ) {
+            null
+        } else {
+            val before = textEditor.textBeforeCursor(dev.omakey.core.snippets.SnippetCodes.MAX_LENGTH + 1)
+            dev.omakey.core.snippets.SnippetCodes.match(before, snippets)?.let {
+                SnippetOffer(it.id, dev.omakey.core.snippets.SnippetRules.chipLabel(it), dev.omakey.core.snippets.SnippetCodes.tokenBeforeCursor(before))
+            }
+        }
+        if (offer != _uiState.value.snippetOffer) _uiState.update { it.copy(snippetOffer = offer) }
+    }
+
+    /**
+     * The offer was tapped: the code before the cursor becomes the snippet's text, placeholders
+     * filled in, as one undo step that is never learned or autocorrected.
+     */
+    fun acceptSnippetOffer() {
+        val offer = _uiState.value.snippetOffer ?: return
+        val repository = snippetRepository ?: return
+        scope.launch {
+            val stored = withContext(Dispatchers.IO) { repository.textToType(offer.id) } ?: return@launch
+            // The read took a moment: if the user typed on, moved, or the snippet changed (made
+            // secret, code edited), the offer no longer describes what is before the cursor.
+            if (_uiState.value.snippetOffer != offer ||
+                !dev.omakey.core.snippets.SnippetCodes.stillOffered(offer.id, offer.code, allSnippets.value)
+            ) return@launch
+            val text = expandPlaceholders(stored)
+            // Replaces the code only if the code is still exactly what sits before the cursor.
+            if (!textEditor.replaceBefore(offer.code, text)) return@launch
+            pushUndo(TextEdit(removed = offer.code, inserted = text))
+            resetTypingState()
+            _uiState.update { it.copy(snippetOffer = null) }
+            refreshSuggestions()
+        }
+    }
+
+    /** {date}, {time} and {clipboard} filled in now (see SnippetPlaceholders). Plain snippets only. */
+    private fun expandPlaceholders(text: String): String =
+        dev.omakey.core.snippets.SnippetPlaceholders.expand(
+            text, java.util.Date(), java.util.Locale.getDefault(), java.util.TimeZone.getDefault(),
+        ) { clipboardText()?.toString() }
+
     /** [info] is the newly-focused field's [EditorInfo] (null if unavailable) — resolves what the
      * Enter key should do in this field. A field that opts out of an enter action
      * ([EditorInfo.IME_FLAG_NO_ENTER_ACTION]) or simply doesn't declare one always gets a plain
@@ -418,7 +551,9 @@ class KeyboardViewModel(
         // first keystroke arrives immediately. This is the case that actually matters: a user
         // typing a password or a recovery phrase will never think to reach for a toggle, and words
         // captured from one would sit in the dictionary indefinitely.
-        incognitoPreferences.onFieldChanged(isSensitiveField(info))
+        fieldSensitive = isSensitiveField(info, ownPackage)
+        passwordField = dev.omakey.core.input.isPasswordField(info)
+        incognitoPreferences.onFieldChanged(fieldSensitive)
         // Before the layout is chosen below, so a field that asks for a language opens in it.
         localeController.onFieldStarted(hintLanguagesOf(info))
         val enterAction = when {
@@ -497,6 +632,15 @@ class KeyboardViewModel(
 
     fun closeQuickAccess() = _uiState.update { it.copy(quickAccessOpen = false) }
 
+    /** For the Quick access Autocorrect tile. */
+    val autocorrectOn: StateFlow<Boolean> by lazy {
+        autocorrectPreferences.settings.map { it.autocorrectEnabled }
+            .stateIn(scope, kotlinx.coroutines.flow.SharingStarted.Eagerly, autocorrectPreferences.settings.value.autocorrectEnabled)
+    }
+
+    fun toggleAutocorrect() =
+        autocorrectPreferences.setAutocorrectEnabled(!autocorrectPreferences.settings.value.autocorrectEnabled)
+
     /**
      * Switches placement, closing the panel so the result is immediately visible — the whole point
      * of these tiles is the change they make to the keyboard behind the panel.
@@ -548,7 +692,9 @@ class KeyboardViewModel(
 
     /** The Theme tile: built-in presets, then the user's own themes — see [nextTheme]. */
     fun cycleTheme() {
-        val next = nextTheme(themeRepository.currentTheme.value.id, Presets.all, customThemes())
+        // The presets Settings offers: no wallpaper-coloured Accent on Android 11 and older.
+        val presets = themePresetChoices(android.os.Build.VERSION.SDK_INT, themeRepository.currentTheme.value.id)
+        val next = nextTheme(themeRepository.currentTheme.value.id, presets, customThemes())
         themeRepository.setTheme(next)
         showBanner(next.name)
     }
@@ -767,8 +913,10 @@ class KeyboardViewModel(
 
     /**
      * Puts back the word as typed, replacing whatever candidate — swiped to, or applied by
-     * autocorrect — is showing. Deliberately does **not** save it: undoing a correction is not a
-     * request to learn the word. A further swipe up does that ([saveOrUnsaveWordInFocus]).
+     * autocorrect — is showing. When it undoes an autocorrect, the word is staged to be learned as
+     * kept over a correction ([PendingLearn.keptOverCorrection]): it is learned at the next word
+     * boundary unless the user backspaces or corrects it first. It is not an explicit save; a
+     * further swipe up does that ([saveOrUnsaveWordInFocus]).
      *
      * Applies to any way the word got into focus (being typed, just finished, or reached by moving
      * the cursor), through the same [applyActiveCorrection] every cycle step uses, so further swipes
@@ -777,6 +925,7 @@ class KeyboardViewModel(
     private fun restoreTypedWord() {
         val active = activeCorrection ?: return
         val original = active.originalWord
+        val undoesAutocorrect = lastAutocorrect?.original == original && words.isBufferEmpty
         applyActiveCorrection(original)
         // Restoring a word autocorrect replaced is the swipe version of backspace-to-revert; the
         // record must go, or the next backspace would "revert" a correction no longer on screen.
@@ -787,6 +936,11 @@ class KeyboardViewModel(
         suggestionCycleIndex = -1
         undoHistory.breakCoalescing()
         discardPendingLearn()
+        // The word is already finished (autocorrect only fires at a boundary), so no later
+        // flushWordBuffer will stage it: stage it here, to survive the next word like any other.
+        if (undoesAutocorrect && incognitoPreferences.shouldLearn() && profile.isWord(original)) {
+            pendingLearn = PendingLearn(word = original, previousWord = null, keptOverCorrection = true)
+        }
     }
 
     /**
@@ -1015,6 +1169,8 @@ class KeyboardViewModel(
      */
     fun onSelectionChanged(selectionStart: Int, selectionEnd: Int, composingEnd: Int) {
         selectionActive = selectionStart != selectionEnd
+        // A cursor move or a selection makes the text before the cursor something else.
+        updateSnippetOffer()
         if (translit.isComposing && (composingEnd < 0 || selectionStart != selectionEnd || selectionEnd != composingEnd)) {
             translit.abandon()
             refreshSuggestions()
@@ -1264,7 +1420,8 @@ class KeyboardViewModel(
             }
             return
         }
-        maybeAutocorrectBufferedWord(separator = " ")
+        // A short code the user saved is left exactly as typed, the way a saved word is.
+        if (_uiState.value.snippetOffer == null) maybeAutocorrectBufferedWord(separator = " ")
         flushWordBuffer(separator = " ")
         textEditor.insertSpace()
         words.boundarySeparator = " "
@@ -1399,6 +1556,8 @@ class KeyboardViewModel(
         if (typed.isNotEmpty() && typed == revertedWord) {
             revertedWord = null
             lastAutocorrect = null
+            // ...and finishing it unchanged is keeping it: learn it (see PendingLearn).
+            keepingRevertedWord = true
             return
         }
         revertedWord = null
@@ -1512,6 +1671,7 @@ class KeyboardViewModel(
      * [UndoHistory.breakCoalescing], so the merge only continues across an unbroken run of exactly
      * this kind of backspace. */
     private fun recordPlainCharDelete(char: Char) {
+        if (fieldSensitive) return // see pushUndo: nothing from a password field is kept
         undoHistory.recordBackspace(char)
         _uiState.update { it.copy(canUndo = undoHistory.canUndo, canRedo = undoHistory.canRedo) }
     }
@@ -1589,6 +1749,9 @@ class KeyboardViewModel(
      * open and the previous word's suggestions kept showing, stale, with nothing left to suggest
      * for). */
     internal fun refreshSuggestionsAfterDeletion() {
+        // Not every branch below reaches refreshSuggestions: "hi @@" + backspace left the offer for
+        // "@@" up over "hi @", and tapping it deleted the wrong text.
+        updateSnippetOffer()
         // Deleting the "." of ". " removes the reason for an automatic capital; deleting back to
         // the start of the field adds one.
         reevaluateAutoCapitalize()
@@ -1691,6 +1854,9 @@ class KeyboardViewModel(
     }
 
     private fun pushUndo(event: TextEdit) {
+        // Nothing typed in a password field (or omakey's own screens) is kept for undo: the history
+        // would otherwise hold the password, character by character. It starts empty for each field.
+        if (fieldSensitive) return
         undoHistory.record(event)
         // Every caller except recordPlainCharDelete's own path wants coalescing off; UndoHistory
         // handles that itself, so there is nothing to repeat at each call site.
@@ -1752,6 +1918,8 @@ class KeyboardViewModel(
      */
     private fun flushWordBuffer(separator: String = "") {
         suggestionCycleIndex = -1
+        val keptOverCorrection = keepingRevertedWord
+        keepingRevertedWord = false
         val committed = words.commitBufferedWord() ?: return
         val word = committed.word
         // Merged with the selection it was typed over, so one undo puts the old text back.
@@ -1765,7 +1933,7 @@ class KeyboardViewModel(
             // The word before this one, read before the commit shifted it — see
             // [WordTracker.commitWord] for why that comes back from the call rather than being
             // read off a field afterwards.
-            PendingLearn(word = word, previousWord = committed.previousWord)
+            PendingLearn(word = word, previousWord = committed.previousWord, keptOverCorrection = keptOverCorrection)
         } else {
             null
         }
@@ -1800,7 +1968,21 @@ class KeyboardViewModel(
      * Neither Gboard nor iOS publishes its thresholds, so there is no number to copy from them —
      * what is copyable is the principle, which all of them share: one keystroke is not evidence.
      */
-    private data class PendingLearn(val word: String, val previousWord: String?)
+    private data class PendingLearn(
+        val word: String,
+        val previousWord: String?,
+        /**
+         * Autocorrect replaced this word and the user put it back (backspace or swipe), then
+         * finished it unchanged. Learned at once ([PredictionEngine.recordKeptOverCorrection])
+         * instead of counting as one of the three uses an ordinary word needs.
+         *
+         * Without this a word autocorrect gets wrong could never be learned by typing: every use
+         * was rewritten, so none counted, and the user had to undo the same correction ("Rohan" →
+         * "than") every time until they found the swipe-up save. Still staged like any other
+         * word, so a backspace or correction before the next word cancels it.
+         */
+        val keptOverCorrection: Boolean = false,
+    )
 
     private var pendingLearn: PendingLearn? = null
 
@@ -1811,7 +1993,13 @@ class KeyboardViewModel(
         // into incognito in between, and a word typed before that flag went up is still a word they
         // don't want recorded.
         if (!incognitoPreferences.shouldLearn()) return
-        scope.launch { predictionEngine.recordAcceptedWord(pending.word, pending.previousWord) }
+        scope.launch {
+            if (pending.keptOverCorrection) {
+                predictionEngine.recordKeptOverCorrection(pending.word)
+            } else {
+                predictionEngine.recordAcceptedWord(pending.word, pending.previousWord)
+            }
+        }
     }
 
     /** Drops the staged word — the user did something that suggests it wasn't what they meant. See
@@ -1933,6 +2121,16 @@ class KeyboardViewModel(
 
     fun chooseLayout(layoutId: String) {
         localeController.chooseLayout(locale().id, layoutId)
+    }
+
+    /** Quick access "Compact" tile: hides the letter layout's bottom row. See [dev.omakey.core.layout.CompactMode]. */
+    fun toggleCompactMode() = layoutPreferences.setCompactMode(!layoutPreferences.settings.value.compactMode)
+
+    /** Quick access "Split" tile, closing the panel so the change is visible at once, as the
+     * placement tiles do. See [dev.omakey.core.layout.SplitLayout.toggled]. */
+    fun toggleSplit(screenWidthDp: Int) {
+        layoutPreferences.toggleSplit(screenWidthDp)
+        _uiState.update { it.copy(quickAccessOpen = false) }
     }
 
     /** Normal ↔ Grid, from quick access — it changes how every key is drawn, which is worth being
@@ -2089,6 +2287,7 @@ class KeyboardViewModel(
     }
 
     private fun refreshSuggestions(checkContextualCorrection: Boolean = false) {
+        updateSnippetOffer()
         // Cancels any in-flight query from the previous keystroke first — without this, a slow
         // query for an earlier (now-stale) prefix can resolve after a faster later one and
         // overwrite the suggestion strip with outdated results.

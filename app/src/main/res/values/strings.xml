@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">omakey</string>
+    <string name="snippets_title">Snippets</string>
     <string name="subtype_en_us">English (US)</string>
     <string name="settings_title">omakey Settings</string>
     <string name="settings_enable_keyboard">Enable omakey in system settings</string>

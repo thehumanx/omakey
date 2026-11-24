@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The pre-Android-12 splash: ground colour with the launcher icon in the middle. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/omakey_ground" />
+    <item android:width="96dp" android:height="96dp" android:gravity="center" android:drawable="@mipmap/ic_launcher" />
+</layer-list>

@@ -113,6 +113,18 @@ class EngineTuningTest {
             })
         }
 
+        // Both gates together: they trade against each other, so a one-at-a-time sweep misleads.
+        // Read with SpatialModelTest and the unknown-word row of EngineEvaluationTest, which this
+        // objective does not see (see AutocorrectIndex.CONFIDENCE_THRESHOLD for the 2026-11-23 run).
+        println("=== confidence threshold x ambiguity margin ===")
+        for (margin in listOf(0f, 0.75f, 1f, 1.25f, 1.5f)) {
+            for (threshold in listOf(Float.NEGATIVE_INFINITY, -9f, -8.5f, -8f, -7.5f)) {
+                measure("threshold $threshold margin $margin", AutocorrectIndex(confidenceThreshold = threshold, ambiguityMargin = margin).also {
+                    it.load(model, PersonalLanguageModel())
+                })
+            }
+        }
+
         println()
         println("=== best by net benefit ===")
         results.sortedByDescending { it.netBenefit }.take(10).forEach { println(it) }

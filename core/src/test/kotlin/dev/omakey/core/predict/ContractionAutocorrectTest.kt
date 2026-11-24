@@ -2,6 +2,7 @@ package dev.omakey.core.predict
 
 import dev.omakey.core.predict.eval.TestLanguageModel
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -40,7 +41,10 @@ class ContractionAutocorrectTest {
     @Test
     fun `a typo near a contraction key is still corrected to the word it was meant to be`() {
         // Fuzzy contraction matching is for the strip only: "wheras" is one edit from "wheres".
-        assertEquals("whereas", index.correct("wheras"))
+        // Since the confidence gates, "whereas" is ranked first but not applied silently (another
+        // reading is close behind); what this pins is that "where's" never wins.
+        assertNotEquals("where's", index.correct("wheras"))
+        assertEquals("whereas", index.rankedCorrections("wheras").first().text)
     }
 
     @Test

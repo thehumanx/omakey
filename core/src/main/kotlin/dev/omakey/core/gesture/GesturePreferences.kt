@@ -11,10 +11,10 @@ data class GestureSettings(
      * required (less sensitive, fewer accidental triggers). */
     val swipeSensitivity: Float = DEFAULT_SENSITIVITY,
     val showKeyPopup: Boolean = true,
-    /** Off by default — swipe-right already inserts a space unconditionally today, which some
-     * users want as an explicit opt-in gesture rather than always-on (e.g. it can compete with a
-     * word-cycling swipe started slightly diagonally). */
-    val swipeRightForSpace: Boolean = false,
+    /** On for fresh installs since the design pass (Fleksy's core gesture, and most users come
+     * from Fleksy); InstallDefaults keeps updating installs on "off". It can compete with a
+     * word-cycling swipe started slightly diagonally, which is why it stays a setting. */
+    val swipeRightForSpace: Boolean = true,
     /** Off by default: a swipe left takes the last word together with any space after it, so
      * "hello my name is " and "hello my name is" both become "hello my name ". On: a space after
      * the word is a swipe of its own, the word the next one (the behaviour before 5.3). */
@@ -68,12 +68,12 @@ class GesturePreferences(context: Context) {
     private fun load(prefs: SharedPreferences) = GestureSettings(
         swipeSensitivity = prefs.getFloat(KEY_SENSITIVITY, GestureSettings.DEFAULT_SENSITIVITY),
         showKeyPopup = prefs.getBoolean(KEY_SHOW_POPUP, true),
-        swipeRightForSpace = prefs.getBoolean(KEY_SWIPE_RIGHT_FOR_SPACE, false),
+        swipeRightForSpace = prefs.getBoolean(KEY_SWIPE_RIGHT_FOR_SPACE, true),
         swipeLeftSpaceIsOwnStep = prefs.getBoolean(KEY_SWIPE_LEFT_SPACE_OWN_STEP, false),
         swipeSpacebarForLanguage = prefs.getBoolean(KEY_SWIPE_SPACEBAR_LANGUAGE, false),
     )
 
-    private companion object {
+    internal companion object {
         const val PREFS_NAME = "omakey_gesture_prefs"
         const val KEY_SENSITIVITY = "swipe_sensitivity"
         const val KEY_SHOW_POPUP = "show_key_popup"

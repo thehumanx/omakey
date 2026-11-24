@@ -60,6 +60,10 @@ interface ExtensionContext {
     val clipboardRepository: ClipboardRepository
     val emojiRecents: EmojiRecentsRepository
 
+    /** Opens omakey's new-snippet form with [text] filled in (clipboard "Save as snippet"). A
+     * no-op by default, so a context without snippets needs nothing. */
+    fun saveAsSnippet(text: String) {}
+
     /**
      * [emoji] rendered in whatever skin tone the user picked in Settings, or unchanged if it
      * doesn't support tone selection.

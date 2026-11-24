@@ -28,8 +28,8 @@ android {
         // refuses same-or-lower versionCode as a downgrade and uninstalling first would wipe local
         // app data (learned words, settings, clipboard history). Bump versionName only when
         // actually cutting a release.
-        versionCode = 53
-        versionName = "5.8.2"
+        versionCode = 60
+        versionName = "6.0.0"
     }
 
     // Two distribution channels from one codebase. `sideload` is the GitHub Releases APK and keeps
@@ -70,6 +70,13 @@ android {
     }
 
     buildTypes {
+        debug {
+            // The developer's phone runs the Play install, which Play re-signs with its own key, so
+            // a locally signed build can never replace it. Debug builds install beside it as
+            // "omakey dev" (label in src/debug/res) with their own data, leaving the real
+            // keyboard's learned words and settings alone.
+            applicationIdSuffix = ".dev"
+        }
         release {
             // R8: shrinks and obfuscates. Play Console flags an app below 25 % obfuscation, and it
             // cuts the APK. What must survive by name is listed in proguard-rules.pro.

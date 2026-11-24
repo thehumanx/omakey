@@ -47,7 +47,7 @@ ever leaves your phone.
 
 ## App Updates / Plans and PSA
 - I've publicly shared this keyboard only on Reddit threads (besides my website) and few kind volunteers have tried and provided feedback on fixes/improvements and features. 
-- Languages beyond English arrived in 5.0.0: Spanish, French, Brazilian Portuguese and Nepali, each a small optional download. 5.1.0 adds Italian and Russian, 5.2.0 fixes what a Russian user reported, 5.3.0 is a round of fixes and Fleksy touches from user feedback, 5.3.1 fixes autocorrect in search boxes, and 5.4.0 adds your own long-press symbols, an optional space after punctuation, a choice of what the bar above the keys shows, and a new icon. 5.5.0 adds a number pad and password-manager logins in the suggestion bar, 5.6.0 adds search in Settings, a spacebar swipe to change language, colours that stay readable on every theme, and better romanized Nepali, and 5.7.0 is a round of closed-beta fixes: contractions on space, better Russian spelling fixes, no red underlines in other languages, a key of your choice next to the spacebar, and roomier Settings. 5.8.0 makes the spacebar easier to hit, calms the vibration, speeds up typing on slower phones, offers four key popup styles and a key of your choice in place of the emoji key, and drops the stray apostrophe key in Italian. 5.8.1 lets learned words keep your spelling ("iPhone", "Bibek") and stops the red underlines on Russian and other languages, and 5.8.2 fixes a crash when choosing omakey as the keyboard on Android 13 and older. More to come.
+- Languages beyond English arrived in 5.0.0: Spanish, French, Brazilian Portuguese and Nepali, each a small optional download. 5.1.0 adds Italian and Russian, 5.2.0 fixes what a Russian user reported, 5.3.0 is a round of fixes and Fleksy touches from user feedback, 5.3.1 fixes autocorrect in search boxes, and 5.4.0 adds your own long-press symbols, an optional space after punctuation, a choice of what the bar above the keys shows, and a new icon. 5.5.0 adds a number pad and password-manager logins in the suggestion bar, 5.6.0 adds search in Settings, a spacebar swipe to change language, colours that stay readable on every theme, and better romanized Nepali, and 5.7.0 is a round of closed-beta fixes: contractions on space, better Russian spelling fixes, no red underlines in other languages, a key of your choice next to the spacebar, and roomier Settings. 5.8.0 makes the spacebar easier to hit, calms the vibration, speeds up typing on slower phones, offers four key popup styles and a key of your choice in place of the emoji key, and drops the stray apostrophe key in Italian. 5.8.1 lets learned words keep your spelling ("iPhone", "Bibek") and stops the red underlines on Russian and other languages, and 5.8.2 fixes a crash when choosing omakey as the keyboard on Android 13 and older. 6.0.0 is the biggest update yet: a new look for the whole app and its panels, snippets (saved text and passwords a tap away), split and compact keyboards, hold-space-to-select-all, autocorrect that leaves names and slang alone, and new defaults for new installs. More to come.
 - The next build will also be released on the Google Play Store. If you'd like to help test it, reach out to omakey@iambishistha.com.
 - I am prioritizing more on optimizing the UX and autocorrection/prediction engine as its being written from the scratch.
 - The keyboard is optimized for battery usage as well. Fleksy used to take around 5-10%, while this takes just around 1%.
@@ -68,8 +68,13 @@ ever leaves your phone.
 - Undo/redo — two buttons that step back and forward through your last several typed or deleted
   words.
 - Clipboard history — text and images.
+- Snippets, like Fleksy's Hotkeys — your email, phone, address or logins a tap away above the
+  keys. Passwords can be saved as secret snippets: encrypted on your phone, shown as ••••, and
+  hidden while it's locked. Give one a short code like `@@` and it's offered as you type;
+  `{date}`, `{time}` and `{clipboard}` fill in when it's typed; export them to a file for your
+  next phone (secrets stay behind).
 - Grid layout mode — a bordered, edge-to-edge key style theme
-- Gestures like on Fleksy — swipe left deletes a whole word (Swipe left and hold keeps deleting the words), swipe up puts back what you typed and a second swipe up saves it to your dictionary, swipe up/down to switch between the suggestions/corrections, hold and drag the spacebar to move the cursor, swipe right for space (off by default).
+- Gestures like on Fleksy — swipe left deletes a whole word (Swipe left and hold keeps deleting the words), swipe up puts back what you typed and a second swipe up saves it to your dictionary, swipe up/down to switch between the suggestions/corrections, hold and drag the spacebar to move the cursor (or slide up to select all), swipe right for space (off by default).
 - An editable "Learned words" list — view, search, edit, or delete anything individually, not
   just wipe the whole dictionary (Note: the app is set to suggest your autolearned word after 3 enters).
 - A theme editor that builds a whole matching, readable theme from one background colour, with a live, tappable preview and a proper HSV/hex color picker.
@@ -130,7 +135,7 @@ ever leaves your phone.
 - Logins from Google's autofill or your password manager (Bitwarden and others) right in the
   suggestion bar when you tap a login box, on Android 11 and newer. Swipe or tap › when there are
   more than fit. The keyboard only shows them; it never sees what they contain.
-- Choose what the bar above the keys shows — suggestions, a row of numbers, text tools, or any mix.
+- Choose what the bar above the keys shows — suggestions, your snippets, a row of numbers, text tools, or any mix — and the order you swipe through them.
   Hide suggestions and tools and you have a fixed number row. Settings → Keyboard.
 - Keyboard height and position, adjustable in one screen: drag to resize, drag to lift it off the
   bottom edge for easier one-handed reach. Capped so it can never cover what you're typing into.
@@ -146,12 +151,12 @@ menus involved:
 |---|---|
 | **Swipe left** on any key | Deletes the entire last word, not just a character — its own "swoosh" sound, a thud you can feel, and a shimmer across the home row so it's unmistakably not a normal tap. A space after the word goes with it and the space before it stays: "hello my name is" becomes "hello my name ", ready for the next word. An emoji or punctuation mark glued to a word with no space (`hahaha😂`) is its own swipe. Prefer the space to take a swipe of its own? Settings → Gestures. |
 | **Swipe right** on any key | Inserts a space (off by default, one tap to turn on). Swipe right twice quickly for a period instead, if "Double-tap space for period" is on. |
-| **Swipe up** | If autocorrect or a swipe down changed your word, puts back exactly what you typed — without saving it. On the word as you typed it, saves it to your personal dictionary so it's never flagged again. Swipe up on an already-learned word to un-learn it. |
+| **Swipe up** | If autocorrect or a swipe down changed your word, puts back exactly what you typed. Undoing autocorrect this way teaches the keyboard the word once you carry on typing. On the word as you typed it, saves it to your personal dictionary so it's never flagged again. Swipe up on an already-learned word to un-learn it. |
 | **Swipe down** on the suggestion strip | Cycles backward through alternatives — the mirror of swipe up. |
 | **Swipe up/down repeatedly** | Genuinely cycles through every alternative, as many times as you want, whether the word's still being typed or you've tapped back into something you wrote a minute ago. The one about to be typed stands out; the rest fade. |
 | **Swipe up/down right after a `. , ! ? ; : ' "`** | Cycles through that whole set of punctuation instead of word suggestions — turn "." into "," into "!" and so on with repeated swipes, without retyping. Works whether the cursor sits right against the mark or one space past it, so it chains naturally off double-tap-space-for-period. |
 | **Tap and hold Shift** | Locks in caps lock. A quick tap just capitalizes the next letter, then releases. |
-| **Long-press and drag the spacebar** | Moves the cursor without needing to tap precisely inside your text — fixes a typo three words back without losing your place. |
+| **Long-press and drag the spacebar** | The keys clear away into a trackpad. Slide sideways to move the cursor without needing to tap precisely inside your text — fixes a typo three words back without losing your place. Slide up onto "Select all" and everything is selected the moment you reach it. |
 | **Swipe left/right on the spacebar** | With two or more languages, switches to the next or previous one. Off by default; turn it on in Settings → Gestures. Holding and dragging the spacebar still moves the cursor. |
 | **Long-press a letter key** with accent variants | Fades into a full-width picker for that key's variants (à, á, â, ä...) — keep holding and slide onto the one you want, lift to type it. Slide past the end for a few extra everyday symbols. Set your own long-press symbols and every letter offers exactly those instead. |
 | **Swipe left/right in the emoji panel** | Slides between emoji categories. |
@@ -174,9 +179,17 @@ moment, while looking at whatever you're typing into:
   reach. Floating, one-handed and normal each remember their own size, so changing one doesn't
   disturb the others.
 - **Grid layout** — flip between the normal and bordered-grid key styles.
-- **Theme** — cycle Light, Dark, Follow-system and Accent without leaving the keyboard.
+- **Compact** — hide the spacebar row for a keyboard one row shorter, like Fleksy's compact mode.
+- **Split** — split the keys into two halves for thumb typing, like Gboard. It comes on by
+  itself on wide screens (an unfolded foldable, a tablet, a phone in landscape); this tile turns
+  it off or on, remembered separately for wide and narrow screens.
+- **Theme** — cycle Light, Dark, Auto (follows your phone) and Wallpaper without leaving the
+  keyboard.
 - **Language** — pick a language and, where it has more than one, its layout.
 - **Settings** — one tap away.
+- **Autocorrect, Clipboard, Emoji** — extra tiles you can turn on.
+
+Choose which tiles show and their order in Settings → Quick access (hold a tile and drag it).
 
 ### More than one language
 
@@ -215,7 +228,10 @@ learned, in case you add it back.
 ### Suggestions and autocorrect
 
 - Real autocorrect — typos get fixed the moment you finish the word, not just quietly offered for
-  you to notice and tap. Got it wrong? One backspace undoes it, and it won't just re-correct back.
+  you to notice and tap. But only when it's sure: a name, slang or a word it doesn't know is left as
+  you typed it, and when two fixes are equally likely both wait in the suggestion bar instead of
+  the keyboard guessing. Got it wrong? One backspace undoes it, it won't re-correct back, and the
+  keyboard learns that word.
   Or swipe, Fleksy-style: down goes through other readings of what you typed, up puts back exactly
   what you typed (swipe up again to save it).
 - Never changes a word as you send it: pressing Search, Go or Send sends exactly what you typed.
@@ -238,8 +254,9 @@ learned, in case you add it back.
   "idk", "u") and short abbreviations in capitals ("IM", "ID") are left alone.
 - Knows what usually comes next — suggestions are ranked by the words on either side, not just by
   which word is commonest overall.
-- Learns the words *you* use. Names, slang, jargon, project names: type one three times and it
-  stops being flagged as a typo and starts turning up as a suggestion. Nothing counts as learned
+- Learns the words *you* use. Names, slang, jargon, project names: type one three times, or undo
+  a correction of it once, and it stops being flagged as a typo and starts turning up as a
+  suggestion. Nothing counts as learned
   before that, so an occasional slip doesn't stick — and a word you delete or correct straight
   after typing is never learned at all. Words you stop using fade out on their own.
 - **Incognito** — an eye button in the tools row pauses learning whenever you want it, and password
@@ -284,9 +301,12 @@ Swipe to the Tools tab for:
 
 ### Make it feel like yours
 
-- Built-in themes — Light, Dark, Follow-system, and Accent, which builds the whole keyboard from
-  your device's own Material You palette and follows your system light/dark setting. Plus an
-  option to pull just the accent from that palette on any theme.
+- Built-in themes — Light, Dark, Auto (follows your phone), and Wallpaper, which builds the whole
+  keyboard from your wallpaper's colours (Android 12 and newer) and follows your light/dark
+  setting. New installs start on Wallpaper where the phone has it. Plus an option to pull just the
+  accent from your wallpaper on any theme.
+- Settings with one calm look throughout: grouped pages, search, sheets that ask before anything
+  is deleted, and drag to reorder wherever order matters.
 - One colour rule everywhere: whatever you're pressing fills with the theme's tap colour, and
   whatever is switched on — caps lock, Shift, an open panel — takes its accent. The open emoji
   category gets a soft tint.

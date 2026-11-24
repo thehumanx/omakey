@@ -62,6 +62,11 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import dev.omakey.core.search.SearchHit
+import androidx.compose.foundation.layout.heightIn
+import dev.omakey.app.design.Omakey
+import dev.omakey.app.design.SectionLabel
+import dev.omakey.app.design.SettingsCard
+import dev.omakey.core.icons.OmakeyIcons
 
 private val EXAMPLE_QUERIES = listOf("vibration", "theme", "autocorrect", "clipboard")
 
@@ -119,19 +124,22 @@ internal fun SettingsSearchScreen(
                 hits.size == 1 -> "1 result"
                 else -> "${hits.size} results"
             },
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = Omakey.type.label,
+            color = Omakey.colors.muted,
             modifier = Modifier
-                .padding(horizontal = 4.dp, vertical = 4.dp)
+                .padding(horizontal = 8.dp, vertical = 8.dp)
                 .semantics { liveRegion = LiveRegionMode.Polite },
         )
         when {
             query.isBlank() -> EmptyState(onPick = setQuery)
             hits.isEmpty() -> NoResults(query)
-            else -> LazyColumn(Modifier.fillMaxWidth(), state = listState) {
-                items(hits, key = { it.id }) { hit ->
-                    ResultRow(hit, onClick = { keyboard?.hide(); onOpen(hit.id) })
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            else -> LazyColumn(Modifier.fillMaxWidth(), state = listState, contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 24.dp)) {
+                item {
+                    SettingsCard(dividerInset = 16.dp) {
+                        hits.forEach { hit ->
+                            androidx.compose.runtime.key(hit.id) { ResultRow(hit, onClick = { keyboard?.hide(); onOpen(hit.id) }) }
+                        }
+                    }
                 }
             }
         }
@@ -149,16 +157,17 @@ private fun SearchField(
     onSearch: () -> Unit,
     focus: FocusRequester,
 ) {
-    val container = MaterialTheme.colorScheme.surfaceContainerHigh
+    val container = Omakey.colors.tonal
     TextField(
         value = value,
         onValueChange = onValueChange,
         singleLine = true,
-        placeholder = { Text("Search settings") },
+        placeholder = { Text("Search settings", style = Omakey.type.row.copy(fontWeight = FontWeight.Normal), color = Omakey.colors.muted) },
+        textStyle = Omakey.type.row.copy(fontWeight = FontWeight.Normal),
         leadingIcon = {
             IconButton(onClick = onBack) {
                 Icon(
-                    imageVector = dev.omakey.core.icons.PhosphorLineArrowLeft,
+                    imageVector = OmakeyIcons.Back,
                     contentDescription = "Close search",
                     modifier = Modifier.size(22.dp),
                 )
@@ -168,7 +177,7 @@ private fun SearchField(
             {
                 IconButton(onClick = onClear) {
                     Icon(
-                        imageVector = dev.omakey.core.icons.PhosphorLineX,
+                        imageVector = OmakeyIcons.Close,
                         contentDescription = "Clear search",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(20.dp),
@@ -178,12 +187,13 @@ private fun SearchField(
         },
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
         keyboardActions = KeyboardActions(onSearch = { onSearch() }),
-        shape = RoundedCornerShape(28.dp),
+        shape = RoundedCornerShape(24.dp),
         colors = TextFieldDefaults.colors(
             focusedContainerColor = container,
             unfocusedContainerColor = container,
             focusedIndicatorColor = Color.Transparent,
             unfocusedIndicatorColor = Color.Transparent,
+            cursorColor = Omakey.colors.ink,
         ),
         modifier = Modifier
             .fillMaxWidth()
@@ -191,30 +201,20 @@ private fun SearchField(
     )
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun EmptyState(onPick: (String) -> Unit) {
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .padding(top = 48.dp, start = 16.dp, end = 16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Text(
-            text = "Find any setting by name.",
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-        )
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-        ) {
+    Column(Modifier.fillMaxWidth().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        SectionLabel("Try")
+        SettingsCard(dividerInset = 52.dp) {
             EXAMPLE_QUERIES.forEach { example ->
-                AssistChip(
-                    onClick = { onPick(example) },
-                    label = { Text(example) },
-                )
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable(onClickLabel = "Search for $example") { onPick(example) }.padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    Icon(OmakeyIcons.Search, contentDescription = null, tint = Omakey.colors.muted, modifier = Modifier.size(20.dp))
+                    Text(example.replaceFirstChar { it.uppercase() }, style = Omakey.type.row.copy(fontWeight = FontWeight.Normal), color = Omakey.colors.ink)
+                }
             }
         }
     }
@@ -222,32 +222,14 @@ private fun EmptyState(onPick: (String) -> Unit) {
 
 @Composable
 private fun NoResults(query: String) {
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .padding(top = 48.dp, start = 16.dp, end = 16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Text(
-            text = "No settings match “${query.trim()}”.",
-            style = MaterialTheme.typography.bodyLarge,
-            textAlign = TextAlign.Center,
-        )
-        Text(
-            text = "Try a shorter word, or browse the pages.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-        )
-    }
+    dev.omakey.app.design.EmptyState(OmakeyIcons.Search, "Nothing matches \u201c${query.trim()}\u201d. Try a shorter word, or browse the pages.")
 }
 
 @Composable
 private fun ResultRow(hit: SearchHit<SettingKey>, onClick: () -> Unit) {
     val key = hit.id
-    val crumb = "${key.section.page.title} › ${key.section.title}" +
-        (hit.matchedKeyword?.let { " · matches “$it”" } ?: "")
+    val crumb = "${key.section.page.title} · ${key.section.title}" +
+        (hit.matchedKeyword?.let { " · \u201c$it\u201d" } ?: "")
     val spoken = "${key.title}, ${key.section.page.title}, ${key.section.title} section"
     Column(
         Modifier
@@ -258,16 +240,18 @@ private fun ResultRow(hit: SearchHit<SettingKey>, onClick: () -> Unit) {
                 role = Role.Button
                 onClick(label = "Open") { onClick(); true }
             }
-            .padding(horizontal = 8.dp, vertical = 12.dp),
+            .heightIn(min = 64.dp)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        Text(text = highlighted(key.title, hit.titleHighlights), style = MaterialTheme.typography.bodyLarge)
-        Text(text = crumb, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(text = highlighted(key.title, hit.titleHighlights), style = Omakey.type.row.copy(fontWeight = FontWeight.Normal), color = Omakey.colors.ink)
+        Text(text = crumb, style = Omakey.type.body, color = Omakey.colors.muted)
     }
 }
 
 private fun highlighted(title: String, ranges: List<IntRange>): AnnotatedString = buildAnnotatedString {
     append(title)
     ranges.forEach { r ->
-        if (r.first >= 0 && r.last < title.length) addStyle(SpanStyle(fontWeight = FontWeight.Bold), r.first, r.last + 1)
+        if (r.first >= 0 && r.last < title.length) addStyle(SpanStyle(fontWeight = FontWeight.SemiBold), r.first, r.last + 1)
     }
 }

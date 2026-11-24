@@ -30,9 +30,11 @@ class FontPreferences(context: Context) {
     /** The default-fallback expression used to be written out twice, once for the initial read and
      * once in the change listener — two copies of one rule, which is how they drift apart. */
     private fun load(prefs: SharedPreferences) =
-        prefs.getString(KEY_FONT_ID, FontChoices.SYSTEM_DEFAULT) ?: FontChoices.SYSTEM_DEFAULT
+        prefs.getString(KEY_FONT_ID, DEFAULT_FONT) ?: DEFAULT_FONT
 
-    private companion object {
+    internal companion object {
+        /** Figtree, the typeface of omakey's own design, for fresh installs. */
+        const val DEFAULT_FONT = FontChoices.FIGTREE_BOLD
         const val PREFS_NAME = "omakey_font_prefs"
         const val KEY_FONT_ID = "font_id"
     }

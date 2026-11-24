@@ -7,10 +7,10 @@ import kotlinx.coroutines.flow.StateFlow
 
 data class PredictionSettings(
     /** Bigram/frequency-based "what word comes next" suggestions — separate from autocorrect
-     * (see [AutocorrectPreferences]), which fixes the word actually being typed. Off by default:
-     * the suggestion strip should only ever show something when there's an actual correction to
-     * offer, not a standing list of guesses at what's coming next. */
-    val nextWordPredictionEnabled: Boolean = false,
+     * (see [AutocorrectPreferences]), which fixes the word actually being typed. On for fresh
+     * installs since the design pass: an empty bar after a space made the keyboard look idle.
+     * InstallDefaults keeps updating installs on what they had. */
+    val nextWordPredictionEnabled: Boolean = true,
 )
 
 /** Persists the next-word-prediction on/off preference. Same SharedPreferences + cross-instance-
@@ -28,10 +28,10 @@ class PredictionPreferences(context: Context) {
     }
 
     private fun load(prefs: SharedPreferences) = PredictionSettings(
-        nextWordPredictionEnabled = prefs.getBoolean(KEY_NEXT_WORD_ENABLED, false),
+        nextWordPredictionEnabled = prefs.getBoolean(KEY_NEXT_WORD_ENABLED, true),
     )
 
-    private companion object {
+    internal companion object {
         const val PREFS_NAME = "omakey_prediction_prefs"
         const val KEY_NEXT_WORD_ENABLED = "next_word_prediction_enabled"
     }

@@ -85,3 +85,15 @@ internal fun resolveTheme(
     }
     return effective
 }
+
+/**
+ * The theme presets Settings offers. "Accent" is the device's wallpaper colours (Material You),
+ * which only exist from Android 12 (API 31); older phones fell back to a fixed palette that had
+ * nothing to do with their phone, which was confusing (real feedback), so it isn't offered there.
+ * Someone already on it keeps seeing it, so their current choice isn't left unshown.
+ */
+internal fun themePresetChoices(sdk: Int, currentId: String): List<dev.omakey.core.theme.OmakeyTheme> {
+    val presets = dev.omakey.core.theme.Presets
+    val base = listOf(presets.Light, presets.Dark, presets.Auto)
+    return if (sdk >= android.os.Build.VERSION_CODES.S || currentId == presets.Accent.id) base + presets.Accent else base
+}

@@ -74,99 +74,51 @@ import dev.omakey.core.predict.PredictionPreferences
 import dev.omakey.core.theme.AccessibilityPreferences
 import dev.omakey.core.theme.FontPreferences
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.clickable
+import dev.omakey.app.design.ButtonKind
+import dev.omakey.app.design.ChoiceTile
+import dev.omakey.app.design.DragReorderList
+import dev.omakey.app.design.Figtree
+import dev.omakey.app.design.Omakey
+import dev.omakey.app.design.OmakeyButton
+import dev.omakey.app.design.OmakeyField
+import dev.omakey.app.design.OmakeySlider
+import dev.omakey.app.design.RowTrailing
+import dev.omakey.app.design.SectionLabel
+import dev.omakey.app.design.Segmented
+import dev.omakey.app.design.SettingsCard
+import dev.omakey.app.design.SettingsRowLayout
+import dev.omakey.core.icons.OmakeyIcons
 
 /*
  * The reusable pieces of the settings list: section headers, the shared toggle and clickable rows,
  * the individual setting toggles, and the pickers. Split out of SettingsActivity.kt.
  */
 
-/** Groups related settings into a labeled, visually distinct card instead of a flat list of raw
- * text headers — the previous layout put every section at the same visual weight, which read as
- * "everything is one long list" rather than a set of related groups. */
+/** A group of related settings: its label, then a white card of rows (design: Components → Card). */
 @Composable
 internal fun SettingsSection(title: String, titleModifier: Modifier = Modifier, content: @Composable () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.labelLarge.copy(fontSize = 14.sp, fontWeight = FontWeight.SemiBold),
-            color = MaterialTheme.colorScheme.primary,
-            modifier = titleModifier.padding(start = 4.dp),
-        )
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant,
-        ) {
-            DividedColumn(
-                modifier = Modifier.padding(horizontal = 16.dp),
-                rowPadding = ROW_VERTICAL_PADDING,
-                divider = MaterialTheme.colorScheme.outlineVariant,
-                content = content,
-            )
-        }
+        SectionLabel(title, titleModifier)
+        SettingsCard(contentPadding = 16.dp, dividerInset = 0.dp, content = content)
     }
 }
 
-/** Space above and below every row in a section card (closed-beta feedback: settings felt
- * congested; the 5.7.0 "grouped cards" redesign): 14dp in all for a setting row, split so most of
- * it sits inside the row's own touch target — a tap near a divider still hits the row. */
-private val ROW_VERTICAL_PADDING = 4.dp
-private val ROW_INNER_PADDING = 10.dp
-
-/** Space between a row's text and the switch or caret at its end. It was 0, so long descriptions
- * ran right up to the switch. */
+/** Space between a row's text and the switch or caret at its end. */
 internal val ROW_CONTROL_GAP = 16.dp
 
-/**
- * A column that gives each child [rowPadding] above and below and draws a hairline between
- * neighbouring children, so a section card reads as a list of rows without every caller adding
- * its own dividers. A child that takes no height (a row hidden by its parent setting) gets neither
- * padding nor a divider, so hiding a row never leaves a doubled line.
- */
+/** A setting that isn't a single row (pickers, fields): its own padding inside the card. */
 @Composable
-private fun DividedColumn(modifier: Modifier, rowPadding: Dp, divider: Color, content: @Composable () -> Unit) {
-    val lines = remember { DividerLines() }
-    Layout(
-        content = content,
-        modifier = modifier.drawWithContent {
-            drawContent()
-            val stroke = 1.dp.toPx()
-            for (y in lines.ys) drawLine(divider, Offset(0f, y), Offset(size.width, y), stroke)
-        },
-    ) { measurables, constraints ->
-        val pad = rowPadding.roundToPx()
-        val placeables = measurables.map { it.measure(constraints.copy(minHeight = 0)) }
-        val shown = placeables.count { it.height > 0 }
-        val height = placeables.sumOf { it.height } + pad * 2 * shown
-        layout(constraints.maxWidth, height.coerceIn(constraints.minHeight, constraints.maxHeight)) {
-            val ys = ArrayList<Float>()
-            var y = 0
-            var first = true
-            for (p in placeables) {
-                if (p.height == 0) { p.placeRelative(0, y); continue }
-                if (!first) ys += y.toFloat()
-                first = false
-                y += pad
-                p.placeRelative(0, y)
-                y += p.height + pad
-            }
-            lines.ys = ys
-        }
-    }
+internal fun SettingBlock(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    Column(modifier.fillMaxWidth().padding(vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) { content() }
 }
 
-/** Where [DividedColumn] last placed its dividers; written at layout, read at draw time. State, so
- * a row that changes height without changing the card's size still redraws the lines in place. */
-private class DividerLines {
-    var ys: List<Float> by mutableStateOf(emptyList())
-}
-
-/** A row's title and its one-line explanation: the title at body size, the explanation a step
- * smaller and muted so the eye lands on titles first. */
+/** A row's title and its one-line explanation: Row type over muted Body. */
 @Composable
 internal fun SettingText(title: String, description: String?, modifier: Modifier = Modifier) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(text = title, style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium))
+        Text(text = title, style = Omakey.type.row, color = Omakey.colors.ink)
         if (!description.isNullOrEmpty()) SettingDescription(description)
     }
 }
@@ -174,7 +126,7 @@ internal fun SettingText(title: String, description: String?, modifier: Modifier
 /** Explanatory text under a setting, in the muted description style. */
 @Composable
 internal fun SettingDescription(text: String, modifier: Modifier = Modifier) {
-    Text(text = text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = modifier)
+    Text(text = text, style = Omakey.type.body, color = Omakey.colors.muted, modifier = modifier)
 }
 
 /** A section card from the index. A picker section with no row title of its own (Theme, Font…)
@@ -206,63 +158,54 @@ private fun isOmakeyEnabled(context: android.content.Context): Boolean {
     return imm.enabledInputMethodList.any { it.packageName == context.packageName }
 }
 
-/** Re-checked on every `ON_RESUME` (not just once) — the whole point of these two checks is to
- * reflect whatever just happened in the system Settings screen the two Setup buttons send the
- * user to, and that screen is a separate Activity this one resumes underneath when they come
- * back. */
+/** Re-checked on every resume (the system's keyboard list is a separate screen) and whenever the
+ * system's keyboard settings change. Choosing a keyboard from the switcher doesn't pause this
+ * screen, so a resume alone missed it and the card kept saying "Make omakey your keyboard". */
 @Composable
 internal fun rememberSetupStatus(): Pair<Boolean, Boolean> {
     val context = LocalContext.current
     var isEnabled by remember { mutableStateOf(isOmakeyEnabled(context)) }
     var isDefault by remember { mutableStateOf(isOmakeyDefaultIme(context)) }
+    val refresh = {
+        isEnabled = isOmakeyEnabled(context)
+        isDefault = isOmakeyDefaultIme(context)
+    }
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
-                isEnabled = isOmakeyEnabled(context)
-                isDefault = isOmakeyDefaultIme(context)
-            }
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) refresh()
         }
         lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+        val settingsObserver = object : android.database.ContentObserver(android.os.Handler(android.os.Looper.getMainLooper())) {
+            override fun onChange(selfChange: Boolean) = refresh()
+        }
+        val resolver = context.contentResolver
+        resolver.registerContentObserver(Settings.Secure.getUriFor(Settings.Secure.DEFAULT_INPUT_METHOD), false, settingsObserver)
+        resolver.registerContentObserver(Settings.Secure.getUriFor(Settings.Secure.ENABLED_INPUT_METHODS), false, settingsObserver)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            resolver.unregisterContentObserver(settingsObserver)
+        }
     }
     return isEnabled to isDefault
 }
 
-/** A checkmark once the corresponding Setup step is done, an exclamation mark while it still
- * needs attention — quick at-a-glance status instead of having to tap each button to find out. */
-@Composable
-internal fun SetupStatusIcon(done: Boolean) {
-    Icon(
-        imageVector = if (done) dev.omakey.core.icons.PhosphorLineCheckCircle else dev.omakey.core.icons.PhosphorLineWarningCircle,
-        contentDescription = if (done) "Done" else "Not done yet",
-        tint = androidx.compose.ui.graphics.Color(if (done) 0xFF3A9D5D else 0xFFC77B00),
-        modifier = Modifier.size(22.dp),
-    )
-}
-
+/** "Ag" in each font, on a tonal tile; the chosen font has an ink ring and a check. */
 @Composable
 internal fun FontPicker(fontPreferences: FontPreferences, currentFontId: String) {
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    SettingBlock {
         FontCatalog.displayNames.forEach { (id, name) ->
             val selected = id == currentFontId
-            val borderColor = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { fontPreferences.setFont(id) }
-                    .border(width = 2.dp, color = borderColor, shape = RoundedCornerShape(12.dp))
-                    .padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Text(
-                    text = "Ag",
-                    fontFamily = FontCatalog.resolve(id),
-                    fontSize = 22.sp,
-                    modifier = Modifier.width(40.dp),
-                )
-                Text(text = name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+            ChoiceTile(selected = selected, onClick = { fontPreferences.setFont(id) }, modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    Text(text = "Ag", fontFamily = FontCatalog.resolve(id) ?: Figtree, fontSize = 22.sp, color = Omakey.colors.ink, modifier = Modifier.width(36.dp))
+                    Text(text = name, style = Omakey.type.row, color = Omakey.colors.ink, modifier = Modifier.weight(1f))
+                    if (selected) Icon(OmakeyIcons.Check, contentDescription = "Chosen", tint = Omakey.colors.ink, modifier = Modifier.size(20.dp))
+                }
             }
         }
     }
@@ -272,52 +215,23 @@ internal fun FontPicker(fontPreferences: FontPreferences, currentFontId: String)
  * The six Fitzpatrick tones, each drawn as the actual toned emoji rather than a colour swatch.
  *
  * A flat colour chip would be a guess at what the font renders — tones vary between emoji fonts,
- * and the point of the setting is what lands in the message. Showing the real glyph means the
- * preview cannot disagree with the result. "Default" is the unmodified yellow, which is an absence
- * of a modifier rather than a sixth tone, and reads correctly as such when shown alongside.
+ * and the point of the setting is what lands in the message. "Default" is the unmodified yellow.
  */
 @Composable
 internal fun EmojiSkinTonePicker(preferences: EmojiSkinTonePreferences) {
     val current by preferences.skinTone.collectAsState()
-    Column(rememberSettingHighlight(SettingKey.EMOJI_SKIN_TONE), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(text = SettingKey.EMOJI_SKIN_TONE.title, style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium))
-        Text(
-            text = "Used for hands, faces and people.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
+    SettingBlock(rememberSettingHighlight(SettingKey.EMOJI_SKIN_TONE)) {
+        SettingText(SettingKey.EMOJI_SKIN_TONE.title, "For hands, faces and people. Now: ${current.label.lowercase()}.")
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             for (tone in EmojiSkinTone.ALL) {
-                val selected = tone == current
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(48.dp)
-                        .background(
-                            if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-                            RoundedCornerShape(8.dp),
-                        )
-                        .border(
-                            width = if (selected) 2.dp else 0.dp,
-                            color = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
-                            shape = RoundedCornerShape(8.dp),
-                        )
-                        .clickable { preferences.setSkinTone(tone) }
-                        .semantics { contentDescription = tone.label },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(text = tone.sample, fontSize = 22.sp)
-                }
+                ChoiceTile(
+                    selected = tone == current,
+                    onClick = { preferences.setSkinTone(tone) },
+                    label = tone.label,
+                    modifier = Modifier.weight(1f).height(48.dp),
+                ) { Text(text = tone.sample, fontSize = 22.sp) }
             }
         }
-        Text(
-            text = current.label,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
     }
 }
 
@@ -325,7 +239,7 @@ internal fun EmojiSkinTonePicker(preferences: EmojiSkinTonePreferences) {
 internal fun AutocorrectToggle(settings: AutocorrectSettings, autocorrectPreferences: AutocorrectPreferences) {
     SettingToggle(
         key = SettingKey.AUTOCORRECT,
-        description = "Fix typos when you finish a word. Press backspace straight after to undo the fix.",
+        description = "Fix clear typos as you finish a word. Backspace undoes a fix.",
         checked = settings.autocorrectEnabled,
         onCheckedChange = autocorrectPreferences::setAutocorrectEnabled,
     )
@@ -345,7 +259,7 @@ internal fun AutoCapitalizeToggle(settings: AutocorrectSettings, autocorrectPref
 internal fun DoubleTapSpaceForPeriodToggle(settings: AutocorrectSettings, autocorrectPreferences: AutocorrectPreferences) {
     SettingToggle(
         key = SettingKey.DOUBLE_TAP_PERIOD,
-        description = "Tap space twice to end a sentence with a full stop.",
+        description = "Tap space twice to end a sentence.",
         checked = settings.doubleTapSpaceForPeriod,
         onCheckedChange = autocorrectPreferences::setDoubleTapSpaceForPeriod,
     )
@@ -355,7 +269,7 @@ internal fun DoubleTapSpaceForPeriodToggle(settings: AutocorrectSettings, autoco
 internal fun AutoSpaceAfterPunctuationToggle(settings: AutocorrectSettings, autocorrectPreferences: AutocorrectPreferences) {
     SettingToggle(
         key = SettingKey.SPACE_AFTER_PUNCTUATION,
-        description = "Add a space after . , ! ? : and ; so you can keep typing.",
+        description = "Add a space after . , ! ? : and ;",
         checked = settings.autoSpaceAfterPunctuation,
         onCheckedChange = autocorrectPreferences::setAutoSpaceAfterPunctuation,
     )
@@ -366,7 +280,7 @@ internal fun NextWordPredictionToggle(predictionPreferences: PredictionPreferenc
     val settings by predictionPreferences.settings.collectAsState()
     SettingToggle(
         key = SettingKey.NEXT_WORD_PREDICTION,
-        description = "Suggest the next word after you finish one.",
+        description = "Suggest the next word after a space.",
         checked = settings.nextWordPredictionEnabled,
         onCheckedChange = predictionPreferences::setNextWordPredictionEnabled,
     )
@@ -377,104 +291,206 @@ internal fun ImplicitLearningToggle(incognitoPreferences: IncognitoPreferences) 
     val settings by incognitoPreferences.settings.collectAsState()
     SettingToggle(
         key = SettingKey.LEARN_FROM_TYPING,
-        description = "Remember names and words you type often so they stop being corrected. Stays on this phone, and never learns from password fields.",
+        description = "Remember names and words you use. Never from password fields.",
         checked = settings.implicitLearningEnabled,
         onCheckedChange = incognitoPreferences::setImplicitLearningEnabled,
     )
 }
 
-/** "Key backgrounds" (renamed from "Boxed keys" — the old name read as a reference to Grid mode,
- * which this toggle has nothing to do with; Grid mode always shows bordered cells regardless of
- * this setting) and "Home row highlight" — both purely visual, so they live in Appearance now
- * rather than Typing. */
-/** The enlarged-character bubble above a tapped key. Lives in Typing, not Appearance: it is
- * feedback about what you just typed, and it appears only while typing — grouping it with static
- * looks (themes, fonts, key shapes) put it where nobody would look for it. Distinct from
- * `GestureSettings.showKeyPopup`, the long-press accent popup, which is in Gestures. */
+/** The enlarged-character bubble above a tapped key. Distinct from `GestureSettings.showKeyPopup`,
+ * the long-press accent popup, which is in Gestures. */
 @Composable
 internal fun TapPreviewStylePicker(settings: LayoutSettings, layoutPreferences: LayoutPreferences) {
     val options = listOf(
         dev.omakey.core.layout.TapPreviewStyle.CLASSIC to "Classic",
         dev.omakey.core.layout.TapPreviewStyle.SLIM to "Slim",
-        dev.omakey.core.layout.TapPreviewStyle.LIFT to "Key lift",
+        dev.omakey.core.layout.TapPreviewStyle.LIFT to "Lift",
         dev.omakey.core.layout.TapPreviewStyle.OFF to "Off",
     )
     val description = when (settings.tapPreviewStyle) {
-        dev.omakey.core.layout.TapPreviewStyle.CLASSIC -> "A bigger copy of each letter above your finger as you tap it."
-        dev.omakey.core.layout.TapPreviewStyle.SLIM -> "A smaller, lighter copy of each letter, just above the key."
-        dev.omakey.core.layout.TapPreviewStyle.LIFT -> "The key you press rises and grows a little."
+        dev.omakey.core.layout.TapPreviewStyle.CLASSIC -> "A bigger copy of the letter above your finger."
+        dev.omakey.core.layout.TapPreviewStyle.SLIM -> "A small copy of the letter, just above the key."
+        dev.omakey.core.layout.TapPreviewStyle.LIFT -> "The key rises and grows a little."
         dev.omakey.core.layout.TapPreviewStyle.OFF -> "Only the key you press lights up."
     }
-    Column(
-        rememberSettingHighlight(SettingKey.TAP_PREVIEW).padding(vertical = ROW_INNER_PADDING),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
+    SettingBlock(rememberSettingHighlight(SettingKey.TAP_PREVIEW)) {
         SettingText(SettingKey.TAP_PREVIEW.title, description)
-        androidx.compose.material3.SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-            options.forEachIndexed { index, (style, label) ->
-                SegmentedButton(
-                    selected = style == settings.tapPreviewStyle,
-                    onClick = { layoutPreferences.setTapPreviewStyle(style) },
-                    shape = androidx.compose.material3.SegmentedButtonDefaults.itemShape(index = index, count = options.size),
-                    icon = {},
-                    label = { Text(label, maxLines = 1) },
+        Segmented(options, settings.tapPreviewStyle, layoutPreferences::setTapPreviewStyle)
+    }
+}
+
+/**
+ * Bar pages (GitHub issue #10): Suggestions first, with the password-manager switch under it since
+ * that's where the logins appear, then the other pages in a list you reorder by dragging. The last
+ * page shown can't be turned off — see [dev.omakey.app.keyboard.TopStripSettings].
+ */
+@Composable
+internal fun BarPagesPage(topStripPreferences: dev.omakey.app.keyboard.TopStripTabPreferences) {
+    val settings by topStripPreferences.settings.collectAsState()
+    val pages = settings.pages
+    val context = LocalContext.current
+    val lastOne = pages.size == 1
+
+    Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
+        SettingDescription("The pages you swipe between above the keys. Hold a page and drag it to change the order.", Modifier.padding(horizontal = 4.dp))
+        SettingsCard(dividerInset = 70.dp) {
+            val suggestionsShown = dev.omakey.app.keyboard.TopStripTab.SUGGESTIONS in pages
+            SettingsRowLayout(
+                title = SettingKey.BAR_SUGGESTIONS.title,
+                description = if (suggestionsShown && lastOne) "Always first. One page stays on." else "Always first",
+                icon = OmakeyIcons.Type,
+                trailing = RowTrailing.Switch(suggestionsShown),
+                modifier = rememberSettingHighlight(SettingKey.BAR_SUGGESTIONS).toggleable(
+                    value = suggestionsShown, role = Role.Switch,
+                    onValueChange = { topStripPreferences.setPageShown(dev.omakey.app.keyboard.TopStripTab.SUGGESTIONS, it) },
+                ),
+            )
+            Box(Modifier.padding(start = 54.dp)) {
+                SettingsRowLayout(
+                    title = SettingKey.AUTOFILL.title,
+                    description = "Logins from apps like Bitwarden. omakey can't see the passwords.",
+                    trailing = RowTrailing.Switch(settings.autofillSuggestions),
+                    modifier = rememberSettingHighlight(SettingKey.AUTOFILL).toggleable(
+                        value = settings.autofillSuggestions, role = Role.Switch,
+                        onValueChange = topStripPreferences::setAutofillSuggestions,
+                    ),
+                )
+            }
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            SectionLabel("Then, in this order")
+            val movable = settings.movableOrder
+            DragReorderList(
+                items = movable,
+                label = { barPageKey(it).title },
+                onMove = { from, to -> topStripPreferences.movePage(movable[from], to - from) },
+            ) { page, _ ->
+                val key = barPageKey(page)
+                val shown = page in pages
+                Row(
+                    rememberSettingHighlight(key).fillMaxWidth().toggleable(
+                        value = shown, role = Role.Switch,
+                        onValueChange = { topStripPreferences.setPageShown(page, it) },
+                    ).padding(start = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(OmakeyIcons.Grip, contentDescription = null, tint = Omakey.colors.subtle, modifier = Modifier.size(18.dp))
+                    SettingsRowLayout(
+                        title = key.title,
+                        description = when {
+                            shown && lastOne -> "One page stays on."
+                            page == dev.omakey.app.keyboard.TopStripTab.SNIPPETS -> null
+                            else -> null
+                        },
+                        icon = barPageIcon(page),
+                        trailing = RowTrailing.Switch(shown),
+                        horizontalPadding = 12.dp,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+            OmakeyButton(
+                text = "Manage snippets",
+                icon = OmakeyIcons.Snippet,
+                onClick = { openSnippets(context) },
+                modifier = Modifier.padding(top = 8.dp),
+            )
+        }
+    }
+}
+
+/** Quick access: every tile with a switch, in the order the panel shows them; hold to reorder. */
+@Composable
+internal fun QuickAccessTilesPage() {
+    val context = LocalContext.current
+    val prefs = remember { dev.omakey.core.layout.QuickAccessPreferences(context) }
+    androidx.compose.runtime.DisposableEffect(prefs) { onDispose { prefs.close() } }
+    val tiles by prefs.tiles.collectAsState()
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp), modifier = rememberSettingHighlight(SettingKey.QUICK_ACCESS_TILES)) {
+        SettingDescription("The tiles behind the button at the left of the bar. Hold a tile and drag it to change the order.", Modifier.padding(horizontal = 4.dp))
+        DragReorderList(
+            items = tiles.order,
+            label = { quickTileName(it) },
+            onMove = { from, to -> prefs.move(from, to) },
+        ) { tile, _ ->
+            val shown = tile !in tiles.hidden
+            Row(
+                Modifier.fillMaxWidth().toggleable(value = shown, role = Role.Switch, onValueChange = { prefs.setShown(tile, it) }).padding(start = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(OmakeyIcons.Grip, contentDescription = null, tint = Omakey.colors.subtle, modifier = Modifier.size(18.dp))
+                SettingsRowLayout(
+                    title = quickTileName(tile),
+                    description = quickTileNote(tile, shown && tiles.shown.size == 1),
+                    icon = quickTileIcon(tile),
+                    trailing = RowTrailing.Switch(shown),
+                    horizontalPadding = 12.dp,
+                    modifier = Modifier.weight(1f),
                 )
             }
         }
     }
 }
 
-/** Blank gutters down both sides of the keyboard. Fleksy shipped the same option for the same
- * reason — on a phone with no side bezel the outer keys sit where the glass curves away, which is
- * exactly where a thumb slides off. */
-
-/** Which of the bar's swipeable pages are shown (GitHub issue #10). The last one shown can't be
- * turned off — see [dev.omakey.app.keyboard.TopStripSettings]. */
-@Composable
-internal fun TopStripPagesSection(topStripPreferences: dev.omakey.app.keyboard.TopStripTabPreferences) {
-    val settings by topStripPreferences.settings.collectAsState()
-    val pages = settings.pages
-    @Composable
-    fun PageToggle(page: dev.omakey.app.keyboard.TopStripTab, key: SettingKey, description: String) {
-        val shown = page in pages
-        SettingToggle(
-            key = key,
-            description = if (shown && pages.size == 1) "$description At least one page stays on." else description,
-            checked = shown,
-            onCheckedChange = { topStripPreferences.setPageShown(page, it) },
-        )
-    }
-    // No wrapping Column: each row is its own row of the section card.
-    Text(
-        text = "Pages you can swipe between above the keys. Turn off the ones you don't need.",
-        style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-    PageToggle(
-        dev.omakey.app.keyboard.TopStripTab.SUGGESTIONS,
-        SettingKey.BAR_SUGGESTIONS,
-        "Word suggestions, shortcuts and the language button.",
-    )
-    PageToggle(dev.omakey.app.keyboard.TopStripTab.NUMBERS, SettingKey.BAR_NUMBERS, "A row of numbers.")
-    PageToggle(
-        dev.omakey.app.keyboard.TopStripTab.TOOLS,
-        SettingKey.BAR_TEXT_TOOLS,
-        "Undo, redo, select all, copy, cut, paste and your clipboard.",
-    )
-    // Shown on every Android version; below 11 there is nothing for it to ask for, which the
-    // description says rather than hiding a setting people read about.
-    SettingToggle(
-        key = SettingKey.AUTOFILL,
-        description = "Shows logins from apps like Bitwarden above the keys. omakey can't see the passwords.",
-        checked = settings.autofillSuggestions,
-        onCheckedChange = topStripPreferences::setAutofillSuggestions,
-    )
+private fun quickTileName(t: dev.omakey.core.layout.QuickTileId) = when (t) {
+    dev.omakey.core.layout.QuickTileId.INCOGNITO -> "Incognito"
+    dev.omakey.core.layout.QuickTileId.ONE_HANDED -> "One-handed"
+    dev.omakey.core.layout.QuickTileId.FLOATING -> "Floating"
+    dev.omakey.core.layout.QuickTileId.RESIZE -> "Resize"
+    dev.omakey.core.layout.QuickTileId.GRID -> "Grid layout"
+    dev.omakey.core.layout.QuickTileId.COMPACT -> "Compact"
+    dev.omakey.core.layout.QuickTileId.SPLIT -> "Split"
+    dev.omakey.core.layout.QuickTileId.THEME -> "Theme"
+    dev.omakey.core.layout.QuickTileId.SETTINGS -> "Settings"
+    dev.omakey.core.layout.QuickTileId.LANGUAGE -> "Language"
+    dev.omakey.core.layout.QuickTileId.AUTOCORRECT -> "Autocorrect"
+    dev.omakey.core.layout.QuickTileId.CLIPBOARD -> "Clipboard"
+    dev.omakey.core.layout.QuickTileId.EMOJI -> "Emoji"
 }
 
+private fun quickTileNote(t: dev.omakey.core.layout.QuickTileId, lastOne: Boolean): String? = when {
+    lastOne -> "One tile stays on."
+    t == dev.omakey.core.layout.QuickTileId.LANGUAGE -> "Shown with two or more languages"
+    t == dev.omakey.core.layout.QuickTileId.AUTOCORRECT -> "Turn autocorrect on or off"
+    else -> null
+}
+
+private fun quickTileIcon(t: dev.omakey.core.layout.QuickTileId) = when (t) {
+    dev.omakey.core.layout.QuickTileId.INCOGNITO -> OmakeyIcons.Incognito
+    dev.omakey.core.layout.QuickTileId.ONE_HANDED -> OmakeyIcons.OneHanded
+    dev.omakey.core.layout.QuickTileId.FLOATING -> OmakeyIcons.Floating
+    dev.omakey.core.layout.QuickTileId.RESIZE -> OmakeyIcons.Resize
+    dev.omakey.core.layout.QuickTileId.GRID -> OmakeyIcons.LayoutGrid
+    dev.omakey.core.layout.QuickTileId.COMPACT -> OmakeyIcons.LayoutRows
+    dev.omakey.core.layout.QuickTileId.SPLIT -> OmakeyIcons.Split
+    dev.omakey.core.layout.QuickTileId.THEME -> OmakeyIcons.Theme
+    dev.omakey.core.layout.QuickTileId.SETTINGS -> OmakeyIcons.Settings
+    dev.omakey.core.layout.QuickTileId.LANGUAGE -> OmakeyIcons.Globe
+    dev.omakey.core.layout.QuickTileId.AUTOCORRECT -> OmakeyIcons.Check
+    dev.omakey.core.layout.QuickTileId.CLIPBOARD -> OmakeyIcons.Clipboard
+    dev.omakey.core.layout.QuickTileId.EMOJI -> OmakeyIcons.Emoji
+}
+
+private fun barPageKey(page: dev.omakey.app.keyboard.TopStripTab): SettingKey = when (page) {
+    dev.omakey.app.keyboard.TopStripTab.SUGGESTIONS -> SettingKey.BAR_SUGGESTIONS
+    dev.omakey.app.keyboard.TopStripTab.SNIPPETS -> SettingKey.BAR_SNIPPETS
+    dev.omakey.app.keyboard.TopStripTab.NUMBERS -> SettingKey.BAR_NUMBERS
+    dev.omakey.app.keyboard.TopStripTab.TOOLS -> SettingKey.BAR_TEXT_TOOLS
+}
+
+private fun barPageIcon(page: dev.omakey.app.keyboard.TopStripTab) = when (page) {
+    dev.omakey.app.keyboard.TopStripTab.SUGGESTIONS -> OmakeyIcons.Type
+    dev.omakey.app.keyboard.TopStripTab.SNIPPETS -> OmakeyIcons.Snippet
+    dev.omakey.app.keyboard.TopStripTab.NUMBERS -> OmakeyIcons.Hash
+    dev.omakey.app.keyboard.TopStripTab.TOOLS -> OmakeyIcons.Undo
+}
+
+/** Blank gutters down both sides of the keyboard, for phones whose glass curves away at the edges. */
 @Composable
 internal fun EdgePaddingToggle(settings: LayoutSettings, layoutPreferences: LayoutPreferences) {
     SettingToggle(
         key = SettingKey.EDGE_PADDING,
-        description = "Leave space at the left and right edges. Helps on curved screens; keys get a little narrower.",
+        description = "Leave space at the edges, for curved screens.",
         checked = settings.edgePadding,
         onCheckedChange = layoutPreferences::setEdgePadding,
     )
@@ -482,18 +498,28 @@ internal fun EdgePaddingToggle(settings: LayoutSettings, layoutPreferences: Layo
 
 @Composable
 internal fun AppearanceLayoutToggles(settings: LayoutSettings, layoutPreferences: LayoutPreferences) {
-    // No wrapping Column: each row is its own row of the section card.
     SettingToggle(
         key = SettingKey.KEY_BACKGROUNDS,
-        description = "Draw a box behind each key.",
+        description = "A box behind each key.",
         checked = settings.showKeyBackgrounds,
         onCheckedChange = layoutPreferences::setShowKeyBackgrounds,
     )
     SettingToggle(
         key = SettingKey.HOME_ROW_HIGHLIGHT,
-        description = "Shade the middle row of letters so it stands out.",
+        description = "Shade the middle row of letters.",
         checked = settings.showMiddleRowStripe,
         onCheckedChange = layoutPreferences::setShowMiddleRowStripe,
+    )
+}
+
+/** Split-keyboard detail: only means something on a wide screen, so it sits with Size & position. */
+@Composable
+internal fun SplitDuplicateKeysToggle(settings: LayoutSettings, layoutPreferences: LayoutPreferences) {
+    SettingToggle(
+        key = SettingKey.SPLIT_DUPLICATE_KEYS,
+        description = "When split, show G and V on both halves.",
+        checked = settings.splitDuplicateKeys,
+        onCheckedChange = layoutPreferences::setSplitDuplicateKeys,
     )
 }
 
@@ -501,7 +527,7 @@ internal fun AppearanceLayoutToggles(settings: LayoutSettings, layoutPreferences
 internal fun CapitalizationToggleSection(settings: LayoutSettings, layoutPreferences: LayoutPreferences) {
     SettingToggle(
         key = SettingKey.ALWAYS_CAPITALS,
-        description = "Show capitals on the keys all the time. Turn off to see lowercase until you press Shift.",
+        description = "Off shows lowercase until you press Shift.",
         checked = settings.alwaysShowUppercaseLetters,
         onCheckedChange = layoutPreferences::setAlwaysShowUppercaseLetters,
     )
@@ -511,7 +537,7 @@ internal fun CapitalizationToggleSection(settings: LayoutSettings, layoutPrefere
 internal fun SecondarySymbolsToggle(settings: LayoutSettings, layoutPreferences: LayoutPreferences) {
     SettingToggle(
         key = SettingKey.SECONDARY_SYMBOLS,
-        description = "Show a small symbol in the corner of each key. Hold the key to type it.",
+        description = "A small symbol in each key's corner. Hold to type it.",
         checked = settings.showSecondarySymbols,
         onCheckedChange = layoutPreferences::setShowSecondarySymbols,
     )
@@ -523,38 +549,36 @@ internal fun SecondarySymbolsToggle(settings: LayoutSettings, layoutPreferences:
 internal fun NumberPadSection(settings: LayoutSettings, layoutPreferences: LayoutPreferences) {
     SettingToggle(
         key = SettingKey.NUMBER_PAD,
-        description = "Show a number pad in boxes that only take numbers, like prices and phone numbers.",
+        description = "In boxes that only take numbers, like prices.",
         checked = settings.numberPad,
         onCheckedChange = layoutPreferences::setNumberPad,
     )
     if (!settings.numberPad) return
-    Column(Modifier.padding(start = 16.dp)) {
-        UnindexedSettingToggle(
-            title = "Number fields",
-            description = "Prices, PINs and SMS codes.",
-            checked = settings.numberPadNumber,
-            onCheckedChange = { layoutPreferences.setNumberPadFor(dev.omakey.core.layout.NumberPadKind.NUMBER, it) },
-        )
-        UnindexedSettingToggle(
-            title = "Phone fields",
-            description = "With letters on the digits while \"Show secondary symbols\" is on.",
-            checked = settings.numberPadPhone,
-            onCheckedChange = { layoutPreferences.setNumberPadFor(dev.omakey.core.layout.NumberPadKind.PHONE, it) },
-        )
-        UnindexedSettingToggle(
-            title = "Date and time fields",
-            description = "Dates like 26.10.2026 and times like 18:30.",
-            checked = settings.numberPadDateTime,
-            onCheckedChange = { layoutPreferences.setNumberPadFor(dev.omakey.core.layout.NumberPadKind.DATETIME, it) },
-        )
-    }
+    UnindexedSettingToggle(
+        title = "Number fields",
+        description = "Prices, PINs and SMS codes.",
+        checked = settings.numberPadNumber,
+        onCheckedChange = { layoutPreferences.setNumberPadFor(dev.omakey.core.layout.NumberPadKind.NUMBER, it) },
+    )
+    UnindexedSettingToggle(
+        title = "Phone fields",
+        description = "Letters on the digits when secondary symbols are on.",
+        checked = settings.numberPadPhone,
+        onCheckedChange = { layoutPreferences.setNumberPadFor(dev.omakey.core.layout.NumberPadKind.PHONE, it) },
+    )
+    UnindexedSettingToggle(
+        title = "Date and time fields",
+        description = "Like 26.10.2026 and 18:30.",
+        checked = settings.numberPadDateTime,
+        onCheckedChange = { layoutPreferences.setNumberPadFor(dev.omakey.core.layout.NumberPadKind.DATETIME, it) },
+    )
 }
 
 @Composable
 internal fun FleksySymbolsToggle(settings: LayoutSettings, layoutPreferences: LayoutPreferences) {
     SettingToggle(
         key = SettingKey.FLEKSY_SYMBOLS,
-        description = "Arrange the ?123 page like Fleksy. Turn off for omakey's original arrangement.",
+        description = "Arrange the ?123 page the way Fleksy does.",
         checked = settings.fleksySymbols,
         onCheckedChange = layoutPreferences::setFleksySymbols,
     )
@@ -566,14 +590,9 @@ internal fun FleksySymbolsToggle(settings: LayoutSettings, layoutPreferences: La
 @Composable
 internal fun PopupSymbolsField(settings: LayoutSettings, layoutPreferences: LayoutPreferences) {
     var text by remember { mutableStateOf(settings.popupSymbols.joinToString(" ")) }
-    Column(rememberSettingHighlight(SettingKey.POPUP_SYMBOLS).fillMaxWidth()) {
-        Text(text = SettingKey.POPUP_SYMBOLS.title, style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium))
-        Text(
-            text = "Choose what appears when you hold any letter, like @ # \$ _ &. Leave empty to keep each key's own.",
-            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.height(8.dp))
-        OutlinedTextField(
+    SettingBlock(rememberSettingHighlight(SettingKey.POPUP_SYMBOLS)) {
+        SettingText(SettingKey.POPUP_SYMBOLS.title, "What appears when you hold any letter. Empty keeps each key's own.")
+        OmakeyField(
             value = text,
             onValueChange = {
                 // An 11th symbol or a repeat is refused here rather than dropped on save, so the
@@ -583,12 +602,8 @@ internal fun PopupSymbolsField(settings: LayoutSettings, layoutPreferences: Layo
                     layoutPreferences.setPopupSymbols(it)
                 }
             },
-            modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text(text = "Each key's own") },
-            supportingText = {
-                Text(text = "${popupSymbolsAsTyped(text)?.size ?: 0} / $MAX_POPUP_SYMBOLS · no repeats")
-            },
-            singleLine = true,
+            placeholder = "Each key's own",
+            supporting = "${popupSymbolsAsTyped(text)?.size ?: 0} of $MAX_POPUP_SYMBOLS · no repeats",
         )
     }
 }
@@ -603,61 +618,46 @@ internal fun SettingToggle(key: SettingKey, description: String, checked: Boolea
 @Composable
 internal fun UnindexedSettingToggle(
     title: String,
-    description: String,
+    description: String?,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
 ) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .toggleable(value = checked, role = Role.Switch, onValueChange = onCheckedChange)
-            .padding(vertical = ROW_INNER_PADDING),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        SettingText(title, description, Modifier.weight(1f))
-        Spacer(Modifier.width(ROW_CONTROL_GAP))
-        // The whole row toggles; the switch only shows the state.
-        Switch(checked = checked, onCheckedChange = null)
-    }
+    // The whole row toggles; the switch only shows the state.
+    SettingsRowLayout(
+        title = title,
+        description = description,
+        trailing = RowTrailing.Switch(checked, enabled),
+        enabled = enabled,
+        horizontalPadding = 0.dp,
+        modifier = modifier.toggleable(value = checked, enabled = enabled, role = Role.Switch, onValueChange = onCheckedChange),
+    )
 }
 
-/** A settings row that opens something (an overlay, a picker) — the whole row is the tap target,
- * not just a trailing button, per standard Android settings-list UX (Settings app itself, most
- * system preference screens). The trailing caret is a plain visual affordance, not itself
- * interactive — it doesn't need to be, since the whole row already is. */
+/** A settings row that opens something: the whole row is the tap target, the chevron is a cue. */
 @Composable
 internal fun ClickableSettingRow(key: SettingKey, description: String, onClick: () -> Unit) =
     UnindexedClickableSettingRow(key.title, description, onClick, rememberSettingHighlight(key))
 
 /** A clickable row search can't find — same rule as [UnindexedSettingToggle]. */
 @Composable
-internal fun UnindexedClickableSettingRow(title: String, description: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(vertical = ROW_INNER_PADDING),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        SettingText(title, description, Modifier.weight(1f))
-        Spacer(Modifier.width(ROW_CONTROL_GAP))
-        Icon(
-            imageVector = dev.omakey.core.icons.PhosphorLineCaretRight,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(18.dp),
-        )
-    }
+internal fun UnindexedClickableSettingRow(title: String, description: String?, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    SettingsRowLayout(
+        title = title,
+        description = description,
+        trailing = RowTrailing.Chevron,
+        horizontalPadding = 0.dp,
+        modifier = modifier.clickable(role = Role.Button, onClick = onClick),
+    )
 }
 
 @Composable
 internal fun GestureSettingsSection(gesturePreferences: GesturePreferences) {
     val settings by gesturePreferences.settings.collectAsState()
-    // No wrapping Column: each setting is its own row of the section card, so it gets a divider.
     SliderSetting(
         title = SettingKey.SWIPE_DISTANCE.title,
-        description = "Shorter is quicker but easier to trigger by accident.",
+        description = "Shorter is quicker, but easier to set off by accident.",
         value = settings.swipeSensitivity,
         onValueChange = gesturePreferences::setSwipeSensitivity,
         range = GestureSettings.MIN_SENSITIVITY..GestureSettings.MAX_SENSITIVITY,
@@ -667,25 +667,25 @@ internal fun GestureSettingsSection(gesturePreferences: GesturePreferences) {
     )
     SettingToggle(
         key = SettingKey.LONG_PRESS_SPECIAL,
-        description = "Hold a key to pick an accent or symbol, like é or !.",
+        description = "Hold a key for accents and symbols, like é.",
         checked = settings.showKeyPopup,
         onCheckedChange = gesturePreferences::setShowKeyPopup,
     )
     SettingToggle(
         key = SettingKey.SWIPE_RIGHT_FOR_SPACE,
-        description = "Swipe right on the keys to type a space.",
+        description = "Swipe right across the keys to type a space.",
         checked = settings.swipeRightForSpace,
         onCheckedChange = gesturePreferences::setSwipeRightForSpace,
     )
     SettingToggle(
         key = SettingKey.SWIPE_LEFT_SPACE_STEP,
-        description = "Swipe left removes the space first, then the word on the next swipe.",
+        description = "Swipe left takes the space first, then the word.",
         checked = settings.swipeLeftSpaceIsOwnStep,
         onCheckedChange = gesturePreferences::setSwipeLeftSpaceIsOwnStep,
     )
     SettingToggle(
         key = SettingKey.SWIPE_SPACEBAR_LANGUAGE,
-        description = "Swipe left or right on the spacebar to switch language. Hold and drag it to move the cursor.",
+        description = "Swipe the spacebar sideways to switch language.",
         checked = settings.swipeSpacebarForLanguage,
         onCheckedChange = gesturePreferences::setSwipeSpacebarForLanguage,
     )
@@ -694,75 +694,70 @@ internal fun GestureSettingsSection(gesturePreferences: GesturePreferences) {
 @Composable
 internal fun FeedbackSettingsSection(preferences: HapticSoundPreferences, feedback: VibratorKeyboardFeedback) {
     val settings by preferences.settings.collectAsState()
-    // One card row per setting; a sub-setting shown while its parent is on sits in the same row.
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        SettingToggle(
-            key = SettingKey.HAPTIC_FEEDBACK,
-            description = "Vibrate a little on each key press.",
-            checked = settings.hapticEnabled,
-            onCheckedChange = preferences::setHapticEnabled,
+    // A sub-setting shown while its parent is on sits in the same card, right under it.
+    SettingToggle(
+        key = SettingKey.HAPTIC_FEEDBACK,
+        description = "A light tick on each key press.",
+        checked = settings.hapticEnabled,
+        onCheckedChange = preferences::setHapticEnabled,
+    )
+    if (settings.hapticEnabled) {
+        // onValueChangeFinished plays a tick at the strength just chosen: a strength is
+        // meaningless without feeling it.
+        SliderSetting(
+            title = "Strength",
+            description = null,
+            value = settings.hapticStrength,
+            onValueChange = preferences::setHapticStrength,
+            onValueChangeFinished = { feedback.onKeyPress() },
+            range = HapticSoundSettings.MIN_HAPTIC_STRENGTH..HapticSoundSettings.MAX_HAPTIC_STRENGTH,
+            low = "Light",
+            high = "Strong",
         )
-        if (settings.hapticEnabled) {
-            // onValueChangeFinished fires a preview tick at the strength the user just landed on —
-            // dragging a "strength" slider is meaningless without feeling the result immediately.
-            SliderSetting(
-                title = "Strength",
-                description = null,
-                value = settings.hapticStrength,
-                onValueChange = preferences::setHapticStrength,
-                onValueChangeFinished = { feedback.onKeyPress() },
-                range = HapticSoundSettings.MIN_HAPTIC_STRENGTH..HapticSoundSettings.MAX_HAPTIC_STRENGTH,
-                low = "Light",
-                high = "Strong",
-            )
-        }
     }
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        SettingToggle(
-            key = SettingKey.KEY_SOUNDS,
-            description = "Play a click on each key press.",
-            checked = settings.soundEnabled,
-            onCheckedChange = preferences::setSoundEnabled,
+    SettingToggle(
+        key = SettingKey.KEY_SOUNDS,
+        description = "A click on each key press.",
+        checked = settings.soundEnabled,
+        onCheckedChange = preferences::setSoundEnabled,
+    )
+    if (settings.soundEnabled) {
+        SliderSetting(
+            title = "Volume",
+            description = null,
+            value = settings.soundVolume,
+            onValueChange = preferences::setSoundVolume,
+            onValueChangeFinished = { feedback.onKeyPress() },
+            range = HapticSoundSettings.MIN_SOUND_VOLUME..HapticSoundSettings.MAX_SOUND_VOLUME,
+            low = "Quiet",
+            high = "Loud",
         )
-        if (settings.soundEnabled) {
-            SliderSetting(
-                title = "Volume",
-                description = null,
-                value = settings.soundVolume,
-                onValueChange = preferences::setSoundVolume,
-                onValueChangeFinished = { feedback.onKeyPress() },
-                range = HapticSoundSettings.MIN_SOUND_VOLUME..HapticSoundSettings.MAX_SOUND_VOLUME,
-                low = "Quiet",
-                high = "Loud",
-            )
-            SettingText("Sound", null)
-            SoundChoicePicker(preferences, settings.soundChoice, feedback)
-        }
+        SoundChoicePicker(preferences, settings.soundChoice, feedback)
     }
 }
 
-/** Tap a row to both select it and hear it — mirrors the haptic-strength slider's
- * `onValueChangeFinished` preview-tick convention just above: a sound choice is meaningless to
- * pick from a label alone, the user needs to actually hear it. */
+/** Tap a sound to choose it and hear it: a sound is meaningless to pick from its name alone. */
 @Composable
 private fun SoundChoicePicker(preferences: HapticSoundPreferences, currentChoice: String, feedback: VibratorKeyboardFeedback) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    SettingBlock {
+        SettingText("Sound", "Tap one to hear it.")
         SoundCatalog.displayNames.forEach { (id, name) ->
             val selected = id == currentChoice
-            val borderColor = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable {
-                        preferences.setSoundChoice(id)
-                        feedback.onKeyPress()
-                    }
-                    .border(width = 2.dp, color = borderColor, shape = RoundedCornerShape(12.dp))
-                    .padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ChoiceTile(
+                selected = selected,
+                onClick = {
+                    preferences.setSoundChoice(id)
+                    feedback.onKeyPress()
+                },
+                modifier = Modifier.fillMaxWidth(),
             ) {
-                Text(text = name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(text = name, style = Omakey.type.row, color = Omakey.colors.ink, modifier = Modifier.weight(1f))
+                    if (selected) Icon(OmakeyIcons.Check, contentDescription = "Chosen", tint = Omakey.colors.ink, modifier = Modifier.size(20.dp))
+                }
             }
         }
     }
@@ -773,26 +768,41 @@ internal fun AccessibleModeToggle(accessibilityPreferences: AccessibilityPrefere
     val enabled by accessibilityPreferences.forceAccessibleMode.collectAsState()
     SettingToggle(
         key = SettingKey.ACCESSIBLE_MODE,
-        description = "Turn off swipe gestures so every key works with TalkBack. Turns on by itself when TalkBack is running.",
+        description = "Every key works with TalkBack. Turns on by itself with it.",
         checked = enabled,
         onCheckedChange = accessibilityPreferences::setForceAccessibleMode,
     )
 }
 
-/** The one manual, opt-in network call in the whole app — see [dev.omakey.core.update.UpdateChecker]'s
- * own doc and the privacy notice above it. A plain button + inline status text, not a background
- * check: nothing happens until the user taps it, every single time. */
+/** The one manual, opt-in network call in the whole app — see [dev.omakey.core.update.UpdateChecker].
+ * Nothing happens until the user taps it, every single time. */
 @Composable
 internal fun UpdateCheckRow() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var status by remember { mutableStateOf<UpdateCheckStatus>(UpdateCheckStatus.Idle) }
 
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        // The flash goes on a full-width strip around the button: the button's own opaque pill
-        // would hide a background drawn under it.
-        Box(rememberSettingHighlight(SettingKey.CHECK_FOR_UPDATES).fillMaxWidth().padding(6.dp)) {
-            Button(
+    SettingBlock(rememberSettingHighlight(SettingKey.CHECK_FOR_UPDATES)) {
+        val line = when (val current = status) {
+            UpdateCheckStatus.Idle -> null
+            UpdateCheckStatus.Checking -> "Checking…"
+            UpdateCheckStatus.Failed -> "Couldn't check. Try again later."
+            is UpdateCheckStatus.Checked ->
+                if (current.result.updateAvailable) "Version ${current.result.latestVersion} is out." else "You're up to date."
+        }
+        if (line != null) SettingDescription(line)
+        val available = (status as? UpdateCheckStatus.Checked)?.result?.takeIf { it.updateAvailable }
+        if (available != null) {
+            OmakeyButton(
+                text = "See what's new",
+                kind = ButtonKind.Primary,
+                onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(available.releaseUrl))) },
+                modifier = Modifier.fillMaxWidth(),
+            )
+        } else {
+            OmakeyButton(
+                text = SettingKey.CHECK_FOR_UPDATES.title,
+                enabled = status !is UpdateCheckStatus.Checking,
                 onClick = {
                     status = UpdateCheckStatus.Checking
                     scope.launch {
@@ -803,37 +813,8 @@ internal fun UpdateCheckRow() {
                         }
                     }
                 },
-                enabled = status !is UpdateCheckStatus.Checking,
-            ) {
-                Text(text = if (status is UpdateCheckStatus.Checking) "Checking..." else SettingKey.CHECK_FOR_UPDATES.title)
-            }
-        }
-        when (val current = status) {
-            UpdateCheckStatus.Idle, UpdateCheckStatus.Checking -> Unit
-            UpdateCheckStatus.Failed -> Text(
-                text = "Couldn't check for updates — try again later.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.fillMaxWidth(),
             )
-            is UpdateCheckStatus.Checked -> if (current.result.updateAvailable) {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(
-                        text = "Version ${current.result.latestVersion} is available.",
-                        style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    TextButton(onClick = {
-                        context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(current.result.releaseUrl)))
-                    }) {
-                        Text(text = "View release")
-                    }
-                }
-            } else {
-                Text(
-                    text = "You're up to date.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
         }
     }
 }
@@ -845,15 +826,24 @@ private sealed interface UpdateCheckStatus {
     data class Checked(val result: dev.omakey.core.update.UpdateCheckResult) : UpdateCheckStatus
 }
 
-/** Choices offered as one tap (value to tile label); anything else goes in the field below them. */
-private val SPACEBAR_SIDE_CHOICES = listOf(DEFAULT_SPACEBAR_SIDE_KEY to "Auto") + listOf(".", ",", "?", "!", "'", "-").map { it to it }
+/** A key choice: a word label, an icon, or the character itself. */
+private sealed interface KeyChoiceLabel {
+    data class Word(val text: String) : KeyChoiceLabel
+    data class Glyph(val icon: androidx.compose.ui.graphics.vector.ImageVector) : KeyChoiceLabel
+    data class Char(val text: String) : KeyChoiceLabel
+}
+
+/** Choices offered as one tap; anything else goes in the field below them. */
+private val SPACEBAR_SIDE_CHOICES: List<Pair<String, KeyChoiceLabel>> =
+    listOf(DEFAULT_SPACEBAR_SIDE_KEY to KeyChoiceLabel.Word("Auto")) +
+        listOf(".", ",", "?", "!", "'", "-").map { it to KeyChoiceLabel.Char(it) }
 
 /** The key right of the spacebar (closed-beta request): the language's own by default, or any one
  * character. */
 @Composable
 internal fun SpacebarSideKeyRow(settings: LayoutSettings, layoutPreferences: LayoutPreferences) = KeyChoiceRow(
     key = SettingKey.SPACEBAR_SIDE_KEY,
-    description = "What the key to the right of the spacebar types. Hold it for the one it replaced.",
+    description = "Hold it for the one it replaced.",
     choices = SPACEBAR_SIDE_CHOICES,
     defaultValue = DEFAULT_SPACEBAR_SIDE_KEY,
     current = settings.spacebarSideKey,
@@ -862,16 +852,16 @@ internal fun SpacebarSideKeyRow(settings: LayoutSettings, layoutPreferences: Lay
     onChoose = layoutPreferences::setSpacebarSideKey,
 )
 
-private val EMOJI_SLOT_CHOICES = listOf(EMOJI_SLOT_DEFAULT to "😊", EMOJI_SLOT_LANGUAGE to "🌐") +
-    listOf(",", ".", "?", "!", "'").map { it to it }
+private val EMOJI_SLOT_CHOICES: List<Pair<String, KeyChoiceLabel>> =
+    listOf(EMOJI_SLOT_DEFAULT to KeyChoiceLabel.Glyph(OmakeyIcons.Emoji), EMOJI_SLOT_LANGUAGE to KeyChoiceLabel.Glyph(OmakeyIcons.Globe)) +
+        listOf(",", ".", "?", "!", "'").map { it to KeyChoiceLabel.Char(it) }
 
-/** The key left of the spacebar (user request): the emoji key by default, the language key, or any
- * one character. The emoji button moves up to the suggestion bar whenever its key is taken. */
+/** The key left of the spacebar (user request): emoji by default, the language key, or any one
+ * character. The emoji button moves up to the bar whenever its key is taken. */
 @Composable
 internal fun EmojiSlotKeyRow(settings: LayoutSettings, layoutPreferences: LayoutPreferences) = KeyChoiceRow(
     key = SettingKey.EMOJI_SLOT_KEY,
-    description = "What the key to the left of the spacebar does: emoji, switch language (with two or more), or " +
-        "type a character. When it isn't emoji, the emoji button moves to the bar above the keys.",
+    description = "Emoji, switch language (with two or more), or a character. Emoji moves to the bar when it isn't.",
     choices = EMOJI_SLOT_CHOICES,
     defaultValue = EMOJI_SLOT_DEFAULT,
     current = settings.emojiSlotKey,
@@ -886,13 +876,12 @@ internal fun EmojiSlotKeyRow(settings: LayoutSettings, layoutPreferences: Layout
     onChoose = layoutPreferences::setEmojiSlotKey,
 )
 
-/** A key that can be one of a few one-tap [choices] or any one character typed in the field below
- * them. Same tile style as [EmojiSkinTonePicker]. */
+/** A key that can be one of a few one-tap [choices] or any one character typed in the field below. */
 @Composable
 private fun KeyChoiceRow(
     key: SettingKey,
     description: String,
-    choices: List<Pair<String, String>>,
+    choices: List<Pair<String, KeyChoiceLabel>>,
     defaultValue: String,
     current: String,
     describe: (String) -> String,
@@ -900,42 +889,28 @@ private fun KeyChoiceRow(
     onChoose: (String) -> Unit,
 ) {
     var custom by remember { mutableStateOf(current.takeIf { c -> choices.none { it.first == c } }.orEmpty()) }
-    Column(rememberSettingHighlight(key), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(text = key.title, style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium))
-        Text(
-            text = description,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+    SettingBlock(rememberSettingHighlight(key)) {
+        SettingText(key.title, description)
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             for ((choice, label) in choices) {
-                val selected = choice == current
-                val isWord = label.length > 2
-                Box(
-                    modifier = Modifier
-                        .weight(if (isWord) 1.6f else 1f)
-                        .height(44.dp)
-                        .background(
-                            if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-                            RoundedCornerShape(8.dp),
-                        )
-                        .border(
-                            width = if (selected) 2.dp else 0.dp,
-                            color = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
-                            shape = RoundedCornerShape(8.dp),
-                        )
-                        .clickable {
-                            custom = ""
-                            onChoose(choice)
-                        }
-                        .semantics { contentDescription = describe(choice) },
-                    contentAlignment = Alignment.Center,
+                ChoiceTile(
+                    selected = choice == current,
+                    onClick = {
+                        custom = ""
+                        onChoose(choice)
+                    },
+                    label = describe(choice),
+                    modifier = Modifier.weight(if (label is KeyChoiceLabel.Word) 1.6f else 1f).height(44.dp),
                 ) {
-                    Text(text = label, fontSize = if (isWord) 14.sp else 20.sp)
+                    when (label) {
+                        is KeyChoiceLabel.Word -> Text(label.text, style = Omakey.type.body.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Medium), color = Omakey.colors.ink)
+                        is KeyChoiceLabel.Glyph -> Icon(label.icon, contentDescription = null, tint = Omakey.colors.ink, modifier = Modifier.size(20.dp))
+                        is KeyChoiceLabel.Char -> Text(label.text, style = Omakey.type.row.copy(fontSize = 20.sp), color = Omakey.colors.ink)
+                    }
                 }
             }
         }
-        OutlinedTextField(
+        OmakeyField(
             value = custom,
             onValueChange = { typed ->
                 // One character at most; the field refuses a second rather than saving something
@@ -948,9 +923,7 @@ private fun KeyChoiceRow(
                     onChoose(typed)
                 }
             },
-            modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text(text = "Or type any one character") },
-            singleLine = true,
+            placeholder = "Or type any one character",
         )
     }
 }
@@ -969,18 +942,18 @@ internal fun SliderSetting(
     modifier: Modifier = Modifier,
     onValueChangeFinished: (() -> Unit)? = null,
 ) {
-    Column(modifier.fillMaxWidth().padding(vertical = ROW_INNER_PADDING)) {
+    Column(modifier.fillMaxWidth().padding(top = 16.dp, bottom = 8.dp)) {
         SettingText(title, description)
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            SettingDescription(low)
-            Slider(
+            Text(low, style = Omakey.type.caption, color = Omakey.colors.muted)
+            OmakeySlider(
                 value = value,
                 onValueChange = onValueChange,
                 onValueChangeFinished = onValueChangeFinished,
-                valueRange = range,
+                range = range,
                 modifier = Modifier.weight(1f),
             )
-            SettingDescription(high)
+            Text(high, style = Omakey.type.caption, color = Omakey.colors.muted)
         }
     }
 }

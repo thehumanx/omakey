@@ -179,6 +179,55 @@ class OmakeyDatabaseMigrationTest {
         }
     }
 
+    /**
+     * 6→7 adds the `snippets` table. Every v6 word (with its saved spelling) and clipboard entry
+     * survives, and a snippet can then be written and read back.
+     */
+    @Test
+    fun migration_6_to_7_keeps_everything_and_adds_snippets() {
+        createV6Database {
+            it.execSQL(
+                "INSERT INTO words (word, frequency, isUserAdded, lastUsedTimestamp, explicit, locale, display) VALUES " +
+                    "('iphone', 700, 1, 1000, 1, 'en_US', 'iPhone')",
+            )
+            it.execSQL(
+                "INSERT INTO clipboard_history (content, timestamp, pinned, contentType, imagePath) VALUES " +
+                    "('copied', 2000, 1, 'text', NULL)",
+            )
+        }
+        withMigratedDatabase { db ->
+            runBlocking {
+                assertEquals("iPhone", db.wordDao().findExact("en_US", "iphone")!!.display)
+                assertEquals(listOf("copied"), db.clipboardDao().recent().map { it.content })
+                val id = db.snippetDao().insert(
+                    SnippetEntity(name = "Email", text = "bibek@example.com", secretCipher = null, secretIv = null, position = 0, createdAt = 1, updatedAt = 1),
+                )
+                assertEquals("bibek@example.com", db.snippetDao().findById(id)!!.text)
+            }
+        }
+    }
+
+    /** A v6 database exactly as Room created it — statements from `core/schemas/…/6.json`. */
+    private fun createV6Database(populate: (SQLiteDatabase) -> Unit) {
+        val path = context.getDatabasePath(DB_NAME)
+        path.parentFile?.mkdirs()
+        val db = SQLiteDatabase.openOrCreateDatabase(path, null)
+        db.use {
+            it.execSQL(
+                "CREATE TABLE IF NOT EXISTS `words` (`word` TEXT NOT NULL, `frequency` INTEGER NOT NULL, " +
+                    "`isUserAdded` INTEGER NOT NULL, `lastUsedTimestamp` INTEGER NOT NULL, " +
+                    "`explicit` INTEGER NOT NULL, `locale` TEXT NOT NULL, `display` TEXT, PRIMARY KEY(`locale`, `word`))",
+            )
+            it.execSQL(
+                "CREATE TABLE IF NOT EXISTS `clipboard_history` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                    "`content` TEXT NOT NULL, `timestamp` INTEGER NOT NULL, `pinned` INTEGER NOT NULL, " +
+                    "`contentType` TEXT NOT NULL, `imagePath` TEXT)",
+            )
+            populate(it)
+            it.version = 6
+        }
+    }
+
     /** A v5 database exactly as Room created it — statements from `core/schemas/…/5.json`. */
     private fun createV5Database(populate: (SQLiteDatabase) -> Unit) {
         val path = context.getDatabasePath(DB_NAME)

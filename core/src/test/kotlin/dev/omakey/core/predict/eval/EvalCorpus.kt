@@ -33,6 +33,14 @@ object EvalCorpus {
             .map { it.trim().split(' ') }
             .evenSample(limit)
 
+    /** Correctly-typed words the bundled vocabulary does not hold (names, slang, brands) — see the
+     * fixture's header. Comment lines and blanks dropped. */
+    fun unknownWords(): List<String> =
+        resource("eval/unknown-words.txt").readLines()
+            .map { it.trim() }
+            .filter { it.isNotEmpty() && !it.startsWith("#") }
+            .distinct()
+
     private fun <T> List<T>.evenSample(limit: Int): List<T> {
         if (limit >= size || limit <= 0) return this
         val stride = size.toDouble() / limit

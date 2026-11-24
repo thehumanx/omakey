@@ -64,3 +64,39 @@ data class ClipboardEntity(
         const val TYPE_IMAGE = "image"
     }
 }
+
+/**
+ * A snippet the user saved (see [dev.omakey.core.snippets.Snippet]). A secret snippet keeps only
+ * [secretCipher] and [secretIv], sealed with a key in the Android Keystore; its [text] is null and
+ * its plain text is never written here. [shortcut] is for step 2's short codes, unused before that.
+ *
+ * User data that can't be regenerated, like the `words` table: changes need a migration.
+ */
+@Entity(tableName = "snippets")
+data class SnippetEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String = "",
+    val text: String?,
+    val secretCipher: ByteArray?,
+    val secretIv: ByteArray?,
+    val shortcut: String? = null,
+    val position: Int,
+    val createdAt: Long,
+    val updatedAt: Long,
+) {
+    override fun equals(other: Any?): Boolean =
+        other is SnippetEntity && id == other.id && name == other.name && text == other.text &&
+            secretCipher.contentEqualsOrNull(other.secretCipher) && secretIv.contentEqualsOrNull(other.secretIv) &&
+            shortcut == other.shortcut && position == other.position &&
+            createdAt == other.createdAt && updatedAt == other.updatedAt
+
+    override fun hashCode(): Int =
+        listOf(id, name, text, secretCipher?.contentHashCode(), secretIv?.contentHashCode(), shortcut, position, createdAt, updatedAt).hashCode()
+
+    /** No content: a row that ends up in a log must not carry what it holds. */
+    override fun toString(): String =
+        "SnippetEntity(id=$id, name=$name, secret=${secretCipher != null}, position=$position)"
+}
+
+private fun ByteArray?.contentEqualsOrNull(other: ByteArray?): Boolean =
+    if (this == null || other == null) this === other else contentEquals(other)

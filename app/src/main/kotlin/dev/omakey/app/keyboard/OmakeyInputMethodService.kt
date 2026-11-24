@@ -250,10 +250,22 @@ class OmakeyInputMethodService :
 
     override fun onCreate() {
         super.onCreate()
+        // Before any preference is read: fresh installs get the new defaults, updates keep theirs.
+        dev.omakey.core.settings.InstallDefaults.apply(applicationContext)
         savedStateRegistryController.performRestore(null)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
 
         database = OmakeyDatabase.getInstance(applicationContext)
+        // Both are protected system broadcasts, so NOT_EXPORTED still receives them and no other
+        // app can send them to us.
+        androidx.core.content.ContextCompat.registerReceiver(
+            this,
+            userPresentReceiver,
+            android.content.IntentFilter(android.content.Intent.ACTION_USER_PRESENT).apply {
+                addAction(android.content.Intent.ACTION_SCREEN_OFF)
+            },
+            androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
         incognitoPreferences = IncognitoPreferences(applicationContext)
         autocorrectIndex = AutocorrectIndex()
         autocorrectPreferences = AutocorrectPreferences(applicationContext)
@@ -331,6 +343,19 @@ class OmakeyInputMethodService :
         // Read per call, not captured: the user can change the tone in Settings while the panel is
         // open, and EmojiSkinTonePreferences' own listener keeps this instance's flow current.
         override fun withSkinTone(emoji: String): String = emojiSkinTonePreferences.skinTone.value.apply(emoji)
+
+        override fun saveAsSnippet(text: String) {
+            val intent = android.content.Intent(this@OmakeyInputMethodService, dev.omakey.app.settings.SnippetsActivity::class.java)
+                .putExtra(dev.omakey.app.settings.SnippetsActivity.EXTRA_SNIPPET_ID, dev.omakey.app.settings.SnippetsActivity.NEW_SNIPPET)
+                .putExtra(
+                    dev.omakey.app.settings.SnippetsActivity.EXTRA_PREFILL_TEXT,
+                    // Capped here, before the Intent: a multi-megabyte clip overflowed the binder
+                    // and crashed the keyboard.
+                    text.take(dev.omakey.core.snippets.SnippetRules.MAX_TEXT),
+                )
+                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK)
+            startActivity(intent)
+        }
 
         override val textEditor: TextEditorFacade = object : TextEditorFacade {
             // One batched commitText rather than a loop over Chars — a loop splits every emoji's
@@ -419,8 +444,17 @@ class OmakeyInputMethodService :
             localeController = localeManager,
             layouts = localeRegistry.layouts,
             transliterator = { localeManager.transliterator.value },
+            snippetRepository = dev.omakey.core.snippets.SnippetRepository(
+                database.snippetDao(),
+                dev.omakey.core.snippets.KeystoreSecretCipher(),
+                wipeFreedSpace = { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { runCatching { database.checkpointAndTruncate() } } },
+            ),
+            openSnippetEditor = ::openSnippetEditor,
+            isDeviceLockedNow = ::isDeviceLocked,
+            ownPackage = packageName,
         )
         keyboardViewModel = viewModel
+        viewModel.setDeviceLocked(isDeviceLocked())
 
         val composeView = ComposeView(this).apply {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
@@ -452,6 +486,9 @@ class OmakeyInputMethodService :
         super.onStartInputView(info, restarting)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
         keyboardViewModel?.resetForNewField(info, restarting)
+        // Re-read on every open: the keyboard can come up over the lock screen (a reply from a
+        // notification), where secret snippets must not be offered.
+        keyboardViewModel?.setDeviceLocked(isDeviceLocked())
         if (::subtypeSync.isInitialized) subtypeSync.onInputViewStarted()
         // Only listens for clipboard changes while the keyboard is actually on screen — see the
         // comment in onCreate() for why this isn't registered for the whole service lifetime.
@@ -645,13 +682,51 @@ class OmakeyInputMethodService :
      */
     override fun onComputeInsets(outInsets: Insets) {
         super.onComputeInsets(outInsets)
-        if (layoutPreferences.settings.value.placement != KeyboardPlacement.FLOATING) return
         val bounds = keyboardBounds ?: return
-        val viewHeight = window?.window?.decorView?.height ?: return
+        val decor = window?.window?.decorView ?: return
+        val viewHeight = decor.height
+        if (layoutPreferences.settings.value.placement != KeyboardPlacement.FLOATING) {
+            // Docked and one-handed: the window has clear space above the keys for popups
+            // (POPUP_HEADROOM_DP). The app is told the keyboard starts at the keys, and only the
+            // keyboard's full-width band takes touches, so that space never covers or blocks it.
+            val top = bounds.top.coerceIn(0, viewHeight)
+            outInsets.contentTopInsets = top
+            outInsets.visibleTopInsets = top
+            outInsets.touchableInsets = Insets.TOUCHABLE_INSETS_REGION
+            outInsets.touchableRegion.set(0, top, decor.width, viewHeight)
+            return
+        }
         outInsets.contentTopInsets = viewHeight
         outInsets.visibleTopInsets = viewHeight
         outInsets.touchableInsets = Insets.TOUCHABLE_INSETS_REGION
         outInsets.touchableRegion.set(bounds)
+    }
+
+    private fun isDeviceLocked(): Boolean =
+        (getSystemService(android.content.Context.KEYGUARD_SERVICE) as? android.app.KeyguardManager)?.isDeviceLocked ?: false
+
+    /**
+     * Lock state while the keyboard may stay up across it (an app shown over the lock screen keeps
+     * its input session through the power button, so onStartInputView doesn't run again). Screen
+     * off: hide secrets. Unlocked: offer them again.
+     */
+    private val userPresentReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: android.content.Context?, intent: android.content.Intent?) {
+            when (intent?.action) {
+                android.content.Intent.ACTION_SCREEN_OFF -> keyboardViewModel?.setDeviceLocked(true)
+                android.content.Intent.ACTION_USER_PRESENT -> keyboardViewModel?.setDeviceLocked(isDeviceLocked())
+            }
+        }
+    }
+
+    /** A snippet's edit form ([id] null: a new one), in omakey's own non-exported screen. */
+    private fun openSnippetEditor(id: Long?) {
+        val intent = android.content.Intent(this, dev.omakey.app.settings.SnippetsActivity::class.java)
+            .putExtra(dev.omakey.app.settings.SnippetsActivity.EXTRA_SNIPPET_ID, id ?: dev.omakey.app.settings.SnippetsActivity.NEW_SNIPPET)
+            // CLEAR_TASK: a form left open (Home pressed) is replaced rather than piling up in
+            // hidden tasks each time a chip is long-pressed.
+            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        startActivity(intent)
     }
 
     private fun openSettings() {
@@ -678,6 +753,7 @@ class OmakeyInputMethodService :
         insetsHandler.removeCallbacks(requestInsetsUpdate)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
         clipboardManager.removePrimaryClipChangedListener(clipboardListener)
+        runCatching { unregisterReceiver(userPresentReceiver) }
         (keyboardFeedback as? VibratorKeyboardFeedback)?.release()
         // Symmetry with the registrations in onCreate. Not strictly required — SharedPreferences
         // holds listeners weakly, which is why nothing broke while nothing anywhere unregistered —

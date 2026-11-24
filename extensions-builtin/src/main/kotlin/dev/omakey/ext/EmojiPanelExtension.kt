@@ -253,7 +253,7 @@ class EmojiPanelExtension : OmakeyExtension {
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .height(40.dp)
+                    .height(44.dp)
                     // The suggestion bar's colour in Normal mode, so the panel's bottom bar matches
                     // the strip above the keys — it was a hardcoded black tint, which looked like a
                     // shadow on light themes and disappeared on dark ones.
@@ -303,7 +303,7 @@ class EmojiPanelExtension : OmakeyExtension {
                         Box(
                             modifier = Modifier
                                 .fillMaxHeight()
-                                .width(36.dp)
+                                .width(44.dp)
                                 .clickable(
                                     interactionSource = interactionSource,
                                     indication = null,
@@ -328,15 +328,15 @@ class EmojiPanelExtension : OmakeyExtension {
                         ) {
                             // Missing color here made every tab icon (not just "#") default to
                             // black-on-dark and effectively disappear against the panel background.
-                            Text(
-                                text = cat.icon,
-                                color = when {
-                                    // Follows the fill: the selected tab keeps its tint while held.
-                                    isPressed && !isSelected -> pressedTextColor
-                                    else -> textColor
-                                },
-                                fontSize = 18.sp,
-                            )
+                            // Line icons, not emoji: a colour emoji ignores the theme, so the
+                            // tabs looked pasted on. Kaomoji has no icon and keeps its text.
+                            val tint = if (isPressed && !isSelected) pressedTextColor else textColor
+                            val glyph = categoryIcon(cat.icon)
+                            if (glyph != null) {
+                                androidx.compose.material3.Icon(glyph, contentDescription = categoryName(cat.icon), tint = tint, modifier = Modifier.size(20.dp))
+                            } else {
+                                Text(text = cat.icon, color = tint, fontSize = 12.sp)
+                            }
                         }
                     }
                 }
@@ -665,3 +665,34 @@ private const val SELECTED_TAB_ALPHA = 0.12f
  * keeps its square bordered cells. */
 private fun Modifier.normalModeFill(color: Color): Modifier =
     padding(vertical = 4.dp).background(color, androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+
+/** The line icon for a category tab, keyed by the category's own glyph. Null: keep the text. */
+private fun categoryIcon(glyph: String): androidx.compose.ui.graphics.vector.ImageVector? = when (glyph) {
+    "🕒" -> dev.omakey.core.icons.OmakeyIcons.Clock
+    "😀" -> dev.omakey.core.icons.OmakeyIcons.Emoji
+    "👋" -> dev.omakey.core.icons.OmakeyIcons.Hand
+    "🐶" -> dev.omakey.core.icons.OmakeyIcons.Paw
+    "🍔" -> dev.omakey.core.icons.OmakeyIcons.Coffee
+    "✈️" -> dev.omakey.core.icons.OmakeyIcons.Plane
+    "⚽" -> dev.omakey.core.icons.OmakeyIcons.Ball
+    "💡" -> dev.omakey.core.icons.OmakeyIcons.Bulb
+    "❤️" -> dev.omakey.core.icons.OmakeyIcons.Heart
+    "🏳️" -> dev.omakey.core.icons.OmakeyIcons.Flag
+    "#" -> dev.omakey.core.icons.OmakeyIcons.Hash
+    else -> null
+}
+
+private fun categoryName(glyph: String): String = when (glyph) {
+    "🕒" -> "Recent"
+    "😀" -> "Smileys"
+    "👋" -> "People"
+    "🐶" -> "Animals"
+    "🍔" -> "Food"
+    "✈️" -> "Travel"
+    "⚽" -> "Activities"
+    "💡" -> "Objects"
+    "❤️" -> "Symbols"
+    "🏳️" -> "Flags"
+    "#" -> "Special characters"
+    else -> "Emoticons"
+}

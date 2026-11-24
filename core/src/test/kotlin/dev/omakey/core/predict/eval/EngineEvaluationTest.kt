@@ -18,19 +18,40 @@ import org.junit.Test
  * ## Scorecard by phase
  *
  * ```
- *                                        baseline   phase 1   phase 2   phase 3
- * dictionary coverage of intended words    96.50 %   99.10 %   99.10 %   99.10 %
+ *                                        baseline   phase 1   phase 2   phase 3   phase 4
+ * dictionary coverage of intended words    96.50 %   99.10 %   99.10 %   99.10 %   99.10 %
  * CORRECTION
- *   fixed correctly                        18.34 %   25.38 %   32.67 %   31.79 %
- *   changed to the wrong word              35.98 %   34.64 %   36.38 %   37.61 %
- *   left uncorrected                       45.67 %   39.98 %   30.95 %   30.60 %
- *   intended word offered in strip         38.60 %   42.73 %   55.20 %   53.53 %
+ *   fixed correctly                        18.34 %   25.38 %   32.67 %   31.79 %   13.90 %
+ *   changed to the wrong word              35.98 %   34.64 %   36.38 %   37.61 %    8.02 %
+ *   left uncorrected                       45.67 %   39.98 %   30.95 %   30.60 %   78.08 %
+ *   intended word offered in strip         38.60 %   42.73 %   55.20 %   53.53 %   52.40 %
  * DAMAGE
- *   falsely corrected                       0.40 %    0.63 %    0.73 %    0.73 %
+ *   falsely corrected                       0.40 %    0.63 %    0.73 %    0.73 %    0.20 %
+ *   unknown words changed                       —         —         —    81.56 %   12.85 %
  * PREDICTION
- *   next word in top 3 (no prefix)          7.82 %   25.28 %   25.28 %   25.28 %
- *   next word in top 3 (2-char prefix)     53.79 %   62.67 %   62.67 %   62.67 %
- * median correct() latency                    171 us    163 us    283 us    444 us
+ *   next word in top 3 (no prefix)          7.82 %   25.28 %   25.28 %   25.28 %   25.28 %
+ *   next word in top 3 (2-char prefix)     53.79 %   62.67 %   62.67 %   62.67 %   62.67 %
+ * median correct() latency                    171 us    163 us    283 us    444 us    346 us
+ * ```
+ *
+ * **Phase 4 (2026-11-23): confidence gates.** Users reported autocorrect "suggesting different
+ * words". The scorecard had the evidence all along — it changed misspellings into the wrong word
+ * more often than the right one — and the new "unknown words changed" row found the rest: 82% of
+ * correctly-typed words outside the vocabulary (names, slang, brands, jargon) were rewritten,
+ * "bibek" → "bike", "rohan" → "than", "refinancing" → "financing". The token-weighted false
+ * correction rate could not show it, since such words are rare per token and common per user.
+ * `AutocorrectIndex.correct` used to apply its best candidate whatever its score; it now needs a
+ * minimum score and a margin over the runner-up (see `CONFIDENCE_THRESHOLD`). Read the drop in
+ * "fixed" with the simulated touch-typing numbers beside it, where it is small:
+ * ```
+ *                          fixed     wrong    damage on clean words
+ * touch noise 0.35  before 66.05 %   13.07 %   4.03 %
+ *                   after  59.57 %    2.52 %   0.53 %
+ * ```
+ * On this corpus the lost fixes are mostly multi-letter cognitive misspellings where the engine's
+ * guess was wrong more often than right; they stay in the strip (recall unchanged). The floor on
+ * "fixed" below moved down with it on purpose, and ceilings on "wrong" and on unknown words
+ * changed were added so the gain is held, not just the accuracy.
  * ```
  *
  * **Read phase 3 against [SpatialModelTest], not against this column.** It made the word's first
@@ -126,17 +147,27 @@ class EngineEvaluationTest {
         // is to catch a regression, and a floor above the current value would just fail forever.
         // Raise them as each phase lands.
         assertTrue(
-            "Correction accuracy regressed to ${report.correctionAccuracy} (phase 3: 0.3179).",
-            report.correctionAccuracy > 0.30,
+            "Correction accuracy regressed to ${report.correctionAccuracy} (phase 4: 0.1390).",
+            report.correctionAccuracy > 0.12,
+        )
+        assertTrue(
+            "Miscorrection rose to ${report.miscorrectionRate} (phase 4: 0.0802) — misspellings are " +
+                "being changed into the wrong word.",
+            report.miscorrectionRate < 0.10,
+        )
+        assertTrue(
+            "Unknown words changed rose to ${report.unknownWordDamage} (phase 4: 0.1285) — names and " +
+                "slang the vocabulary lacks are being rewritten.",
+            report.unknownWordDamage < 0.16,
         )
         assertTrue(
             "Next-word recall regressed to ${report.nextWordRecall} (phase 3: 0.2528).",
             report.nextWordRecall > 0.22,
         )
         assertTrue(
-            "False-correction rate rose to ${report.falseCorrectionRate} (phase 3: 0.0073) — " +
+            "False-correction rate rose to ${report.falseCorrectionRate} (phase 4: 0.0020) — " +
                 "correctly-typed words are being mangled.",
-            report.falseCorrectionRate < 0.015,
+            report.falseCorrectionRate < 0.005,
         )
     }
 

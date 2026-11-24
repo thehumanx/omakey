@@ -14,7 +14,7 @@ object SoundChoices {
     const val SOFT = "click_soft"
     const val CLASSIC = "click_classic"
 
-    const val DEFAULT = CRISP
+    const val DEFAULT = DEEP
 }
 
 data class HapticSoundSettings(
@@ -23,7 +23,7 @@ data class HapticSoundSettings(
      * "how strong the tick feels" is what users actually want to tune, not a raw millisecond
      * value they have no intuition for. */
     val hapticStrength: Float = DEFAULT_HAPTIC_STRENGTH,
-    val soundEnabled: Boolean = false,
+    val soundEnabled: Boolean = true,
     val soundChoice: String = SoundChoices.DEFAULT,
     /** 0..1 multiplier applied on top of each keypress/swipe's own base volume — same "let the
      * user tune the felt intensity, not a value they have no intuition for" reasoning as
@@ -31,10 +31,10 @@ data class HapticSoundSettings(
     val soundVolume: Float = DEFAULT_SOUND_VOLUME,
 ) {
     companion object {
-        const val DEFAULT_HAPTIC_STRENGTH = 0.5f
+        const val DEFAULT_HAPTIC_STRENGTH = 0.35f
         const val MIN_HAPTIC_STRENGTH = 0.1f
         const val MAX_HAPTIC_STRENGTH = 1.0f
-        const val DEFAULT_SOUND_VOLUME = 1.0f
+        const val DEFAULT_SOUND_VOLUME = 0.5f
         const val MIN_SOUND_VOLUME = 0.1f
         const val MAX_SOUND_VOLUME = 1.0f
     }
@@ -92,12 +92,12 @@ class HapticSoundPreferences(context: Context) {
     private fun load(prefs: SharedPreferences) = HapticSoundSettings(
         hapticEnabled = prefs.getBoolean(KEY_HAPTIC_ENABLED, true),
         hapticStrength = prefs.getFloat(KEY_HAPTIC_STRENGTH, HapticSoundSettings.DEFAULT_HAPTIC_STRENGTH),
-        soundEnabled = prefs.getBoolean(KEY_SOUND_ENABLED, false),
+        soundEnabled = prefs.getBoolean(KEY_SOUND_ENABLED, true),
         soundChoice = prefs.getString(KEY_SOUND_CHOICE, SoundChoices.DEFAULT) ?: SoundChoices.DEFAULT,
         soundVolume = prefs.getFloat(KEY_SOUND_VOLUME, HapticSoundSettings.DEFAULT_SOUND_VOLUME),
     )
 
-    private companion object {
+    internal companion object {
         const val PREFS_NAME = "omakey_haptic_sound_prefs"
         const val KEY_HAPTIC_ENABLED = "haptic_enabled"
         const val KEY_HAPTIC_STRENGTH = "haptic_strength"
