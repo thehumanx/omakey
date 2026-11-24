@@ -32,6 +32,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.ui.semantics.Role
+import dev.omakey.app.design.ButtonKind
+import dev.omakey.app.design.LanguageMark
+import dev.omakey.app.design.ConfirmSheet
+import dev.omakey.app.design.Omakey
+import dev.omakey.app.design.OmakeyButton
+import dev.omakey.app.design.OmakeyProgress
+import dev.omakey.app.design.RowTrailing
+import dev.omakey.app.design.SettingsRowLayout
+import dev.omakey.app.design.ToggleChip
+import dev.omakey.core.icons.OmakeyIcons
 import dev.omakey.app.BuildConfig
 import dev.omakey.app.languages.LanguagePacks
 import dev.omakey.core.icons.PhosphorLineCheck
@@ -92,7 +105,7 @@ internal fun LanguagesSection(localePreferences: LocalePreferences, languagePack
             progress.remove(entry.id)
             refreshInstalled()
             message = result.fold(
-                onSuccess = { "${it.nativeName} installed and switched on." },
+                onSuccess = { "${it.nativeName} is installed and on." },
                 onFailure = { "Couldn't install ${entry.nativeName}: ${it.message}" },
             )
         }
@@ -107,85 +120,73 @@ internal fun LanguagesSection(localePreferences: LocalePreferences, languagePack
         val enabled = locale.id in settings.enabledIds
         val isLastEnabled = enabled && settings.enabledIds.count { id -> available.any { it.id == id } } == 1
         val installed = installedVersions[locale.id]
-        UnindexedSettingToggle(
-            title = listOfNotNull(flagEmoji(locale.id), locale.nativeName).joinToString(" "),
-            description = buildString {
-                append(locale.displayName)
-                if (installed != null) append(" · pack $installed")
-                if (isLastEnabled) append(" — at least one language has to stay on.")
-            },
-            checked = enabled,
-            onCheckedChange = { on ->
-                if (!on && isLastEnabled) return@UnindexedSettingToggle
-                localePreferences.setEnabled(if (on) settings.enabledIds + locale.id else settings.enabledIds - locale.id)
-            },
-        )
-        if (enabled && locale.letterLayoutChoices.size > 1) {
-            // One chip per layout, each switched on or off on its own: the globe key, the
-            // language picker and the spacebar only go through the ones left on. One must stay.
-            val disabled = settings.disabledLayoutsOf(locale.id)
-            val onCount = locale.letterLayoutChoices.count { it.id !in disabled }
-            Text(
-                text = "Layouts — the globe key switches between the ones that are on",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp),
+        // One card row per language: the title row toggles it; the layout chips and pack line
+        // under it are their own targets, so a tap that misses a chip can't switch it off.
+        Column {
+            SettingsRowLayout(
+                title = locale.nativeName,
+                description = when {
+                    isLastEnabled -> "${locale.displayName} · one language stays on"
+                    locale.nativeName != locale.displayName -> locale.displayName
+                    else -> null
+                },
+                leading = { LanguageMark(locale.id) },
+                trailing = RowTrailing.Switch(enabled),
+                horizontalPadding = 0.dp,
+                modifier = Modifier.toggleable(value = enabled, role = Role.Switch, onValueChange = { on ->
+                    if (!on && isLastEnabled) return@toggleable
+                    localePreferences.setEnabled(if (on) settings.enabledIds + locale.id else settings.enabledIds - locale.id)
+                }),
             )
-            FlowRow(
-                modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                locale.letterLayoutChoices.forEach { layout ->
-                    val on = layout.id !in disabled
-                    FilterChip(
-                        selected = on,
-                        onClick = {
-                            if (on && onCount == 1) return@FilterChip
-                            localePreferences.setLayoutEnabled(locale.id, layout.id, !on)
-                        },
-                        label = { Text(dev.omakey.core.layout.shortName(layout)) },
-                        // A check as well as the fill: the selected tint alone was too close to the
-                        // unselected chip to tell on/off apart at a glance.
-                        leadingIcon = if (on) {
-                            { Icon(PhosphorLineCheck, contentDescription = null, modifier = Modifier.size(FilterChipDefaults.IconSize)) }
-                        } else {
-                            null
-                        },
-                    )
-                }
-            }
-        }
-        if (installed != null) {
-            val manifest = remember(installed) { languagePacks.manifestOf(locale.id) }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = manifest?.let { m ->
-                        "Data: ${m.license.ifBlank { "see sources" }}. " + m.sources.joinToString("; ") { s ->
-                            if (s.license.isBlank()) s.name else "${s.name} (${s.license})"
+            if ((enabled && locale.letterLayoutChoices.size > 1) || installed != null) {
+                Column(Modifier.padding(start = 54.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (enabled && locale.letterLayoutChoices.size > 1) {
+                        // One chip per layout, each on or off: the globe key, the language picker
+                        // and the spacebar only go through the ones left on. One must stay.
+                        val disabled = settings.disabledLayoutsOf(locale.id)
+                        val onCount = locale.letterLayoutChoices.count { it.id !in disabled }
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            locale.letterLayoutChoices.forEach { layout ->
+                                val on = layout.id !in disabled
+                                ToggleChip(dev.omakey.core.layout.shortName(layout), on, onClick = {
+                                    if (on && onCount == 1) return@ToggleChip
+                                    localePreferences.setLayoutEnabled(locale.id, layout.id, !on)
+                                })
+                            }
                         }
-                    }.orEmpty(),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.weight(1f).padding(end = 8.dp),
-                )
-                TextButton(onClick = { confirmRemove = locale }) { Text("Remove") }
+                    }
+                    if (installed != null) {
+                        val manifest = remember(installed) { languagePacks.manifestOf(locale.id) }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            // Where the words came from, with each source's licence: the packs'
+                            // CC BY / CC BY-SA data needs this attribution (decisions §66).
+                            Text(
+                                text = "Pack $installed" + (manifest?.let { m ->
+                                    " · Data: ${m.license.ifBlank { "see sources" }}. " + m.sources.joinToString("; ") { src ->
+                                        if (src.license.isBlank()) src.name else "${src.name} (${src.license})"
+                                    }
+                                } ?: ""),
+                                style = Omakey.type.caption,
+                                color = Omakey.colors.muted,
+                                modifier = Modifier.weight(1f).padding(end = 8.dp),
+                            )
+                            OmakeyButton("Remove", { confirmRemove = locale }, kind = ButtonKind.Destructive, height = 40.dp)
+                        }
+                    }
+                }
             }
         }
     }
 
-    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
     // --- Downloadable packs -------------------------------------------------------------------
     when (indexState) {
-        IndexState.NOT_FETCHED, IndexState.FAILED -> UnindexedClickableSettingRow(
+        IndexState.NOT_FETCHED, IndexState.FAILED -> SettingsRowLayout(
             title = "Get more languages",
-            description = if (indexState == IndexState.FAILED) {
-                "Couldn't reach the language list. Tap to try again."
-            } else {
-                "Downloads the list of language packs from omakey's GitHub releases. Only this, and " +
-                    "the packs you choose, use the network."
-            },
-            onClick = {
+            description = if (indexState == IndexState.FAILED) "Couldn't reach the list. Tap to try again." else "Only this list and the packs you pick use the internet.",
+            leading = { dev.omakey.app.design.IconTile(OmakeyIcons.Download) },
+            trailing = RowTrailing.Chevron,
+            horizontalPadding = 0.dp,
+            modifier = Modifier.clickable(role = Role.Button) {
                 indexState = IndexState.LOADING
                 scope.launch {
                     val result = withContext(Dispatchers.IO) { runCatching { languagePacks.fetchIndex() } }
@@ -195,110 +196,106 @@ internal fun LanguagesSection(localePreferences: LocalePreferences, languagePack
                 }
             },
         )
-        IndexState.LOADING -> Text("Fetching the language list…", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 8.dp))
+        IndexState.LOADING -> SettingsRowLayout(
+            title = "Getting the list…",
+            leading = { dev.omakey.app.design.IconTile(OmakeyIcons.Download) },
+            horizontalPadding = 0.dp,
+        )
         IndexState.LOADED -> {
             val offers = index?.packs.orEmpty().filter { entry ->
                 val installed = installedVersions[entry.id]
                 installed == null || isNewerPackVersion(entry.packVersion, installed)
             }
             if (offers.isEmpty()) {
-                Text("Every available language is installed and up to date.", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 8.dp))
+                SettingsRowLayout(
+                    title = "You have every language",
+                    description = "All up to date.",
+                    leading = { dev.omakey.app.design.IconTile(OmakeyIcons.Check) },
+                    horizontalPadding = 0.dp,
+                )
             }
             offers.forEach { entry ->
                 val fraction = progress[entry.id]
                 val isUpdate = installedVersions[entry.id] != null
-                Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text(listOfNotNull(flagEmoji(entry.id), entry.nativeName).joinToString(" "), style = MaterialTheme.typography.bodyLarge)
-                            Text(
-                                "${entry.displayName} · ${"%.1f".format(entry.sizeBytes / 1_000_000.0)} MB · ${entry.license}",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        val compatible = entry.packFormat == PackManifest.FORMAT && entry.minAppVersionCode <= BuildConfig.VERSION_CODE
-                        if (compatible) {
-                            TextButton(enabled = fraction == null, onClick = { install(entry) }) {
-                                Text(if (isUpdate) "Update" else "Download")
-                            }
-                        } else {
-                            Text(
-                                "Needs a newer omakey",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                    if (fraction != null) LinearProgressIndicator(progress = { fraction.coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
-                }
+                val compatible = entry.packFormat == PackManifest.FORMAT && entry.minAppVersionCode <= BuildConfig.VERSION_CODE
+                SettingsRowLayout(
+                    title = entry.nativeName,
+                    description = if (compatible) {
+                        "${"%.1f".format(entry.sizeBytes / 1_000_000.0)} MB · ${entry.license}"
+                    } else {
+                        "Needs a newer omakey"
+                    },
+                    leading = { LanguageMark(entry.id) },
+                    horizontalPadding = 0.dp,
+                    below = if (fraction == null) null else { { OmakeyProgress(fraction, Modifier.padding(top = 8.dp)) } },
+                    trailing = if (!compatible) RowTrailing.None else RowTrailing.Custom {
+                        OmakeyButton(
+                            text = if (isUpdate) "Update" else "Get",
+                            onClick = { install(entry) },
+                            enabled = fraction == null,
+                            kind = ButtonKind.Tonal,
+                            height = 40.dp,
+                        )
+                    },
+                )
             }
         }
     }
 
     ClickableSettingRow(
         key = SettingKey.INSTALL_FROM_FILE,
-        description = "Add a language from a .zip file you already have.",
+        description = "Add a language from a .zip you have.",
         onClick = { filePicker.launch(arrayOf("application/zip", "application/octet-stream")) },
     )
 
-    message?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 4.dp)) }
+    message?.let { SettingBlock { SettingDescription(it) } }
 
     confirmRemove?.let { locale ->
-        AlertDialog(
-            onDismissRequest = { confirmRemove = null },
-            title = { Text("Remove ${locale.nativeName}?") },
-            text = { Text("Words the keyboard learned in ${locale.displayName} are kept, in case you install it again.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    languagePacks.uninstall(locale.id, localePreferences)
-                    refreshInstalled()
-                    confirmRemove = null
-                }) { Text("Remove") }
+        ConfirmSheet(
+            title = "Remove ${locale.nativeName}?",
+            message = "Words omakey learned in ${locale.displayName} are kept, in case you add it again.",
+            confirmLabel = "Remove",
+            destructive = true,
+            onConfirm = {
+                languagePacks.uninstall(locale.id, localePreferences)
+                refreshInstalled()
+                confirmRemove = null
             },
-            dismissButton = { TextButton(onClick = { confirmRemove = null }) { Text("Cancel") } },
+            onDismiss = { confirmRemove = null },
         )
     }
 
     pendingFile?.let { uri ->
-        AlertDialog(
-            onDismissRequest = { pendingFile = null },
-            title = { Text("Install from file?") },
-            text = {
-                Text(
-                    "Packs from omakey's language list are checked against a signed checksum. A file " +
-                        "can't be — it's checked for being a well-formed pack, but not for where it " +
-                        "came from. Language packs contain data only, never code; still, only install " +
-                        "ones you trust.",
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    pendingFile = null
-                    message = null
-                    scope.launch {
-                        val result = withContext(Dispatchers.IO) {
-                            runCatching {
-                                val copy = File(context.cacheDir, "language-file.zip")
-                                try {
-                                    context.contentResolver.openInputStream(uri)!!.use { input ->
-                                        copy.outputStream().use { out -> copyAtMost(input, out, PackInstaller.MAX_TOTAL_BYTES) }
-                                    }
-                                    languagePacks.installFromFile(copy, localePreferences)
-                                } finally {
-                                    copy.delete()
+        ConfirmSheet(
+            title = "Install from a file?",
+            message = "Packs from omakey's list are verified. A file can't be, so only install one you trust. Packs hold words, never code.",
+            confirmLabel = "Install",
+            dismissLabel = "Don't install",
+            onConfirm = {
+                pendingFile = null
+                message = null
+                scope.launch {
+                    val result = withContext(Dispatchers.IO) {
+                        runCatching {
+                            val copy = File(context.cacheDir, "language-file.zip")
+                            try {
+                                context.contentResolver.openInputStream(uri)!!.use { input ->
+                                    copy.outputStream().use { out -> copyAtMost(input, out, PackInstaller.MAX_TOTAL_BYTES) }
                                 }
+                                languagePacks.installFromFile(copy, localePreferences)
+                            } finally {
+                                copy.delete()
                             }
                         }
-                        refreshInstalled()
-                        message = result.fold(
-                            onSuccess = { "${it.nativeName} installed and switched on." },
-                            onFailure = { "Couldn't install that file: ${it.message}" },
-                        )
                     }
-                }) { Text("Install") }
+                    refreshInstalled()
+                    message = result.fold(
+                        onSuccess = { "${it.nativeName} is installed and on." },
+                        onFailure = { "Couldn't install that file: ${it.message}" },
+                    )
+                }
             },
-            dismissButton = { TextButton(onClick = { pendingFile = null }) { Text("Cancel") } },
+            onDismiss = { pendingFile = null },
         )
     }
 }

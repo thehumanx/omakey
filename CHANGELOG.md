@@ -3,7 +3,12 @@
 All notable changes to omakey are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased]
+## [6.0.0] — 2026-11-24
+
+The biggest update yet: a new look, snippets, split and compact keyboards, and autocorrect that
+leaves your words alone. Many of these came from Лохов Ацамаз, who asked for the punctuation
+order, reported the spacebar bug, and suggested holding the spacebar to select all, snippets and
+the split keyboard. Thank you.
 
 ### Added
 - **Compact mode**, a new tile in Quick access. It hides the spacebar row so the keyboard is one row
@@ -32,6 +37,35 @@ All notable changes to omakey are documented here. Format loosely follows
   select everything.
 
 ### Changed
+- **A new look, everywhere.** Settings and the keyboard's own panels were redesigned as one
+  system: the Figtree typeface, calm neutral colours with one accent, rounded cards, and one set
+  of line icons (no more emoji or text characters standing in for icons).
+  - **Settings is reorganised** into four groups (Look, Typing, Above the keys, More), with a card
+    at the top that tells you whether omakey is ready and offers the one next step. Clipboard has
+    its own page; key look, the key-press popup, symbols and the number pad all live under Keys.
+  - **Questions come up from the bottom** as sheets with clear choices ("Delete", "Keep it")
+    instead of pop-up boxes.
+  - **Drag to reorder** the pages above the keys and your snippets: hold one and move it.
+  - **Your themes** show as little keyboards; hold one to edit or delete it.
+  - **Languages** are marked by their code (EN, NE) rather than a flag.
+  - **On the keyboard:** Quick access tiles are larger with clear labels and a close button; the
+    word space will type is underlined; a typed snippet shortcut shows as a dark chip; short
+    notes (like "word learned") appear as a small pill; the floating keyboard has rounded corners
+    and a shadow; emoji categories use simple icons.
+- **New defaults for new installs**: the theme takes your wallpaper's colours (or follows the
+  phone's light/dark mode where Android can't), the Figtree font, a soft "deep" key sound at half
+  volume, next-word suggestions, capitals at the start of sentences, double-space for a full stop,
+  swipe right for a space and a lighter vibration. Autocorrect starts off. If you're updating,
+  nothing changes: your keyboard keeps the settings it had.
+- **Smoother Settings**: pages slide in from the right and back out, search rises from below, and
+  a "Try it" button sits on every page. The status card notices straight away when you pick
+  omakey as your keyboard. A splash screen shows while the app opens, and the app icon is new.
+- **Extension bar pages** is the new name for Bar pages; Emoji settings moved to Keys. Languages
+  show their flag.
+- **Hold space, slide to Select all**: it now selects the moment your finger reaches it.
+- **Key popups float above the keyboard**: the number row above the keys shows them too, and the
+  top row's popup is no longer squashed inside the keys. The Classic popup is slightly see-through
+  so it doesn't blend into the pressed key; the Lift style lost its shadow.
 - **More space between keys on a tall keyboard.** The gap between rows now grows with the
   keyboard's height, so keys (and the spacebar most of all) don't turn into thick slabs.
 - **The snippet form says what each field does.** "What gets typed" comes first, with one-tap
@@ -47,6 +81,9 @@ All notable changes to omakey are documented here. Format loosely follows
   their next update.
 
 ### Fixed
+- **Snippet shortcuts work in more places.** Typing a shortcut like `@@` didn't offer its snippet
+  in fields that ask not to be learned from (incognito tabs, many messengers) or on omakey's own
+  Try screen. Now only password fields hold it back. It never needed the Snippets bar page on.
 - **Autocorrect no longer rewrites words it doesn't know.** Names, slang, brands and other words
   missing from the dictionary used to be swapped for the nearest common word ("Rohan" became
   "than", "lmao" became "lamp"). Now autocorrect only steps in when it is confident: a clear typo

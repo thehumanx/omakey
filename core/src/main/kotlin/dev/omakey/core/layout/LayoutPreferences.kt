@@ -239,7 +239,7 @@ class LayoutPreferences(context: Context) {
         splitDuplicateKeys = prefs.getBoolean(KEY_SPLIT_DUPLICATE_KEYS, true),
     )
 
-    private companion object {
+    internal companion object {
         const val PREFS_NAME = "omakey_layout_prefs"
         const val KEY_SWAP_EMOJI_LANGUAGE = "swap_emoji_and_language"
         const val KEY_EMOJI_SLOT = "emoji_slot_key"

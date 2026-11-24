@@ -9,44 +9,60 @@ import dev.omakey.core.search.SettingsSearch
  * are built from the section list, so what search finds can't drift from what the screen shows.
  */
 
+/** The four groups on the Settings home, in order. */
+internal enum class SettingsGroup(val title: String) {
+    LOOK("Look"),
+    TYPING("Typing"),
+    ABOVE_THE_KEYS("Above the keys"),
+    MORE("More"),
+}
+
 /**
- * The Settings pages. Settings used to be one long scroll holding every option, which had become
- * too long to find anything in; now the home screen lists these and each opens its own page.
- * Grouped by what the user is trying to do, not by which preference class stores it.
+ * The Settings pages, grouped by what the user is trying to do rather than which preference class
+ * stores it (design pass, 2026-11-24): everything about how keys look under Keys, everything above
+ * the keys together, clipboard on its own page instead of split between Privacy and the bar.
+ * Snippets isn't a page here: its home row opens the Snippets screen directly.
  */
-internal enum class SettingsPage(val title: String, val summary: String) {
-    APPEARANCE("Appearance", "Layout style, theme, key look, font"),
-    KEYBOARD("Keyboard", "Size & position, buttons, emoji skin tone"),
-    LANGUAGES("Languages", "Languages, layouts, downloads"),
-    TYPING("Typing", "Autocorrect, prediction, capitals, punctuation"),
-    GESTURES("Gestures", "Swipes, long-press, swipe distance"),
-    PRIVACY("Privacy & data", "Learning, learned words, clipboard history"),
-    SOUND("Sound & haptics", "Key sounds, vibration"),
-    ACCESSIBILITY("Accessibility", "Screen reader mode"),
-    ABOUT("About", "Version and updates"),
+internal enum class SettingsPage(val title: String, val summary: String, val group: SettingsGroup) {
+    THEME("Theme", "Colours, your own themes", SettingsGroup.LOOK),
+    KEYS("Keys", "Layout, backgrounds, key popup, emoji", SettingsGroup.LOOK),
+    FONT("Font", "The letters on the keys", SettingsGroup.LOOK),
+    SIZE_POSITION("Size & position", "Height, edges, split", SettingsGroup.LOOK),
+    CORRECTIONS("Corrections & suggestions", "Autocorrect, capitals, punctuation", SettingsGroup.TYPING),
+    GESTURES("Gestures", "Swipe to delete, space, select", SettingsGroup.TYPING),
+    LANGUAGES("Languages", "Languages, layouts, downloads", SettingsGroup.TYPING),
+    BAR_PAGES("Extension bar pages", "Suggestions, snippets, numbers, tools", SettingsGroup.ABOVE_THE_KEYS),
+    QUICK_ACCESS("Quick access", "Show, hide and order tiles", SettingsGroup.ABOVE_THE_KEYS),
+    CLIPBOARD("Clipboard", "What you copied", SettingsGroup.ABOVE_THE_KEYS),
+    SOUND("Sound & vibration", "Key sounds, vibration", SettingsGroup.MORE),
+    PRIVACY("Privacy", "Learning and learned words", SettingsGroup.MORE),
+    ACCESSIBILITY("Accessibility", "Screen reader mode", SettingsGroup.MORE),
+    ABOUT("About", "Version and updates", SettingsGroup.MORE),
 }
 
 /** One section card. Declared in the order the cards appear on their page: the page renders
- * them from this list, and search scrolls to them by their position in it. */
-internal enum class SettingsSectionKey(val title: String, val page: SettingsPage) {
-    LAYOUT_STYLE("Layout style", SettingsPage.APPEARANCE),
-    THEME("Theme", SettingsPage.APPEARANCE),
-    KEYS("Keys", SettingsPage.APPEARANCE),
-    FONT("Font", SettingsPage.APPEARANCE),
-    SIZE_POSITION("Size & position", SettingsPage.KEYBOARD),
-    SUGGESTION_BAR("Suggestion bar", SettingsPage.KEYBOARD),
-    BUTTONS("Buttons", SettingsPage.KEYBOARD),
-    SYMBOLS("Symbols", SettingsPage.KEYBOARD),
-    NUMBER_PAD("Number pad", SettingsPage.KEYBOARD),
-    EMOJI("Emoji", SettingsPage.KEYBOARD),
-    LANGUAGES("Languages", SettingsPage.LANGUAGES),
-    CORRECTIONS("Corrections", SettingsPage.TYPING),
-    PUNCTUATION("Punctuation & capitals", SettingsPage.TYPING),
+ * them from this list, and search scrolls to them by their position in it. A section whose title
+ * repeats its page's shows no label. [bare] sections lay out their own cards. */
+internal enum class SettingsSectionKey(val title: String, val page: SettingsPage, val bare: Boolean = false) {
+    THEME("Theme", SettingsPage.THEME, bare = true),
+    LAYOUT_STYLE("Layout style", SettingsPage.KEYS),
+    KEYS("Look of the keys", SettingsPage.KEYS),
+    BUTTONS("Beside the spacebar", SettingsPage.KEYS),
+    SYMBOLS("Symbols", SettingsPage.KEYS),
+    NUMBER_PAD("Number pad", SettingsPage.KEYS),
+    EMOJI("Emoji", SettingsPage.KEYS),
+    FONT("Font", SettingsPage.FONT),
+    SIZE_POSITION("Size & position", SettingsPage.SIZE_POSITION),
+    CORRECTIONS("Corrections", SettingsPage.CORRECTIONS),
+    PUNCTUATION("Capitals & punctuation", SettingsPage.CORRECTIONS),
     GESTURES("Gestures", SettingsPage.GESTURES),
+    LANGUAGES("Languages", SettingsPage.LANGUAGES),
+    SUGGESTION_BAR("Extension bar pages", SettingsPage.BAR_PAGES, bare = true),
+    QUICK_ACCESS("Quick access", SettingsPage.QUICK_ACCESS, bare = true),
+    CLIPBOARD("Clipboard", SettingsPage.CLIPBOARD),
+    SOUND_HAPTICS("Sound & vibration", SettingsPage.SOUND),
     LEARNING("Learning", SettingsPage.PRIVACY),
-    CLIPBOARD("Clipboard", SettingsPage.PRIVACY),
     WHAT_LEAVES("What leaves your phone", SettingsPage.PRIVACY),
-    SOUND_HAPTICS("Sound & haptics", SettingsPage.SOUND),
     ACCESSIBILITY("Accessibility", SettingsPage.ACCESSIBILITY),
     UPDATES("Updates", SettingsPage.ABOUT),
 }
@@ -70,20 +86,21 @@ internal enum class SettingKey(
     SYSTEM_ACCENT("Pick accent color from system", SettingsSectionKey.THEME, listOf("material you", "dynamic", "colour"), minSdk = 31),
     KEY_BACKGROUNDS("Key backgrounds", SettingsSectionKey.KEYS, listOf("box", "border")),
     HOME_ROW_HIGHLIGHT("Home row highlight", SettingsSectionKey.KEYS, listOf("stripe", "asdf")),
-    SPLIT_DUPLICATE_KEYS("Repeat the middle keys on both sides", SettingsSectionKey.KEYS, listOf("split", "foldable", "tablet", "landscape", "duplicate")),
+    SPLIT_DUPLICATE_KEYS("Repeat the middle keys on both sides", SettingsSectionKey.SIZE_POSITION, listOf("split", "foldable", "tablet", "landscape", "duplicate")),
     SECONDARY_SYMBOLS("Show secondary symbols", SettingsSectionKey.KEYS, listOf("hint", "digits", "long press")),
     ALWAYS_CAPITALS("Always show capital letters", SettingsSectionKey.KEYS, listOf("uppercase", "lowercase", "caps", "keycaps")),
     FONT("Font", SettingsSectionKey.FONT, listOf("typeface"), sectionLevel = true),
     SIZE_POSITION("Keyboard size & position", SettingsSectionKey.SIZE_POSITION, listOf("height", "resize", "one-handed", "bigger", "smaller")),
     EDGE_PADDING("Add padding", SettingsSectionKey.SIZE_POSITION, listOf("gap", "edge", "curved", "margin")),
     BAR_SUGGESTIONS("Suggestions", SettingsSectionKey.SUGGESTION_BAR, listOf("strip", "page", "language button")),
-    BAR_SNIPPETS("Snippets", SettingsSectionKey.SUGGESTION_BAR, listOf("snippet", "hotkey", "quick input", "saved text", "manage snippets", "email", "phone", "password", "address", "login")),
+    BAR_SNIPPETS("Snippets", SettingsSectionKey.SUGGESTION_BAR, listOf("bar page", "snippet", "hotkey", "quick input", "saved text", "manage snippets", "email", "phone", "password", "address", "login")),
     BAR_NUMBERS("Numbers", SettingsSectionKey.SUGGESTION_BAR, listOf("digits", "number row")),
     BAR_TEXT_TOOLS("Text tools", SettingsSectionKey.SUGGESTION_BAR, listOf("undo", "redo", "copy", "cut", "paste", "select all")),
+    QUICK_ACCESS_TILES("Quick access", SettingsSectionKey.QUICK_ACCESS, listOf("quick settings", "tiles", "shortcuts", "toggles", "panel"), sectionLevel = true),
     AUTOFILL("Password manager logins", SettingsSectionKey.SUGGESTION_BAR, listOf("autofill suggestions", "password", "login", "bitwarden")),
     SPACEBAR_SIDE_KEY("Key next to the spacebar", SettingsSectionKey.BUTTONS, listOf("period", "comma", "full stop", "dot", ".")),
     EMOJI_SLOT_KEY("Key left of the spacebar", SettingsSectionKey.BUTTONS, listOf("emoji", "swap", "switch", "globe", "language", "comma")),
-    TAP_PREVIEW("Key press popup", SettingsSectionKey.BUTTONS, listOf("preview", "bubble", "magnify", "slim", "lift", "classic")),
+    TAP_PREVIEW("Key press popup", SettingsSectionKey.KEYS, listOf("preview", "bubble", "magnify", "slim", "lift", "classic")),
     FLEKSY_SYMBOLS("Fleksy symbol layout", SettingsSectionKey.SYMBOLS, listOf("keep fleksy secondary keys layout", "?123", "symbols page")),
     POPUP_SYMBOLS("Long-press symbols", SettingsSectionKey.SYMBOLS, listOf("custom", "hold", "special characters")),
     NUMBER_PAD("Number pad", SettingsSectionKey.NUMBER_PAD, listOf("numbers", "phone", "date", "time", "pin", "digits", "numeric")),
@@ -105,7 +122,7 @@ internal enum class SettingKey(
     SAVE_CLIPBOARD_HISTORY("Save clipboard history", SettingsSectionKey.CLIPBOARD, listOf("copy", "paste")),
     CLIPBOARD_HISTORY("Clipboard history", SettingsSectionKey.CLIPBOARD, listOf("copy", "paste", "clear", "pinned")),
     WHAT_LEAVES("What leaves your phone", SettingsSectionKey.WHAT_LEAVES, listOf("privacy", "network", "internet", "data", "offline"), sectionLevel = true),
-    HAPTIC_FEEDBACK("Haptic feedback", SettingsSectionKey.SOUND_HAPTICS, listOf("vibration", "vibrate", "buzz", "strength")),
+    HAPTIC_FEEDBACK("Vibration", SettingsSectionKey.SOUND_HAPTICS, listOf("haptic", "vibrate", "buzz", "strength")),
     KEY_SOUNDS("Key sounds", SettingsSectionKey.SOUND_HAPTICS, listOf("click", "audio", "volume")),
     ACCESSIBLE_MODE("Accessible mode", SettingsSectionKey.ACCESSIBILITY, listOf("talkback", "screen reader", "blind")),
     AUTO_UPDATE_CHECKS("Automatic update checks", SettingsSectionKey.UPDATES, listOf("version", "notification")),
@@ -115,6 +132,8 @@ internal enum class SettingKey(
 internal object SettingsIndex {
     fun sectionsOf(page: SettingsPage): List<SettingsSectionKey> =
         SettingsSectionKey.entries.filter { it.page == page }
+
+    fun pagesIn(group: SettingsGroup): List<SettingsPage> = SettingsPage.entries.filter { it.group == group }
 
     /** Search over the entries this Android version shows. */
     fun searchFor(sdkInt: Int): SettingsSearch<SettingKey> = SettingsSearch(

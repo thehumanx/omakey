@@ -26,7 +26,7 @@ class SettingsNavTest {
 
     @Test
     fun `page opened from home goes back home`() {
-        assertEquals(SettingsNav(), SettingsNav().openPage(SettingsPage.TYPING).back())
+        assertEquals(SettingsNav(), SettingsNav().openPage(SettingsPage.CORRECTIONS).back())
     }
 
     @Test

@@ -1,9 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Neutral accent for anything the platform draws itself (overscroll, system dialogs), so
-         nothing outside Compose's own colour scheme picks up a stock hue. -->
+         nothing outside Compose's own colour scheme picks up a stock hue. The window is the
+         design's ground colour, so nothing flashes white or black between the splash and the first
+         frame. -->
     <style name="Theme.Omakey" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:colorAccent">#5F5F5F</item>
         <item name="android:colorPrimary">#3C3C3C</item>
+        <item name="android:windowBackground">@color/omakey_ground</item>
     </style>
+
+    <!-- Launch: the icon centred on the ground colour while the app starts. Android 12+ draws its
+         own splash from values-v31; older versions show this window background. SettingsActivity
+         switches to Theme.Omakey before its first frame. -->
+    <style name="Theme.Omakey.Splash">
+        <item name="android:windowBackground">@drawable/splash</item>
+    </style>
+
+    <color name="omakey_ground">#F3F3F2</color>
 </resources>

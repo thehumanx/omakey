@@ -64,6 +64,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
@@ -336,6 +338,9 @@ class KeyboardViewModel(
      * screens). Short codes are never offered there. */
     private var fieldSensitive = false
 
+    /** A password field: the only place short codes aren't offered (see isPasswordField). */
+    private var passwordField = false
+
     /** Every snippet, codes included, for matching what was just typed. */
     private val allSnippets: StateFlow<List<dev.omakey.core.snippets.Snippet>> =
         (snippetRepository?.snippets ?: kotlinx.coroutines.flow.flowOf(emptyList()))
@@ -479,10 +484,10 @@ class KeyboardViewModel(
     /** Offers the snippet whose short code was just typed (see SnippetCodes), or clears the offer. */
     private fun updateSnippetOffer() {
         val snippets = allSnippets.value
-        // No offer in a sensitive field, over a selection (accepting would replace it), mid
+        // No offer in a password field, over a selection (accepting would replace it), mid
         // composition (romanized Nepali's composing word isn't text yet), or when no snippet has a
         // code at all, which also spares a read of the field on every keystroke.
-        val offer = if (snippetRepository == null || fieldSensitive || selectionActive ||
+        val offer = if (snippetRepository == null || passwordField || selectionActive ||
             (transliterating() && translit.isComposing) || snippets.none { it.shortcut != null }
         ) {
             null
@@ -547,6 +552,7 @@ class KeyboardViewModel(
         // typing a password or a recovery phrase will never think to reach for a toggle, and words
         // captured from one would sit in the dictionary indefinitely.
         fieldSensitive = isSensitiveField(info, ownPackage)
+        passwordField = dev.omakey.core.input.isPasswordField(info)
         incognitoPreferences.onFieldChanged(fieldSensitive)
         // Before the layout is chosen below, so a field that asks for a language opens in it.
         localeController.onFieldStarted(hintLanguagesOf(info))
@@ -625,6 +631,15 @@ class KeyboardViewModel(
     }
 
     fun closeQuickAccess() = _uiState.update { it.copy(quickAccessOpen = false) }
+
+    /** For the Quick access Autocorrect tile. */
+    val autocorrectOn: StateFlow<Boolean> by lazy {
+        autocorrectPreferences.settings.map { it.autocorrectEnabled }
+            .stateIn(scope, kotlinx.coroutines.flow.SharingStarted.Eagerly, autocorrectPreferences.settings.value.autocorrectEnabled)
+    }
+
+    fun toggleAutocorrect() =
+        autocorrectPreferences.setAutocorrectEnabled(!autocorrectPreferences.settings.value.autocorrectEnabled)
 
     /**
      * Switches placement, closing the panel so the result is immediately visible — the whole point

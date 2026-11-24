@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -202,6 +203,8 @@ internal fun KeyGrid(
     // never recomposes the key grid; it also keeps its last spot through the fade-out.
     var trackpadShown by remember { mutableStateOf(false) }
     var trackpadOnPill by remember { mutableStateOf(false) }
+    // Select all already done in this hold (reaching the pill does it once).
+    var trackpadSelectedAll by remember { mutableStateOf(false) }
     val trackpadFinger = remember { mutableStateOf(Offset.Zero) }
     val trackpadAlpha = remember { androidx.compose.animation.core.Animatable(0f) }
     androidx.compose.runtime.LaunchedEffect(trackpadShown) {
@@ -265,6 +268,7 @@ internal fun KeyGrid(
                         touchJobsParent.invokeOnCompletion {
                             trackpadShown = false
                             trackpadOnPill = false
+                            trackpadSelectedAll = false
                         }
 
                         awaitEachGesture {
@@ -337,6 +341,7 @@ internal fun KeyGrid(
                                         onPressedKeyChange(null)
                                         tapPreview.hide()
                                         trackpadOnPill = false
+                                        trackpadSelectedAll = false
                                         trackpadFinger.value = lastPointer
                                         trackpadShown = true
                                     } else if (gestureSettings.showKeyPopup && heldKey != null && heldKey.popupChars.isNotEmpty()) {
@@ -436,7 +441,7 @@ internal fun KeyGrid(
                                     if (cursorDragActive) {
                                         // This loop never consumes the primary pointer, so a
                                         // consumed lift is Compose cancelling the touch.
-                                        when (SpacebarTrackpad.onLift(trackpadOnPill, cursorDragMoved, cancelled = change.isConsumed)) {
+                                        when (SpacebarTrackpad.onLift(trackpadOnPill, cursorDragMoved, cancelled = change.isConsumed, selectedAll = trackpadSelectedAll)) {
                                             SpacebarTrackpad.Lift.SELECT_ALL -> {
                                                 feedback.onKeyPress()
                                                 viewModel.onSelectAll()
@@ -449,6 +454,7 @@ internal fun KeyGrid(
                                         }
                                         trackpadShown = false
                                         trackpadOnPill = false
+                                        trackpadSelectedAll = false
                                         settled = true
                                     } else if (dragState != null) {
                                         // Commits whichever option is selected: the one the finger
@@ -487,6 +493,11 @@ internal fun KeyGrid(
                                         trackpadOnPill = nowOnPill
                                         if (nowOnPill) {
                                             feedback.onKeyPress()
+                                            // Selects the moment the finger gets there, as Fleksy does.
+                                            if (SpacebarTrackpad.onReachPill(trackpadSelectedAll)) {
+                                                trackpadSelectedAll = true
+                                                viewModel.onSelectAll()
+                                            }
                                         } else {
                                             // Pick cursor movement up from here, so the slide made
                                             // while on the pill doesn't jump the cursor.
@@ -494,8 +505,9 @@ internal fun KeyGrid(
                                         }
                                     }
                                     val delta = change.position.x - cursorDragAnchorX
-                                    if (nowOnPill) {
-                                        // On the pill, sideways movement aims at it; the cursor stays.
+                                    if (nowOnPill || trackpadSelectedAll) {
+                                        // On the pill, sideways movement aims at it; once all is
+                                        // selected, moving the cursor would undo it, so it stays.
                                     } else if (delta >= cursorDragStepPx) {
                                         cursorDragMoved = true
                                         feedback.onKeyPress()
@@ -631,6 +643,12 @@ internal fun KeyGrid(
                     accessibleMode = accessibleMode,
                     showKeyBackgrounds = layoutSettings.showKeyBackgrounds,
                     isHomeRow = rowIndex == homeRowIndex,
+                    stripeBleed = (if (isGridMode) 0.dp else 4.dp) +
+                        if (layoutSettings.edgePadding && layoutSettings.placement == dev.omakey.core.layout.KeyboardPlacement.DOCKED) {
+                            dev.omakey.core.layout.LayoutSettings.EDGE_PADDING_DP.dp
+                        } else {
+                            0.dp
+                        },
                     homeRowTinted = layoutSettings.showMiddleRowStripe,
                     onKeyTap = onKeyTapStable,
                     ancestorCoordinates = ancestorCoordinatesStable,
@@ -682,7 +700,7 @@ internal fun KeyGrid(
 }
 
 private val TRACKPAD_PILL_WIDTH = 160.dp
-private val TRACKPAD_PILL_HEIGHT = 44.dp
+private val TRACKPAD_PILL_HEIGHT = 48.dp
 private val TRACKPAD_PILL_TOP = 16.dp
 private val TRACKPAD_PILL_SLOP = 12.dp
 private val TRACKPAD_FINGER_CIRCLE = 48.dp
@@ -708,8 +726,9 @@ private fun TrackpadOverlay(
             .alpha(alpha)
             .background(theme.keyboardBackground.toComposeColor()),
     ) {
-        val pillShape = androidx.compose.foundation.shape.RoundedCornerShape(50)
-        Box(
+        val pillShape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp)
+        val pillContent = (if (onPill) theme.onAccent else theme.labelOn(theme.keyBackground)).toComposeColor()
+        Row(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .padding(top = TRACKPAD_PILL_TOP)
@@ -719,16 +738,17 @@ private fun TrackpadOverlay(
                 .background((if (onPill) theme.accent else theme.keyBackground).toComposeColor(), pillShape)
                 // An outline, so the pill stands out even on a theme whose keys are the
                 // background's colour (flat themes, key backgrounds off).
-                .border(1.dp, theme.fadedLabelOn(theme.keyboardBackground, 0.45f).toComposeColor(), pillShape),
-            contentAlignment = Alignment.Center,
+                .border(1.dp, theme.fadedLabelOn(theme.keyboardBackground, 0.30f).toComposeColor(), pillShape),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
         ) {
+            Icon(dev.omakey.core.icons.OmakeyIcons.SelectAll, contentDescription = null, tint = pillContent, modifier = Modifier.size(20.dp))
             Text(
-                text = "SELECT ALL",
-                color = (if (onPill) theme.onAccent else theme.labelOn(theme.keyBackground)).toComposeColor(),
-                fontFamily = fontFamily,
-                fontSize = 14.sp,
+                text = "Select all",
+                color = pillContent,
+                fontFamily = fontFamily ?: dev.omakey.app.design.Figtree,
+                fontSize = 15.sp,
                 fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
-                letterSpacing = 1.sp,
             )
         }
         val circleColor = theme.accent.toComposeColor().copy(alpha = 0.35f)
@@ -869,6 +889,8 @@ private fun keyIcon(key: KeyDefinition, capsLockOn: Boolean, enterAction: Int): 
     // An icon, not the 😊 glyph the layouts carry as a label: a colour emoji ignores the theme's
     // text colour, so it was the one control key that didn't match the others.
     SpecialKeyCode.EXTENSIONS -> PhosphorSmiley
+    // The number pad's small space key: an icon, not the "␣" glyph its layout carries.
+    SpecialKeyCode.SPACE -> if (key.label == dev.omakey.core.layout.NumberPads.SPACE_LABEL) dev.omakey.core.icons.OmakeyIcons.SpaceBar else null
     else -> null
 }
 
@@ -1053,6 +1075,9 @@ internal fun KeyRowView(
     showSecondarySymbols: Boolean = false,
     /** The "Key lift" tap preview: a pressed letter key rises and grows instead of a bubble. */
     liftPressedKey: Boolean = false,
+    /** How far the keyboard's real edges are beyond this row's (side margins, "Add padding"):
+     * the home-row stripe runs out to them, so padding moves the keys, not the stripe's ends. */
+    stripeBleed: androidx.compose.ui.unit.Dp = 0.dp,
 ) {
     // Where the keys are across the row: one span, or two on a split keyboard. The stripe and the
     // shimmer below are drawn per span, so they stop at the split's gap instead of bridging it.
@@ -1065,8 +1090,13 @@ internal fun KeyRowView(
                 if (isHomeRow && homeRowTinted) {
                     val stripe = theme.middleRowStripeColor.toComposeColor()
                     m.drawBehind {
+                        val bleed = stripeBleed.toPx()
                         keySpans.forEach { (from, to) ->
-                            drawRect(stripe, topLeft = Offset(size.width * from, 0f), size = androidx.compose.ui.geometry.Size(size.width * (to - from), size.height))
+                            // An outer end runs on to the keyboard's edge; an inner end (a split's
+                            // gap) stays where the keys stop.
+                            val left = size.width * from - if (from <= 0f) bleed else 0f
+                            val right = size.width * to + if (to >= 1f) bleed else 0f
+                            drawRect(stripe, topLeft = Offset(left, 0f), size = androidx.compose.ui.geometry.Size(right - left, size.height))
                         }
                     }
                 } else {
@@ -1277,10 +1307,11 @@ private fun KeyCell(
     // derived two different alpha levels from keyTextColor (dimmer for special keys),
     // which read as an inconsistency/bug rather than an intentional cue — real user
     // feedback, removed.
+    // 10 dp: the one radius for everything on the keyboard (keys, chips, tiles, symbol cells).
     val keyShapeForMode = if (isGridMode) {
         androidx.compose.foundation.shape.RoundedCornerShape(0.dp)
     } else {
-        androidx.compose.foundation.shape.RoundedCornerShape(8.dp)
+        androidx.compose.foundation.shape.RoundedCornerShape(10.dp)
     }
     val gridBorderColor = theme.gridBorderColor.toComposeColor()
     Box(
@@ -1294,7 +1325,7 @@ private fun KeyCell(
                         scaleX = KEY_LIFT_SCALE
                         scaleY = KEY_LIFT_SCALE
                         translationY = -KEY_LIFT_RISE.toPx()
-                        shadowElevation = 4.dp.toPx()
+                        // No shadow: the rise and the size say "pressed"; a shadow made it muddy.
                         shape = keyShapeForMode
                     }
                 } else {

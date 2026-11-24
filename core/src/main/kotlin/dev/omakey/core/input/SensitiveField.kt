@@ -48,3 +48,22 @@ fun isSensitiveField(info: EditorInfo?, ownPackage: String? = null): Boolean {
     }
     return false
 }
+
+/**
+ * Whether the focused field holds a secret: a password variation, text or numeric. Narrower than
+ * [isSensitiveField] on purpose: snippet short codes are blocked only here. "Don't learn" fields
+ * (incognito tabs, many messengers) and omakey's own Try screen still offer the user's snippets,
+ * since offering what the user saved learns nothing.
+ */
+fun isPasswordField(info: EditorInfo?): Boolean {
+    val inputType = info?.inputType ?: return false
+    val classType = inputType and InputType.TYPE_MASK_CLASS
+    val variation = inputType and InputType.TYPE_MASK_VARIATION
+    return when (classType) {
+        InputType.TYPE_CLASS_NUMBER -> variation == InputType.TYPE_NUMBER_VARIATION_PASSWORD
+        InputType.TYPE_CLASS_TEXT -> variation == InputType.TYPE_TEXT_VARIATION_PASSWORD ||
+            variation == InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD ||
+            variation == InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+        else -> false
+    }
+}

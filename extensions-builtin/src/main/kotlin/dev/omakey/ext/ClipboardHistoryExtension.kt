@@ -38,6 +38,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.sp
 import dev.omakey.core.theme.toComposeColor
 import dev.omakey.core.theme.toDp
@@ -112,7 +114,18 @@ class ClipboardHistoryExtension : OmakeyExtension {
         Box(Modifier.fillMaxSize()) {
             Column(Modifier.fillMaxWidth().padding(if (isGridMode) 0.dp else 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 if (items.isEmpty()) {
-                    Text("No clipboard history yet", color = textColor, modifier = Modifier.padding(8.dp))
+                    // Empty state: an icon tile, what this is for, and how to fill it.
+                    Column(
+                        Modifier.fillMaxWidth().padding(vertical = 24.dp, horizontal = 24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Box(
+                            Modifier.size(40.dp).background(textColor.copy(alpha = 0.08f), RoundedCornerShape(14.dp)),
+                            contentAlignment = Alignment.Center,
+                        ) { androidx.compose.material3.Icon(dev.omakey.core.icons.OmakeyIcons.Clipboard, null, tint = textColor, modifier = Modifier.size(20.dp)) }
+                        Text("What you copy shows up here, to paste again.", color = mutedTextColor, fontSize = 14.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                    }
                 } else if (isGridMode) {
                     // Real request: a proper multi-column grid in Grid mode, not the same
                     // single-column list Normal mode uses — every other screen of the keyboard is
@@ -135,7 +148,10 @@ class ClipboardHistoryExtension : OmakeyExtension {
                         }
                     }
                 } else {
-                    LazyColumn {
+                    LazyColumn(
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
                         items(items, key = { it.id }) { item ->
                             ClipboardListRow(
                                 item = item,
@@ -162,79 +178,56 @@ class ClipboardHistoryExtension : OmakeyExtension {
             // in-tree overlay instead of a system Dialog — same trick every other popup in this
             // app (AccentDragPopup, SymbolModeOverlay, KeyboardRoot's own banner) already uses.
             actionsFor?.let { item ->
+                // An in-tree bottom sheet (no system Dialog: the IME window can't host a second
+                // one — see the history of the AlertDialog that used to crash the keyboard here).
+                val ink = theme.labelOn(theme.keyboardBackground).toComposeColor()
                 Box(
                     Modifier
                         .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.5f))
+                        .background(Color.Black.copy(alpha = 0.4f))
                         .combinedClickable(onClick = { actionsFor = null }, onLongClick = {}),
-                    contentAlignment = Alignment.Center,
+                    contentAlignment = Alignment.BottomCenter,
                 ) {
                     Column(
                         Modifier
-                            .background(theme.keyboardBackground.toComposeColor(), RoundedCornerShape(12.dp))
-                            .let { m -> if (isGridMode) m.border(gridBorderWidth, gridBorderColor, RoundedCornerShape(12.dp)) else m }
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                            .fillMaxWidth()
+                            .background(theme.keyboardBackground.toComposeColor(), RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+                            .let { m -> if (isGridMode) m.border(gridBorderWidth, gridBorderColor, RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)) else m }
+                            .combinedClickable(onClick = {}, onLongClick = {})
+                            .padding(vertical = 8.dp),
                     ) {
-                        Text(
-                            text = if (item.pinned) "Pinned item" else "Clipboard item",
-                            color = theme.labelOn(theme.keyboardBackground).toComposeColor(),
-                        )
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                            OutlinedButton(
-                                onClick = {
-                                    actionsFor = null
-                                    scope.launch {
-                                        extensionContext?.clipboardRepository?.pin(item.id, !item.pinned)
-                                        reload()
-                                    }
-                                },
-                                modifier = Modifier.weight(1f),
-                                // The keyboard has no MaterialTheme, so unstyled buttons fell back
-                                // to Material's stock purple on every theme.
-                                colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
-                                    contentColor = theme.labelOn(theme.keyboardBackground).toComposeColor(),
-                                ),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, theme.accentOn(theme.keyboardBackground).toComposeColor()),
-                            ) { Text(if (item.pinned) "Unpin" else "Pin") }
-                            Button(
-                                onClick = {
-                                    actionsFor = null
-                                    scope.launch {
-                                        extensionContext?.clipboardRepository?.delete(item.id)
-                                        reload()
-                                    }
-                                },
-                                modifier = Modifier.weight(1f),
-                                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                                    containerColor = theme.accent.toComposeColor(),
-                                    contentColor = theme.onAccent.toComposeColor(),
-                                ),
-                            ) { Text("Remove") }
+                        Box(Modifier.align(Alignment.CenterHorizontally).padding(bottom = 6.dp).size(36.dp, 4.dp).background(ink.copy(alpha = 0.2f), RoundedCornerShape(2.dp)))
+                        @Composable
+                        fun ActionRow(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit) {
+                            Row(
+                                Modifier.fillMaxWidth().height(52.dp).combinedClickable(onClick = onClick, onLongClick = null).padding(horizontal = 20.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            ) {
+                                androidx.compose.material3.Icon(icon, contentDescription = null, tint = ink, modifier = Modifier.size(22.dp))
+                                Text(label, color = ink, fontSize = 16.sp)
+                            }
+                        }
+                        ActionRow(if (item.pinned) "Unpin" else "Pin", dev.omakey.core.icons.OmakeyIcons.Pin) {
+                            actionsFor = null
+                            scope.launch {
+                                extensionContext?.clipboardRepository?.pin(item.id, !item.pinned)
+                                reload()
+                            }
                         }
                         if (item.contentType == ClipboardContentType.TEXT) {
                             // A clip worth keeping becomes a snippet: the form opens with it filled in.
-                            OutlinedButton(
-                                onClick = {
-                                    actionsFor = null
-                                    extensionContext?.saveAsSnippet(item.content)
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                                colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
-                                    contentColor = theme.labelOn(theme.keyboardBackground).toComposeColor(),
-                                ),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, theme.accentOn(theme.keyboardBackground).toComposeColor()),
-                            ) { Text("Save as snippet") }
+                            ActionRow("Save as snippet", dev.omakey.core.icons.OmakeyIcons.Snippet) {
+                                actionsFor = null
+                                extensionContext?.saveAsSnippet(item.content)
+                            }
                         }
-                        OutlinedButton(
-                            onClick = { actionsFor = null },
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
-                                contentColor = theme.labelOn(theme.keyboardBackground).toComposeColor(),
-                            ),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, theme.accentOn(theme.keyboardBackground).toComposeColor()),
-                        ) {
-                            Text("Cancel")
+                        ActionRow("Remove", dev.omakey.core.icons.OmakeyIcons.Trash) {
+                            actionsFor = null
+                            scope.launch {
+                                extensionContext?.clipboardRepository?.delete(item.id)
+                                reload()
+                            }
                         }
                     }
                 }
@@ -252,12 +245,14 @@ private fun ClipboardListRow(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
 ) {
+    // A tonal card per clip (radius 14), so each reads as one thing to tap.
     val rowModifier = Modifier
         .fillMaxWidth()
-        .combinedClickable(onClick = onClick, onLongClick = onLongClick)
-        .background(Color.Transparent)
-        .padding(8.dp)
-    Row(rowModifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        .clip(RoundedCornerShape(14.dp))
+        .background(textColor.copy(alpha = 0.06f))
+        .combinedClickable(onClick = onClick, onLongClick = onLongClick, onLongClickLabel = "More options")
+        .padding(horizontal = 14.dp, vertical = 12.dp)
+    Row(rowModifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         if (item.pinned) PinMarker(textColor)
         val imagePath = item.imagePath
         if (item.contentType == ClipboardContentType.IMAGE && imagePath != null) {
@@ -270,7 +265,7 @@ private fun ClipboardListRow(
                     .background(textColor.copy(alpha = 0.08f), RoundedCornerShape(8.dp)),
             )
         } else {
-            Text(text = item.content, color = textColor, modifier = Modifier.weight(1f), maxLines = 2)
+            Text(text = item.content, color = textColor, fontSize = 14.sp, modifier = Modifier.weight(1f), maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
         }
     }
 }
@@ -280,7 +275,7 @@ private fun ClipboardListRow(
  * the state readable rather than merely present. */
 @Composable
 private fun PinMarker(textColor: Color) {
-    Text(text = "📌", color = textColor, fontSize = 12.sp)
+    androidx.compose.material3.Icon(dev.omakey.core.icons.OmakeyIcons.Pin, contentDescription = "Pinned", tint = textColor, modifier = Modifier.size(16.dp))
 }
 
 @OptIn(ExperimentalFoundationApi::class)

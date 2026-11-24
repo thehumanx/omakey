@@ -54,7 +54,7 @@ class ThemeRepository(context: Context) {
 
 
     private fun loadPersistedTheme(prefs: SharedPreferences): OmakeyTheme {
-        val json = prefs.getString(KEY_THEME_JSON, null) ?: return Presets.Dark
+        val json = prefs.getString(KEY_THEME_JSON, null) ?: return defaultThemeFor(android.os.Build.VERSION.SDK_INT)
         return runCatching { ThemeSerializer.fromJson(json) }.getOrDefault(Presets.Dark)
     }
 
@@ -63,7 +63,11 @@ class ThemeRepository(context: Context) {
         return runCatching { LayoutMode.valueOf(stored) }.getOrDefault(LayoutMode.NORMAL)
     }
 
-    private companion object {
+    internal companion object {
+        /** Fresh installs: the wallpaper's colours where Android has them (12+), otherwise follow
+         * the phone's light or dark mode. Auto itself falls back to light where there is no mode. */
+        fun defaultThemeFor(sdkInt: Int): OmakeyTheme = if (sdkInt >= 31) Presets.Accent else Presets.Auto
+
         const val PREFS_NAME = "omakey_theme_prefs"
         const val KEY_THEME_JSON = "current_theme_json"
         const val KEY_USE_SYSTEM_ACCENT = "use_system_accent"

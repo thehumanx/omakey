@@ -6,14 +6,16 @@ import dev.omakey.core.prefs.PreferenceStore
 import kotlinx.coroutines.flow.StateFlow
 
 data class AutocorrectSettings(
-    val autocorrectEnabled: Boolean = true,
-    val autoCapitalizeEnabled: Boolean = false,
-    /** Off by default, same convention as every other opt-in typing-behavior toggle here
-     * (autoCapitalizeEnabled, GestureSettings.swipeRightForSpace) — tapping space twice quickly
+    /** Off for fresh installs (developer's call, 2026-11-24): suggestions still offer fixes;
+     * nothing is replaced unless switched on. InstallDefaults keeps updating installs on "on". */
+    val autocorrectEnabled: Boolean = false,
+    val autoCapitalizeEnabled: Boolean = true,
+    /** On for fresh installs since the design pass (InstallDefaults pins the old "off" for
+     * updating installs) — tapping space twice quickly
      * (or, since swipe-right-for-space routes through the exact same commit path, swiping right
      * twice quickly when that gesture is enabled) replaces the two spaces with ". " instead.
      * See [KeyboardViewModel.onSpace]'s own doc for the actual detection logic. */
-    val doubleTapSpaceForPeriod: Boolean = false,
+    val doubleTapSpaceForPeriod: Boolean = true,
     /** Off by default, like the toggles above: typing . , ! ? ; : adds a space after it. See
      * [dev.omakey.core.input.PunctuationSpacing] for when that space is taken back. */
     val autoSpaceAfterPunctuation: Boolean = false,
@@ -46,13 +48,13 @@ class AutocorrectPreferences(context: Context) {
     fun close() = store.close()
 
     private fun load(prefs: SharedPreferences) = AutocorrectSettings(
-        autocorrectEnabled = prefs.getBoolean(KEY_AUTOCORRECT_ENABLED, true),
-        autoCapitalizeEnabled = prefs.getBoolean(KEY_AUTO_CAPITALIZE_ENABLED, false),
-        doubleTapSpaceForPeriod = prefs.getBoolean(KEY_DOUBLE_TAP_SPACE_FOR_PERIOD, false),
+        autocorrectEnabled = prefs.getBoolean(KEY_AUTOCORRECT_ENABLED, false),
+        autoCapitalizeEnabled = prefs.getBoolean(KEY_AUTO_CAPITALIZE_ENABLED, true),
+        doubleTapSpaceForPeriod = prefs.getBoolean(KEY_DOUBLE_TAP_SPACE_FOR_PERIOD, true),
         autoSpaceAfterPunctuation = prefs.getBoolean(KEY_AUTO_SPACE_AFTER_PUNCTUATION, false),
     )
 
-    private companion object {
+    internal companion object {
         const val PREFS_NAME = "omakey_autocorrect_prefs"
         const val KEY_AUTOCORRECT_ENABLED = "autocorrect_enabled"
         const val KEY_AUTO_CAPITALIZE_ENABLED = "auto_capitalize_enabled"

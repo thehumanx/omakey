@@ -105,14 +105,18 @@ internal fun TapPreviewBubble(
     val shape = RoundedCornerShape(if (isGridMode) 0.dp else if (slim) 6.dp else 8.dp)
     // The key tap colour in both modes: the bubble is the tapped key, enlarged. Slim lets a
     // little of what's behind show through, so it reads as lighter.
-    val background = theme.keyBackgroundPressed.toComposeColor().let { if (slim) it.copy(alpha = it.alpha * SLIM_ALPHA) else it }
+    // Classic is 70 % opaque too: solid, it read as one blob with the pressed key under it.
+    val background = theme.keyBackgroundPressed.toComposeColor().let { it.copy(alpha = it.alpha * if (slim) SLIM_ALPHA else CLASSIC_ALPHA) }
     Box(
         modifier = Modifier
             .offset {
                 val parentWidthPx = ancestorCoordinates()?.size?.width?.toFloat() ?: rect.right
                 val x = ((rect.left + rect.right) / 2f - bubbleWidthPx / 2f)
                     .coerceIn(0f, (parentWidthPx - bubbleWidthPx).coerceAtLeast(0f))
-                val y = (rect.top - bubbleHeightPx - gapPx).coerceAtLeast(0f)
+                // Not clamped to the keys: the top row's bubble rises over the bar, and the number
+                // row's into the clear space above the keyboard (OmakeyInputMethodService keeps
+                // that space in the window, untouchable), the way Fleksy's do.
+                val y = rect.top - bubbleHeightPx - gapPx
                 IntOffset(x.toInt(), y.toInt())
             }
             .graphicsLayer {
@@ -140,3 +144,15 @@ internal fun TapPreviewBubble(
 }
 
 private const val SLIM_ALPHA = 0.88f
+private const val CLASSIC_ALPHA = 0.7f
+
+/** What the bar's number row needs to show the same bubble as the keys. */
+internal class TapPreviewHost(
+    val state: TapPreviewState,
+    /** The keys area every bubble is positioned against. */
+    val ancestor: () -> LayoutCoordinates?,
+    val enabled: () -> Boolean,
+    val scope: CoroutineScope,
+)
+
+internal val LocalTapPreviewHost = androidx.compose.runtime.staticCompositionLocalOf<TapPreviewHost?> { null }

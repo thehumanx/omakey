@@ -35,13 +35,16 @@ attach the map to a release: it undoes the obfuscation.
 2. Open the track your testers are on, then **Create new release**.
 3. **App bundles → Upload** and pick the `.aab`. Wait for the upload to finish processing. Errors
    show here, for example a versionCode that is too low.
-4. **Release name**: Play fills in the version (e.g. `53 (5.8.2)`). Keep it.
+4. **Release name**: Play fills in the version (e.g. `60 (6.0.0)`). Keep it.
 5. **Release notes**: short, plain words, at most 500 characters, inside the language tags Play
    shows:
    ```
    <en-US>
-   - Fixes a crash when choosing omakey as your keyboard on Android 13 and older
-   - Learned words keep your spelling, and no more red underlines on Russian (from 5.8.1)
+   - A new look for Settings and the keyboard's panels
+   - Snippets: your email, phone or passwords a tap away; type a shortcut like @@ to insert one
+   - Split keyboard on wide screens, compact mode, and hold space to select all
+   - Autocorrect leaves names and slang alone
+   - Choose and reorder Quick access tiles
    </en-US>
    ```
 6. **Next** shows the review page. Warnings (yellow) don't block a release. Errors (red) do. Read

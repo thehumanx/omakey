@@ -32,6 +32,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import dev.omakey.core.layout.KeyDefinition
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.contentDescription
@@ -135,7 +138,20 @@ internal fun TopStrip(
             .height(44.dp)
             // Grid mode fills with keyboardBackground (the single "Background" field every grid
             // cell uses), not suggestionBarBackground, so an empty strip reads the same as a full one.
-            .background(if (isGridMode) theme.keyboardBackground.toComposeColor() else theme.suggestionBarBackground.toComposeColor())
+            // Drawn past this Box's own sides by the "Add padding" gutters, so the bar's band runs
+            // edge to edge like the keyboard while its buttons and words keep the padding.
+            .let { m ->
+                val fill = if (isGridMode) theme.keyboardBackground.toComposeColor() else theme.suggestionBarBackground.toComposeColor()
+                val bleed = if (uiState.layoutSettings.edgePadding && uiState.layoutSettings.placement == dev.omakey.core.layout.KeyboardPlacement.DOCKED) {
+                    dev.omakey.core.layout.LayoutSettings.EDGE_PADDING_DP.dp
+                } else {
+                    0.dp
+                }
+                m.drawBehind {
+                    val b = bleed.toPx()
+                    drawRect(fill, topLeft = androidx.compose.ui.geometry.Offset(-b, 0f), size = androidx.compose.ui.geometry.Size(size.width + 2 * b, size.height))
+                }
+            }
             // Skips the bottom edge: KeyGrid sits flush below and already borders its own top, and
             // drawing both doubled the seam (real bug: "the border above QWERTY is thicker").
             .let { m -> if (isGridMode) m.gridBorderExceptBottom(theme.gridBorderColor.toComposeColor(), theme.gridBorderWidth.toDp()) else m },
@@ -258,7 +274,7 @@ private fun InlineAutofillChips(
                     // The last page's button goes back to the first, so every chip is one tap away.
                     description = if (last) "First autofill suggestions" else "More autofill suggestions",
                     onClick = { turnPage(if (last) 0 else current + 1) },
-                ) { tint -> Text(text = if (last) "‹" else "›", color = tint, fontSize = 22.sp) }
+                ) { tint -> Icon(if (last) dev.omakey.core.icons.OmakeyIcons.Back else dev.omakey.core.icons.OmakeyIcons.ChevronRight, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp)) }
             }
         }
     }
@@ -385,7 +401,7 @@ private fun StripButton(
                 when {
                     isGridMode -> m.background(background!!.toComposeColor())
                         .gridCellBorder(theme.gridBorderColor.toComposeColor(), theme.gridBorderWidth.toDp(), includeBottom = false)
-                    background != null -> m.background(background.toComposeColor(), androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                    background != null -> m.background(background.toComposeColor(), androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
                     else -> m
                 }
             }
@@ -457,20 +473,28 @@ internal fun SuggestionsTabContent(
         // A short code was typed: its snippet takes the first slot, in the accent colour so it
         // reads as an action rather than a word. Tapping replaces the code; space never does.
         if (snippetOffer != null) {
-            val offerSurface = theme.accent
-            Box(
+            // An ink chip: the theme's label colour as the fill, so it reads as an action on any
+            // theme without borrowing the accent (that's for caps lock and the active key).
+            val stripSurface = theme.stripSurface(isGridMode)
+            val inkFill = theme.labelOn(stripSurface).toComposeColor()
+            val onInk = stripSurface.toComposeColor()
+            Row(
                 Modifier
                     .weight(1f)
-                    .padding(horizontal = 2.dp, vertical = 6.dp)
-                    .background(offerSurface.toComposeColor(), androidx.compose.foundation.shape.RoundedCornerShape(if (isGridMode) 0.dp else 8.dp))
+                    .padding(horizontal = 3.dp, vertical = 6.dp)
+                    .background(inkFill, androidx.compose.foundation.shape.RoundedCornerShape(if (isGridMode) 0.dp else 10.dp))
                     .clickable(onClickLabel = "Type snippet") { onAcceptSnippet() }
-                    .padding(horizontal = 4.dp),
-                contentAlignment = Alignment.Center,
+                    .padding(horizontal = 8.dp)
+                    .fillMaxHeight(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
             ) {
+                Icon(dev.omakey.core.icons.OmakeyIcons.Snippet, contentDescription = null, tint = onInk, modifier = Modifier.size(18.dp))
                 Text(
-                    text = "✂ ${snippetOffer.label}",
-                    color = theme.onAccent.toComposeColor(),
+                    text = snippetOffer.label,
+                    color = onInk,
                     fontFamily = fontFamily,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
                     maxLines = 1,
                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                 )
@@ -532,23 +556,31 @@ internal fun SuggestionsTabContent(
                             // shift/etc. render when this toggle is on.
                             m.background(
                                 if (isPressed) theme.keyBackgroundPressed.toComposeColor() else theme.keySpecialBackground.toComposeColor(),
-                                androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+                                androidx.compose.foundation.shape.RoundedCornerShape(10.dp),
                             ).padding(horizontal = 4.dp, vertical = 6.dp)
                         } else {
                             // Borderless, but still fills with the key tap colour while held.
-                            m.background(if (isPressed) theme.keyBackgroundPressed.toComposeColor() else androidx.compose.ui.graphics.Color.Transparent, androidx.compose.foundation.shape.RoundedCornerShape(8.dp)).padding(horizontal = 4.dp, vertical = 6.dp)
+                            m.background(if (isPressed) theme.keyBackgroundPressed.toComposeColor() else androidx.compose.ui.graphics.Color.Transparent, androidx.compose.foundation.shape.RoundedCornerShape(10.dp)).padding(horizontal = 4.dp, vertical = 6.dp)
                         }
                     },
                 contentAlignment = Alignment.Center,
             ) {
-                Text(
-                    text = if (isCorrection) "“$suggestion”" else suggestion,
-                    color = itemColor,
-                    fontFamily = fontFamily,
-                    fontSize = 16.sp,
-                    maxLines = 1,
-                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                )
+                androidx.compose.foundation.layout.Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = if (isCorrection) "“$suggestion”" else suggestion,
+                        color = itemColor,
+                        fontFamily = fontFamily,
+                        fontSize = 16.sp,
+                        fontWeight = if (isActive) androidx.compose.ui.text.font.FontWeight.Medium else androidx.compose.ui.text.font.FontWeight.Normal,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    )
+                    // The word space will type: a short underline, so the active slot reads without
+                    // relying on contrast alone. Only when there's a choice to make.
+                    if (isActive && suggestions.size > 1) {
+                        Box(Modifier.padding(top = 3.dp).size(width = 16.dp, height = 2.dp).background(itemColor, androidx.compose.foundation.shape.CircleShape))
+                    }
+                }
             }
         }
         // Independent of the word suggestions above — see KeyboardUiState.emojiSuggestions's own
@@ -572,11 +604,11 @@ internal fun SuggestionsTabContent(
                         } else if (showKeyBackgrounds) {
                             m.background(
                                 if (isPressed) theme.keyBackgroundPressed.toComposeColor() else theme.keySpecialBackground.toComposeColor(),
-                                androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+                                androidx.compose.foundation.shape.RoundedCornerShape(10.dp),
                             ).padding(horizontal = 8.dp, vertical = 6.dp)
                         } else {
                             // Borderless, but still fills with the key tap colour while held.
-                            m.background(if (isPressed) theme.keyBackgroundPressed.toComposeColor() else androidx.compose.ui.graphics.Color.Transparent, androidx.compose.foundation.shape.RoundedCornerShape(8.dp)).padding(horizontal = 8.dp, vertical = 6.dp)
+                            m.background(if (isPressed) theme.keyBackgroundPressed.toComposeColor() else androidx.compose.ui.graphics.Color.Transparent, androidx.compose.foundation.shape.RoundedCornerShape(10.dp)).padding(horizontal = 8.dp, vertical = 6.dp)
                         }
                     },
                 contentAlignment = Alignment.Center,
@@ -770,11 +802,11 @@ private fun ToolButton(
                     // keySpecialBackground, matching how this is a control icon, not a letter key.
                     m.background(
                         if (isPressed) theme.keyBackgroundPressed.toComposeColor() else theme.keySpecialBackground.toComposeColor(),
-                        androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+                        androidx.compose.foundation.shape.RoundedCornerShape(10.dp),
                     ).padding(horizontal = 12.dp, vertical = 8.dp)
                 } else {
                     // Borderless, but still fills with the key tap colour while held.
-                    m.background(if (isPressed) theme.keyBackgroundPressed.toComposeColor() else androidx.compose.ui.graphics.Color.Transparent, androidx.compose.foundation.shape.RoundedCornerShape(8.dp)).padding(horizontal = 12.dp, vertical = 8.dp)
+                    m.background(if (isPressed) theme.keyBackgroundPressed.toComposeColor() else androidx.compose.ui.graphics.Color.Transparent, androidx.compose.foundation.shape.RoundedCornerShape(10.dp)).padding(horizontal = 12.dp, vertical = 8.dp)
                 }
             }
             .semantics { contentDescription = description },
@@ -816,7 +848,38 @@ internal fun NumbersTabContent(
         remember(digits) { Layouts.NumberRow.withDigits(digits).keys }
     }
     val isGridMode = dev.omakey.core.theme.LocalKeyboardLayoutMode.current == dev.omakey.core.theme.LayoutMode.GRID
-    Box(Modifier.fillMaxWidth().fillMaxHeight().let { m -> if (isGridMode) m else m.padding(horizontal = 4.dp) }) {
+    // The same popup as the letters, floating above the bar (Fleksy shows one for the number row
+    // too). Bounds are measured against the keys area every bubble is positioned in; a finger
+    // down finds its key here, without taking the touch from the key's own click.
+    val host = LocalTapPreviewHost.current
+    val bounds = remember { mutableMapOf<Int, Pair<KeyDefinition, androidx.compose.ui.geometry.Rect>>() }
+    var rowCoordinates by remember { androidx.compose.runtime.mutableStateOf<androidx.compose.ui.layout.LayoutCoordinates?>(null) }
+    val ancestor = host?.ancestor ?: noOpAncestor
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .fillMaxHeight()
+            .let { m -> if (isGridMode) m else m.padding(horizontal = 4.dp) }
+            .onGloballyPositioned { rowCoordinates = it }
+            .pointerInput(host) {
+                if (host == null) return@pointerInput
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false, pass = androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                    if (host.enabled()) {
+                        val area = host.ancestor()
+                        val row = rowCoordinates
+                        val at = if (area != null && row != null) area.localPositionOf(row, down.position) else null
+                        val hit = at?.let { p -> bounds.values.firstOrNull { (_, r) -> r.contains(p) } }
+                            ?.takeIf { (key, _) -> key.keyType == dev.omakey.core.layout.KeyType.CHARACTER }
+                        if (hit != null) host.state.hold(hit)
+                    }
+                    do {
+                        val event = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                    } while (event.changes.any { it.pressed })
+                    host.state.release(host.scope)
+                }
+            },
+    ) {
         KeyRowView(
             rowKeys = rowKeys,
             rowHeightDp = 44,
@@ -829,8 +892,11 @@ internal fun NumbersTabContent(
             showKeyBackgrounds = showKeyBackgrounds,
             isHomeRow = false,
             onKeyTap = { code -> feedback.onKeyPress(); viewModel.onKeyTap(code) },
-            ancestorCoordinates = noOpAncestor,
-            onBoundsMeasured = {},
+            ancestorCoordinates = ancestor,
+            onBoundsMeasured = { measured ->
+                bounds.clear()
+                measured.forEach { (index, key, rect) -> bounds[index] = key to rect }
+            },
             fontFamily = fontFamily,
             // This row sits directly above KeyGrid inside TopStrip — see gridCellBottomBorder's
             // own doc on KeyRowView.

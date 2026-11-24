@@ -64,6 +64,20 @@ import dev.omakey.core.predict.PersonalLanguageModel
 import dev.omakey.core.theme.OmakeyTheme
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.imePadding
+import dev.omakey.app.design.ButtonKind
+import dev.omakey.app.design.ConfirmSheet
+import dev.omakey.app.design.EmptyState
+import dev.omakey.app.design.IconAction
+import dev.omakey.app.design.Omakey
+import dev.omakey.app.design.OmakeyButton
+import dev.omakey.app.design.OmakeyField
+import dev.omakey.app.design.PageHeader
+import dev.omakey.app.design.RowTrailing
+import dev.omakey.app.design.SettingsCard
+import dev.omakey.app.design.SettingsRowLayout
+import dev.omakey.core.icons.OmakeyIcons
 
 /*
  * The full-screen overlays Settings pushes over itself: keyboard size/position, clipboard history,
@@ -112,30 +126,34 @@ internal fun KeyboardSizePositionOverlay(
     val maxOffsetDp = (configuration.screenHeightDp / 2f - keyboardTotalHeightDp).coerceAtLeast(0f)
     val noOpAncestor: () -> androidx.compose.ui.layout.LayoutCoordinates? = remember { { null } }
 
-    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+    val c = Omakey.colors
+    Surface(modifier = Modifier.fillMaxSize(), color = c.ground) {
         Column(modifier = Modifier.fillMaxSize()) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
                     .statusBarsPadding()
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(text = "Keyboard size & position", style = MaterialTheme.typography.titleMedium)
-                    TextButton(onClick = onClose) { Text(text = "Done") }
+                PageHeader(title = "Size & position", onBack = onClose, modifier = Modifier.padding(start = 4.dp))
+                SettingsCard(contentPadding = 16.dp) {
+                    SettingsRowLayout(
+                        title = "Height",
+                        description = "Drag the bar above the keys.",
+                        trailing = RowTrailing.Value("${heightDp.roundToInt()} dp"),
+                        horizontalPadding = 0.dp,
+                    )
+                    SettingsRowLayout(
+                        title = "Lift",
+                        description = "Drag the grip in the middle of the keys.",
+                        trailing = RowTrailing.Value(if (offsetDp.roundToInt() == 0) "Docked" else "${offsetDp.roundToInt()} dp"),
+                        horizontalPadding = 0.dp,
+                    )
                 }
-                Text(
-                    text = "Height: ${heightDp.roundToInt()}dp — drag the handle to resize. Drag " +
-                        "the grip inside the preview to move it up or down; it's capped at the " +
-                        "middle of the screen so there's always room to see what you're typing into.",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
+                androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
+                OmakeyButton("Done", onClose, kind = ButtonKind.Primary, modifier = Modifier.fillMaxWidth())
             }
 
             // Resize handle, directly above the preview — dragging it up (finger moves toward the
@@ -144,8 +162,8 @@ internal fun KeyboardSizePositionOverlay(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(32.dp)
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .height(36.dp)
+                    .background(theme.keyboardBackground.toComposeColor())
                     .draggable(
                         orientation = Orientation.Vertical,
                         state = rememberDraggableState { deltaPx ->
@@ -158,8 +176,8 @@ internal fun KeyboardSizePositionOverlay(
             ) {
                 Box(
                     Modifier
-                        .size(width = 48.dp, height = 5.dp)
-                        .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(3.dp)),
+                        .size(width = 44.dp, height = 5.dp)
+                        .background(theme.keyTextColor.toComposeColor().copy(alpha = 0.55f), RoundedCornerShape(3.dp)),
                 )
             }
 
@@ -201,8 +219,8 @@ internal fun KeyboardSizePositionOverlay(
                 Box(
                     Modifier
                         .align(Alignment.Center)
-                        .size(width = 56.dp, height = 28.dp)
-                        .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(14.dp))
+                        .size(width = 64.dp, height = 36.dp)
+                        .background(c.ink, RoundedCornerShape(dev.omakey.app.design.Radius.control))
                         .draggable(
                             orientation = Orientation.Vertical,
                             state = rememberDraggableState { deltaPx ->
@@ -216,8 +234,8 @@ internal fun KeyboardSizePositionOverlay(
                 ) {
                     Box(
                         Modifier
-                            .size(width = 28.dp, height = 5.dp)
-                            .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(3.dp)),
+                            .size(width = 24.dp, height = 4.dp)
+                            .background(c.onInk, RoundedCornerShape(2.dp)),
                     )
                 }
             }
@@ -252,7 +270,7 @@ internal fun ClipboardHistoryToggle(clipboardPreferences: ClipboardPreferences) 
     val settings by clipboardPreferences.settings.collectAsState()
     SettingToggle(
         key = SettingKey.SAVE_CLIPBOARD_HISTORY,
-        description = "Keep what you copy so you can paste it again later. Passwords are never saved. Turning this off doesn't delete what's saved.",
+        description = "Keep what you copy to paste again. Never passwords.",
         checked = settings.historyEnabled,
         onCheckedChange = clipboardPreferences::setHistoryEnabled,
     )
@@ -282,108 +300,74 @@ internal fun ClipboardHistoryOverlay(
     }
     LaunchedEffect(Unit) { reload() }
 
-    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .statusBarsPadding()
-                .navigationBarsPadding()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(text = "Clipboard history", style = MaterialTheme.typography.titleMedium)
-                TextButton(onClick = onClose) { Text(text = "Close") }
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = if (entries.isEmpty()) "Nothing saved" else "${entries.size} item(s)",
-                    style = MaterialTheme.typography.bodySmall,
-                )
-                if (entries.isNotEmpty()) {
-                    TextButton(onClick = { showClearAllConfirm = true }) { Text(text = "Clear all") }
+    val c = Omakey.colors
+    OverlayPage(title = "Clipboard history", onBack = onClose) {
+        if (entries.isEmpty()) {
+            item { EmptyState(OmakeyIcons.Clipboard, "What you copy shows up here, so you can paste it again.") }
+        } else {
+            item {
+                Row(Modifier.fillMaxWidth().padding(start = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        if (entries.size == 1) "1 item" else "${entries.size} items",
+                        style = Omakey.type.label, color = c.muted, modifier = Modifier.weight(1f),
+                    )
+                    OmakeyButton("Clear all", { showClearAllConfirm = true }, kind = ButtonKind.Destructive, height = 40.dp)
                 }
             }
-
-            LazyColumn(
-                modifier = Modifier.fillMaxWidth().weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                items(entries, key = { it.id }) { entry ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        Text(
-                            // An image row stores a placeholder string, not the pixels — showing
-                            // the file path instead would be noise the user can't act on.
-                            text = if (entry.contentType == ClipboardEntity.TYPE_IMAGE) {
-                                "Image"
-                            } else {
-                                entry.content
-                            },
-                            style = MaterialTheme.typography.bodyLarge,
-                            maxLines = 2,
-                            modifier = Modifier.weight(1f),
-                        )
-                        if (entry.pinned) {
-                            TextButton(
-                                onClick = {
-                                    scope.launch {
-                                        clipboardDao.setPinned(entry.id, false)
-                                        reload()
-                                    }
-                                },
-                            ) { Text(text = "Unpin") }
-                        }
-                        TextButton(
-                            onClick = {
-                                scope.launch {
-                                    clipboardHistory.delete(entry.id)
-                                    reload()
-                                }
-                            },
-                        ) { Text(text = "Remove") }
+            items(entries, key = { it.id }) { entry ->
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(c.surface, RoundedCornerShape(dev.omakey.app.design.Radius.control))
+                        .padding(start = 16.dp, top = 6.dp, bottom = 6.dp, end = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (entry.pinned) {
+                        androidx.compose.material3.Icon(OmakeyIcons.Pin, contentDescription = "Pinned", tint = c.muted, modifier = Modifier.size(18.dp))
+                        androidx.compose.foundation.layout.Spacer(Modifier.width(10.dp))
                     }
+                    Text(
+                        // An image row stores a placeholder string, not the pixels.
+                        text = if (entry.contentType == ClipboardEntity.TYPE_IMAGE) "Image" else entry.content,
+                        style = Omakey.type.body,
+                        color = c.ink,
+                        maxLines = 2,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (entry.pinned) {
+                        IconAction(OmakeyIcons.Pin, "Unpin", {
+                            scope.launch {
+                                clipboardDao.setPinned(entry.id, false)
+                                reload()
+                            }
+                        }, tint = c.ink)
+                    }
+                    IconAction(OmakeyIcons.Trash, "Remove", {
+                        scope.launch {
+                            clipboardHistory.delete(entry.id)
+                            reload()
+                        }
+                    }, tint = c.muted)
                 }
             }
         }
     }
 
     if (showClearAllConfirm) {
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = { showClearAllConfirm = false },
-            title = { Text(text = "Clear clipboard history?") },
-            text = {
-                Text(
-                    text = "Removes every saved entry, pinned ones included, along with any copied " +
-                        "images stored on this device. Your current clipboard itself isn't affected.",
-                )
+        ConfirmSheet(
+            title = "Clear clipboard history?",
+            message = "Removes everything saved, pinned items too. What you copied last stays copied.",
+            confirmLabel = "Clear all",
+            destructive = true,
+            onConfirm = {
+                showClearAllConfirm = false
+                scope.launch {
+                    clipboardHistory.clearAll()
+                    reload()
+                }
             },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showClearAllConfirm = false
-                        scope.launch {
-                            clipboardHistory.clearAll()
-                            reload()
-                        }
-                    },
-                ) { Text(text = "Clear all") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showClearAllConfirm = false }) { Text(text = "Cancel") }
-            },
+            onDismiss = { showClearAllConfirm = false },
         )
     }
 }
@@ -415,107 +399,84 @@ internal fun LearnedWordsOverlay(
     }
     LaunchedEffect(query) { reload() }
 
-    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .statusBarsPadding()
-                .navigationBarsPadding()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(text = "Learned words", style = MaterialTheme.typography.titleMedium)
-                TextButton(onClick = onClose) { Text(text = "Close") }
-            }
-
-            OutlinedTextField(
+    val c = Omakey.colors
+    OverlayPage(title = "Learned words", onBack = onClose) {
+        item {
+            OmakeyField(
                 value = query,
                 onValueChange = { query = it },
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text(text = "Search") },
-                singleLine = true,
+                placeholder = "Search your words",
+                leading = { androidx.compose.material3.Icon(OmakeyIcons.Search, null, tint = c.muted, modifier = Modifier.size(20.dp)) },
             )
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = if (words.isEmpty()) "No learned words" else "${words.size} word(s)",
-                    style = MaterialTheme.typography.bodySmall,
+        }
+        if (words.isEmpty()) {
+            item {
+                EmptyState(
+                    OmakeyIcons.Book,
+                    if (query.isBlank()) "Names and words you type often appear here, so they stop being corrected." else "No learned word matches \"${query.trim()}\".",
                 )
-                // Scoped to the *unfiltered* list only — with a search query active, "delete all"
-                // would ambiguously read as either "delete all matches" or "delete everything,
-                // ignoring what's on screen." Hiding it while filtering sidesteps the ambiguity
-                // rather than guessing which one the user means.
-                if (words.isNotEmpty() && query.isBlank()) {
-                    TextButton(onClick = { showDeleteAllConfirm = true }) { Text(text = "Delete all") }
+            }
+        } else {
+            item {
+                Row(Modifier.fillMaxWidth().padding(start = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        if (words.size == 1) "1 word" else "${words.size} words",
+                        style = Omakey.type.label, color = c.muted, modifier = Modifier.weight(1f),
+                    )
+                    // Only on the unfiltered list: with a query, "delete all" would be ambiguous
+                    // between "all matches" and "everything".
+                    if (query.isBlank()) OmakeyButton("Delete all", { showDeleteAllConfirm = true }, kind = ButtonKind.Destructive, height = 40.dp)
                 }
             }
-
-            LazyColumn(
-                modifier = Modifier.fillMaxWidth().weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                // Keyed by language *and* word: the same spelling can be learned in two languages,
-                // and a duplicate LazyColumn key throws.
-                val showLanguage = words.distinctBy { it.locale }.size > 1
-                items(words, key = { "${it.locale}/${it.word}" }) { entry ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        Text(text = entry.display ?: entry.word, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-                        if (showLanguage) {
-                            Text(
-                                text = entry.locale.substringBefore('_'),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        TextButton(onClick = { wordBeingEdited = entry }) { Text(text = "Edit") }
-                        TextButton(
-                            onClick = {
-                                scope.launch {
-                                    wordDao.delete(entry.locale, entry.word)
-                                    signal.bump()
-                                    reload()
-                                }
-                            },
-                        ) { Text(text = "Remove") }
+            // Lazy, one card per word: the list can hold hundreds, and every search keystroke
+            // reloads it. Keyed by language *and* word: the same spelling can be learned in two
+            // languages, and a duplicate key throws.
+            val showLanguage = words.distinctBy { it.locale }.size > 1
+            items(words, key = { "${it.locale}/${it.word}" }) { entry ->
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(c.surface, RoundedCornerShape(dev.omakey.app.design.Radius.control))
+                        .clickable(onClickLabel = "Edit") { wordBeingEdited = entry }
+                        .padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(entry.display ?: entry.word, style = Omakey.type.row, color = c.ink, modifier = Modifier.weight(1f))
+                    if (showLanguage) {
+                        Text(
+                            entry.locale.substringBefore('_').uppercase(),
+                            style = Omakey.type.caption.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
+                            color = c.muted,
+                            modifier = Modifier.padding(end = 4.dp),
+                        )
                     }
+                    IconAction(OmakeyIcons.Trash, "Remove ${entry.display ?: entry.word}", {
+                        scope.launch {
+                            wordDao.delete(entry.locale, entry.word)
+                            signal.bump()
+                            reload()
+                        }
+                    }, tint = c.muted)
                 }
             }
         }
     }
 
     if (showDeleteAllConfirm) {
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = { showDeleteAllConfirm = false },
-            title = { Text(text = "Delete all learned words?") },
-            text = { Text(text = "This removes every word your typing has taught the keyboard. The bundled dictionary is not affected.") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showDeleteAllConfirm = false
-                        scope.launch {
-                            wordDao.deleteAllUserAdded()
-                            signal.bump()
-                            reload()
-                        }
-                    },
-                ) { Text(text = "Delete all") }
+        ConfirmSheet(
+            title = "Delete all learned words?",
+            message = "omakey forgets every word it learned from you. Its own dictionary stays.",
+            confirmLabel = "Delete all",
+            destructive = true,
+            onConfirm = {
+                showDeleteAllConfirm = false
+                scope.launch {
+                    wordDao.deleteAllUserAdded()
+                    signal.bump()
+                    reload()
+                }
             },
-            dismissButton = {
-                TextButton(onClick = { showDeleteAllConfirm = false }) { Text(text = "Cancel") }
-            },
+            onDismiss = { showDeleteAllConfirm = false },
         )
     }
 
@@ -525,39 +486,34 @@ internal fun LearnedWordsOverlay(
         // A change in capitals alone ("bibek" → "Bibek") is a change: it used to be lowercased away
         // and Save did nothing (5.8.0 report).
         val changed = normalised != null && (normalised.word != entry.word || normalised.display != entry.display)
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = { wordBeingEdited = null },
-            title = { Text(text = "Edit word") },
-            text = {
-                OutlinedTextField(
-                    value = editedWord,
-                    onValueChange = { editedWord = it },
-                    singleLine = true,
-                    isError = normalised == null,
-                    supportingText = { if (normalised == null) Text(text = "One word, letters only") },
-                )
+        ConfirmSheet(
+            title = "Edit word",
+            message = null,
+            confirmLabel = "Save",
+            dismissLabel = "Keep as it was",
+            confirmEnabled = normalised != null,
+            onConfirm = {
+                val edit = normalised ?: return@ConfirmSheet
+                wordBeingEdited = null
+                if (changed) {
+                    scope.launch {
+                        // Same key: only the spelling changes (renameOrMerge handles that).
+                        wordDao.renameOrMerge(entry.locale, entry.word, edit.word, edit.display)
+                        signal.bump()
+                        reload()
+                    }
+                }
             },
-            confirmButton = {
-                TextButton(
-                    enabled = normalised != null,
-                    onClick = {
-                        val edit = normalised ?: return@TextButton
-                        wordBeingEdited = null
-                        if (changed) {
-                            scope.launch {
-                                // Same key: only the spelling changes (renameOrMerge handles that).
-                                wordDao.renameOrMerge(entry.locale, entry.word, edit.word, edit.display)
-                                signal.bump()
-                                reload()
-                            }
-                        }
-                    },
-                ) { Text(text = "Save") }
-            },
-            dismissButton = {
-                TextButton(onClick = { wordBeingEdited = null }) { Text(text = "Cancel") }
-            },
-        )
+            onDismiss = { wordBeingEdited = null },
+        ) {
+            OmakeyField(
+                value = editedWord,
+                onValueChange = { editedWord = it },
+                isError = normalised == null,
+                supporting = if (normalised == null) "One word, letters only" else null,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+        }
     }
 }
 
@@ -573,53 +529,35 @@ internal fun TestKeyboardOverlay(onClose: () -> Unit, onSwitchKeyboard: () -> Un
     val keyboardController = LocalSoftwareKeyboardController.current
     val isOmakeyActive = remember { isOmakeyDefaultIme(context) }
 
-    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+    val c = Omakey.colors
+    Surface(modifier = Modifier.fillMaxSize(), color = c.ground) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
                 .navigationBarsPadding()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+                .imePadding()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(text = "Test your keyboard", style = MaterialTheme.typography.titleMedium)
-                TextButton(onClick = onClose) { Text(text = "Close") }
-            }
-
+            PageHeader(title = "Try omakey", onBack = onClose, modifier = Modifier.padding(start = 4.dp))
             if (!isOmakeyActive) {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant,
+                Row(
+                    Modifier.fillMaxWidth().background(c.surface, RoundedCornerShape(dev.omakey.app.design.Radius.card)).padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    Row(
-                        modifier = Modifier.padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        Text(
-                            text = "omakey isn't your active keyboard — switch to it to test typing here.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.weight(1f),
-                        )
-                        Button(onClick = onSwitchKeyboard) { Text(text = "Switch") }
-                    }
+                    Text("Another keyboard is on. Switch to omakey to try it here.", style = Omakey.type.body, color = c.ink, modifier = Modifier.weight(1f))
+                    OmakeyButton("Switch", onSwitchKeyboard, kind = ButtonKind.Primary, height = 40.dp)
                 }
             }
-
-            OutlinedTextField(
+            OmakeyField(
                 value = text,
                 onValueChange = { text = it },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .focusRequester(focusRequester),
-                placeholder = { Text(text = "Tap here and start typing…") },
+                singleLine = false,
+                minLines = 6,
+                placeholder = "Type anything",
+                modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
             )
         }
     }
@@ -627,5 +565,21 @@ internal fun TestKeyboardOverlay(onClose: () -> Unit, onSwitchKeyboard: () -> Un
     LaunchedEffect(Unit) {
         focusRequester.requestFocus()
         keyboardController?.show()
+    }
+}
+
+/** A full-screen page opened from a Settings page: ground colour, back arrow and title, and a
+ * scrolling list of the caller's items. Used by the pages that used to be overlays. */
+@Composable
+private fun OverlayPage(title: String, onBack: () -> Unit, content: androidx.compose.foundation.lazy.LazyListScope.() -> Unit) {
+    Surface(modifier = Modifier.fillMaxSize(), color = Omakey.colors.ground) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding(),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 40.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            item { PageHeader(title = title, onBack = onBack, modifier = Modifier.padding(start = 4.dp)) }
+            content()
+        }
     }
 }

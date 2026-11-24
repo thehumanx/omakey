@@ -250,6 +250,8 @@ class OmakeyInputMethodService :
 
     override fun onCreate() {
         super.onCreate()
+        // Before any preference is read: fresh installs get the new defaults, updates keep theirs.
+        dev.omakey.core.settings.InstallDefaults.apply(applicationContext)
         savedStateRegistryController.performRestore(null)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
 
@@ -680,9 +682,20 @@ class OmakeyInputMethodService :
      */
     override fun onComputeInsets(outInsets: Insets) {
         super.onComputeInsets(outInsets)
-        if (layoutPreferences.settings.value.placement != KeyboardPlacement.FLOATING) return
         val bounds = keyboardBounds ?: return
-        val viewHeight = window?.window?.decorView?.height ?: return
+        val decor = window?.window?.decorView ?: return
+        val viewHeight = decor.height
+        if (layoutPreferences.settings.value.placement != KeyboardPlacement.FLOATING) {
+            // Docked and one-handed: the window has clear space above the keys for popups
+            // (POPUP_HEADROOM_DP). The app is told the keyboard starts at the keys, and only the
+            // keyboard's full-width band takes touches, so that space never covers or blocks it.
+            val top = bounds.top.coerceIn(0, viewHeight)
+            outInsets.contentTopInsets = top
+            outInsets.visibleTopInsets = top
+            outInsets.touchableInsets = Insets.TOUCHABLE_INSETS_REGION
+            outInsets.touchableRegion.set(0, top, decor.width, viewHeight)
+            return
+        }
         outInsets.contentTopInsets = viewHeight
         outInsets.visibleTopInsets = viewHeight
         outInsets.touchableInsets = Insets.TOUCHABLE_INSETS_REGION

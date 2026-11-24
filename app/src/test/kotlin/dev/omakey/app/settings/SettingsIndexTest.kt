@@ -65,4 +65,40 @@ class SettingsIndexTest {
     fun `accent still finds the theme picker on older Android`() {
         assertEquals(SettingKey.THEME, SettingsIndex.searchFor(sdkInt = 30).search("accent").firstOrNull()?.id)
     }
+
+    @Test
+    fun `home lists four groups in the designed order`() {
+        assertEquals(listOf("Look", "Typing", "Above the keys", "More"), SettingsGroup.entries.map { it.title })
+        assertEquals(
+            listOf(SettingsPage.THEME, SettingsPage.KEYS, SettingsPage.FONT, SettingsPage.SIZE_POSITION),
+            SettingsIndex.pagesIn(SettingsGroup.LOOK),
+        )
+        assertEquals(
+            listOf(SettingsPage.CORRECTIONS, SettingsPage.GESTURES, SettingsPage.LANGUAGES),
+            SettingsIndex.pagesIn(SettingsGroup.TYPING),
+        )
+        assertEquals(
+            listOf(SettingsPage.BAR_PAGES, SettingsPage.QUICK_ACCESS, SettingsPage.CLIPBOARD),
+            SettingsIndex.pagesIn(SettingsGroup.ABOVE_THE_KEYS),
+        )
+        assertEquals(
+            listOf(SettingsPage.SOUND, SettingsPage.PRIVACY, SettingsPage.ACCESSIBILITY, SettingsPage.ABOUT),
+            SettingsIndex.pagesIn(SettingsGroup.MORE),
+        )
+    }
+
+    @Test
+    fun `related settings now sit together`() {
+        assertEquals(SettingsPage.CLIPBOARD, SettingKey.CLIPBOARD_HISTORY.section.page)
+        assertEquals(SettingsPage.CLIPBOARD, SettingKey.SAVE_CLIPBOARD_HISTORY.section.page)
+        assertEquals(SettingsPage.KEYS, SettingKey.TAP_PREVIEW.section.page)
+        assertEquals(SettingsPage.KEYS, SettingKey.LAYOUT_STYLE.section.page)
+        assertEquals(SettingsPage.KEYS, SettingKey.NUMBER_PAD.section.page)
+        assertEquals(SettingsPage.SIZE_POSITION, SettingKey.SPLIT_DUPLICATE_KEYS.section.page)
+        assertEquals(SettingsPage.BAR_PAGES, SettingKey.AUTOFILL.section.page)
+        assertEquals(SettingsPage.CORRECTIONS, SettingKey.AUTO_CAPITALIZE.section.page)
+        assertEquals(SettingsPage.KEYS, SettingKey.EMOJI_SKIN_TONE.section.page)
+        assertEquals("Extension bar pages", SettingsPage.BAR_PAGES.title)
+        assertEquals(SettingKey.QUICK_ACCESS_TILES, search.search("quick settings").first().id)
+    }
 }

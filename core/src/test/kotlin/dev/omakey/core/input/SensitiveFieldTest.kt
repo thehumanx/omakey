@@ -106,4 +106,23 @@ class SensitiveFieldTest {
             InputType.TYPE_TEXT_FLAG_AUTO_CORRECT
         assertTrue(isSensitiveField(editorInfo(password)))
     }
+
+    // Short codes (a saved snippet offered after typing its code) are blocked only where a value
+    // is a secret. "Don't learn" fields and omakey's own Try screen still offer them: offering
+    // the user's own snippet learns nothing.
+    @Test
+    fun `password fields block short codes`() {
+        assertTrue(isPasswordField(editorInfo(InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD)))
+        assertTrue(isPasswordField(editorInfo(InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD)))
+        assertTrue(isPasswordField(editorInfo(InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD)))
+        assertTrue(isPasswordField(editorInfo(InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD)))
+    }
+
+    @Test
+    fun `no-learning fields and omakey's own screens still allow short codes`() {
+        assertFalse(isPasswordField(editorInfo(InputType.TYPE_CLASS_TEXT, EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING)))
+        assertFalse(isPasswordField(editorInfo(InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS)))
+        assertFalse(isPasswordField(editorInfo(InputType.TYPE_CLASS_TEXT).apply { packageName = "dev.omakey.app" }))
+        assertFalse(isPasswordField(null))
+    }
 }

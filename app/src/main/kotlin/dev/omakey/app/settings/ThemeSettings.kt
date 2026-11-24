@@ -61,6 +61,27 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import dev.omakey.app.design.ActionSheet
+import dev.omakey.app.design.ButtonKind
+import dev.omakey.app.design.SheetAction
+import dev.omakey.app.design.ConfirmSheet
+import dev.omakey.app.design.IconAction
+import dev.omakey.app.design.Omakey
+import dev.omakey.app.design.OmakeyButton
+import dev.omakey.app.design.OmakeyField
+import dev.omakey.app.design.PageHeader
+import dev.omakey.app.design.Radius
+import dev.omakey.app.design.SectionLabel
+import dev.omakey.app.design.Segmented
+import dev.omakey.app.design.SettingsCard
+import dev.omakey.core.icons.OmakeyIcons
 import androidx.compose.ui.text.font.FontWeight
 import dev.omakey.core.locale.KeyboardLocale
 import dev.omakey.core.icons.PhosphorLineCopy
@@ -98,16 +119,11 @@ internal fun LayoutModePicker(themeRepository: ThemeRepository) {
         dev.omakey.core.theme.LayoutMode.NORMAL to "Normal",
         dev.omakey.core.theme.LayoutMode.GRID to "Grid",
     )
-    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-        options.forEachIndexed { index, (mode, label) ->
-            SegmentedButton(
-                selected = mode == currentMode,
-                onClick = { themeRepository.setLayoutMode(mode) },
-                shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
-                icon = {},
-                label = { Text(label) },
-            )
-        }
+    SettingBlock {
+        Segmented(options, currentMode, themeRepository::setLayoutMode)
+        SettingDescription(
+            if (currentMode == dev.omakey.core.theme.LayoutMode.GRID) "Keys sit in a grid of thin lines." else "Keys float on the keyboard, like Fleksy.",
+        )
     }
 }
 
@@ -128,167 +144,151 @@ internal fun ThemePicker(
     val currentTheme by themeRepository.currentTheme.collectAsState()
     val customThemes by customThemePreferences.themes.collectAsState()
     var themeToDelete by remember { mutableStateOf<OmakeyTheme?>(null) }
+    var themeWithActions by remember { mutableStateOf<OmakeyTheme?>(null) }
 
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        // Presets — a flat segmented toggle, same control style as Layout style above, since
-        // there are always exactly these 4 and exactly one is ever selected.
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         val presetLabels = mapOf(
             Presets.Light.id to "Light",
             Presets.Dark.id to "Dark",
             Presets.Auto.id to "Auto",
-            Presets.Accent.id to "Accent",
+            Presets.Accent.id to "Wallpaper",
         )
         // Accent (wallpaper colours) only where the phone has them: see themePresetChoices.
         val presetOptions = dev.omakey.app.keyboard.themePresetChoices(android.os.Build.VERSION.SDK_INT, currentTheme.id)
-            .map { it to presetLabels.getValue(it.id) }
-        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-            presetOptions.forEachIndexed { index, (preset, label) ->
-                SegmentedButton(
-                    selected = preset.id == currentTheme.id,
-                    onClick = { themeRepository.setTheme(preset) },
-                    shape = SegmentedButtonDefaults.itemShape(index = index, count = presetOptions.size),
-                    icon = {},
-                    label = { Text(label) },
-                )
-            }
-        }
+            .map { it.id to presetLabels.getValue(it.id) }
+        val presets = listOf(Presets.Light, Presets.Dark, Presets.Auto, Presets.Accent).associateBy { it.id }
+        // A custom theme is on: no preset is chosen, and the segmented control shows none lit.
+        Segmented(presetOptions, currentTheme.id, onSelect = { id -> presets[id]?.let(themeRepository::setTheme) })
+        SettingDescription(
+            if (presetOptions.any { it.first == Presets.Accent.id }) {
+                "Auto follows your phone's light and dark mode. Wallpaper takes its colours from your wallpaper."
+            } else {
+                "Auto follows your phone's light and dark mode."
+            },
+            Modifier.padding(horizontal = 4.dp),
+        )
 
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-        Text(text = "Custom themes", style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium))
-
-        // null designedForLayoutMode = made before this field existed, or never re-tagged —
-        // shown regardless of mode rather than disappearing from a list it used to be in.
+        // null designedForLayoutMode = made before this field existed: shown in both modes.
         val visibleCustomThemes = customThemes.filter { it.designedForLayoutMode == null || it.designedForLayoutMode == layoutMode }
+        SectionLabel("Your themes", Modifier.padding(top = 12.dp))
         if (visibleCustomThemes.isEmpty() && customThemes.isNotEmpty()) {
-            Text(
-                text = "You have custom themes, but none are tagged for ${if (layoutMode == dev.omakey.core.theme.LayoutMode.GRID) "Grid" else "Normal"} mode yet — edit one to tag it, or create a new one below.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        visibleCustomThemes.forEach { theme ->
-            ThemeRow(
-                theme = theme,
-                selected = theme.id == currentTheme.id,
-                onClick = { themeRepository.setTheme(theme) },
-                onEdit = { onEditTheme(theme) },
-                onDelete = { themeToDelete = theme },
+            SettingDescription(
+                "Your themes were made for ${if (layoutMode == dev.omakey.core.theme.LayoutMode.GRID) "Normal" else "Grid"} keys. Switch layout style to see them.",
+                Modifier.padding(horizontal = 4.dp),
             )
         }
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable(onClick = onCreateTheme)
-                .border(width = 2.dp, color = Color.Transparent, shape = RoundedCornerShape(12.dp))
-                .padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Box(
-                modifier = Modifier
-                    .size(56.dp)
-                    .border(width = 1.dp, color = MaterialTheme.colorScheme.outline, shape = RoundedCornerShape(8.dp)),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(text = "+", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary)
+            visibleCustomThemes.forEach { theme ->
+                ThemeTile(
+                    theme = theme,
+                    selected = theme.id == currentTheme.id,
+                    onClick = { themeRepository.setTheme(theme) },
+                    onLongClick = { themeWithActions = theme },
+                )
             }
-            Text(text = "Create your own theme", style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium))
+            NewThemeTile(onCreateTheme)
+        }
+        if (visibleCustomThemes.isNotEmpty()) {
+            Text("Hold a theme to edit or delete it.", style = Omakey.type.caption, color = Omakey.colors.subtle, modifier = Modifier.padding(horizontal = 4.dp))
         }
     }
 
-    // AlertDialog renders via Compose's own Dialog composable under the hood, which draws in a
-    // separate window with its own constraints — safe to keep here even though ThemePicker itself
-    // sits inside a LazyColumn item. ThemeEditorOverlay does NOT get this for free (see below).
+    themeWithActions?.let { theme ->
+        ActionSheet(
+            title = theme.name,
+            actions = listOf(
+                SheetAction("Edit theme", OmakeyIcons.Theme) {
+                    themeWithActions = null
+                    onEditTheme(theme)
+                },
+                SheetAction("Delete theme", OmakeyIcons.Trash, destructive = true) {
+                    themeWithActions = null
+                    themeToDelete = theme
+                },
+            ),
+            onDismiss = { themeWithActions = null },
+        )
+    }
+
     themeToDelete?.let { theme ->
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = { themeToDelete = null },
-            title = { Text(text = "Delete \"${theme.name}\"?") },
-            text = { Text(text = "This can't be undone. If it's the theme currently applied, the keyboard falls back to Dark.") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        customThemePreferences.delete(theme.id)
-                        if (currentTheme.id == theme.id) themeRepository.setTheme(Presets.Dark)
-                        themeToDelete = null
-                    },
-                ) { Text(text = "Delete") }
+        ConfirmSheet(
+            title = "Delete \"${theme.name}\"?",
+            message = if (currentTheme.id == theme.id) "It's on now, so the keyboard goes back to Dark." else "You can't get it back.",
+            confirmLabel = "Delete",
+            destructive = true,
+            onConfirm = {
+                customThemePreferences.delete(theme.id)
+                if (currentTheme.id == theme.id) themeRepository.setTheme(Presets.Dark)
+                themeToDelete = null
             },
-            dismissButton = {
-                TextButton(onClick = { themeToDelete = null }) { Text(text = "Cancel") }
-            },
+            onDismiss = { themeToDelete = null },
+        )
+    }
+}
+
+/** A custom theme as a tile: a miniature of its keys, its name under it; an ink ring when on. */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+private fun ThemeTile(theme: OmakeyTheme, selected: Boolean, onClick: () -> Unit, onLongClick: () -> Unit) {
+    val c = Omakey.colors
+    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Box(
+            Modifier
+                .size(80.dp)
+                .clip(RoundedCornerShape(Radius.control))
+                .border(2.dp, if (selected) c.ink else Color.Transparent, RoundedCornerShape(Radius.control))
+                .combinedClickable(onClickLabel = "Use ${theme.name}", onLongClickLabel = "Edit or delete", onClick = onClick, onLongClick = onLongClick)
+                .semantics { this.selected = selected },
+        ) { KeyboardSwatch(theme) }
+        Text(
+            theme.name,
+            style = if (selected) Omakey.type.label else Omakey.type.body.copy(fontSize = 13.sp),
+            color = if (selected) c.ink else c.muted,
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            modifier = Modifier.width(80.dp),
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
         )
     }
 }
 
 @Composable
-private fun ThemeRow(
-    theme: OmakeyTheme,
-    selected: Boolean,
-    onClick: () -> Unit,
-    onEdit: (() -> Unit)? = null,
-    onDelete: (() -> Unit)? = null,
-) {
-    val borderColor = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .border(width = 2.dp, color = borderColor, shape = RoundedCornerShape(12.dp))
-            .padding(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        KeyboardSwatch(theme)
-        Column(Modifier.weight(1f)) {
-            Text(text = theme.name, style = MaterialTheme.typography.bodyLarge)
-        }
-        if (onEdit != null) {
-            TextButton(onClick = onEdit) { Text(text = "Edit") }
-        }
-        if (onDelete != null) {
-            TextButton(onClick = onDelete) { Text(text = "Delete") }
-        }
+private fun NewThemeTile(onClick: () -> Unit) {
+    val c = Omakey.colors
+    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Box(
+            Modifier
+                .size(80.dp)
+                .clip(RoundedCornerShape(Radius.control))
+                .background(c.tonal)
+                .clickable(onClickLabel = "Make a new theme", onClick = onClick),
+            contentAlignment = Alignment.Center,
+        ) { Icon(OmakeyIcons.Plus, contentDescription = null, tint = c.ink, modifier = Modifier.size(24.dp)) }
+        Text("New", style = Omakey.type.body.copy(fontSize = 13.sp), color = c.muted)
     }
 }
 
-/** Tiny non-interactive preview of a theme's palette — a compact swatch, not a full live keyboard
- * preview, since rendering a real KeyboardRoot here would require the full IME dependency graph
- * (InputConnection, prediction engine, extension registry) that doesn't exist outside the
- * service. Good enough to judge a theme's colors/shape at a glance. */
+/** A theme's palette as a miniature keyboard: three rows of keys, the last key in its accent. */
 @Composable
 private fun KeyboardSwatch(theme: OmakeyTheme) {
-    val shape = when (theme.keyShape) {
-        dev.omakey.core.theme.KeyShape.PILL -> RoundedCornerShape(50)
-        dev.omakey.core.theme.KeyShape.SQUARE -> RoundedCornerShape(0.dp)
-        dev.omakey.core.theme.KeyShape.ROUNDED -> RoundedCornerShape(6.dp)
-    }
-    Box(
-        modifier = Modifier
-            .size(56.dp)
-            .background(theme.keyboardBackground.toComposeColor(), RoundedCornerShape(8.dp))
-            .padding(6.dp),
+    val key = theme.keyBackground.toComposeColor()
+    Column(
+        Modifier.fillMaxSize().background(theme.keyboardBackground.toComposeColor()).padding(9.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically),
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        repeat(3) { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                repeat(3) {
+                repeat(4) { col ->
+                    val isAccent = row == 2 && col == 3
                     Box(
                         Modifier
-                            .size(10.dp)
-                            .background(theme.keyBackground.toComposeColor(), shape),
+                            .size(12.dp)
+                            .background(if (isAccent) theme.accent.toComposeColor() else key, RoundedCornerShape(3.dp)),
                     )
                 }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                Box(
-                    Modifier
-                        .size(width = 10.dp, height = 10.dp)
-                        .background(theme.keySpecialBackground.toComposeColor(), shape),
-                )
-                Box(
-                    Modifier
-                        .size(10.dp)
-                        .background(theme.accent.toComposeColor(), CircleShape),
-                )
             }
         }
     }
@@ -396,59 +396,31 @@ internal fun ThemeEditorOverlay(
         add(ThemeEditField("Accent (caps lock, active buttons)", accentColor ?: derived.accent.toComposeColor(), isAuto = accentColor == null, onReset = { accentColor = null }) { accentColor = it })
     }
 
-    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+    Surface(modifier = Modifier.fillMaxSize(), color = Omakey.colors.ground) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
                 .navigationBarsPadding()
-                .padding(16.dp),
+                .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = if (initialTheme == null) "Create theme" else "Edit theme",
-                    style = MaterialTheme.typography.titleMedium,
-                )
-                TextButton(onClick = close) { Text(text = "Cancel") }
-            }
+            PageHeader(title = if (initialTheme == null) "New theme" else "Edit theme", onBack = close, modifier = Modifier.padding(start = 4.dp))
 
-            // Sticky, full-keyboard preview — deliberately outside any scroll container so it
-            // stays on screen the whole time the carousel below is being swiped/edited, instead of
-            // scrolling away with the rest of the form (real user feedback: "so we know how it
-            // looks as we edit"). Fixed height, everything below shares the remaining space. No
-            // "Preview" label above it (removed, real user feedback) — self-evident from context.
-            // Provides the user's actual current layout mode (real bug, fixed: this preview used
-            // to always render Normal-mode keys — LocalKeyboardLayoutMode defaults to NORMAL when
-            // nothing provides it — even while editing a theme with Grid mode active) so the
-            // preview matches what the keyboard will really look like.
+            // The preview stays put while the colour pages below are swiped, so every change shows.
             androidx.compose.runtime.CompositionLocalProvider(
                 dev.omakey.core.theme.LocalKeyboardLayoutMode provides layoutMode,
             ) {
-                // Real bug, fixed: this preview used to hardcode showKeyBackgrounds = false
-                // regardless of the actual setting, so editing "Key color" for a Normal-mode theme
-                // never showed any visible change here even once the toggle below was turned on.
                 ThemePreviewMock(previewTheme, showKeyBackgrounds = layoutSettings.showKeyBackgrounds, interactive = true)
             }
 
-            // "Key color" (below) is otherwise invisible in Normal mode — KeyRowView renders keys
-            // fully transparent there unless key backgrounds are turned on (the flat/borderless
-            // look is the Normal-mode default, matching Fleksy). Surfaced right here, next to the
-            // color it gates, instead of leaving it to be found separately under Appearance —
-            // Grid mode always shows its own bordered cells regardless of this toggle, so it's
-            // Normal-mode-only, same as "Key color" itself.
+            // "Key colour" only shows in Normal mode with key backgrounds on, so the switch sits here,
+            // next to the colour it gates.
             if (layoutMode != dev.omakey.core.theme.LayoutMode.GRID) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(text = "Show key backgrounds", style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium))
-                    Switch(
+                SettingsCard(contentPadding = 16.dp) {
+                    UnindexedSettingToggle(
+                        title = "Key backgrounds",
+                        description = null,
                         checked = layoutSettings.showKeyBackgrounds,
                         onCheckedChange = layoutPreferences::setShowKeyBackgrounds,
                     )
@@ -460,19 +432,19 @@ internal fun ThemeEditorOverlay(
                 modifier = Modifier.weight(1f),
             )
 
-            Button(onClick = { showSaveNamePrompt = true }, modifier = Modifier.fillMaxWidth()) {
-                Text(text = "Save theme")
-            }
+            OmakeyButton("Save theme", { showSaveNamePrompt = true }, kind = ButtonKind.Primary, modifier = Modifier.fillMaxWidth())
         }
     }
 
     if (showDiscardPrompt) {
-        AlertDialog(
-            onDismissRequest = { showDiscardPrompt = false },
-            title = { Text(text = "Discard changes?") },
-            text = { Text(text = "Your changes to this theme haven't been saved.") },
-            confirmButton = { TextButton(onClick = onClose) { Text(text = "Discard") } },
-            dismissButton = { TextButton(onClick = { showDiscardPrompt = false }) { Text(text = "Keep editing") } },
+        ConfirmSheet(
+            title = "Leave without saving?",
+            message = "Your changes to this theme will be lost.",
+            confirmLabel = "Leave",
+            destructive = true,
+            dismissLabel = "Keep editing",
+            onConfirm = onClose,
+            onDismiss = { showDiscardPrompt = false },
         )
     }
 
@@ -495,24 +467,11 @@ private fun GridBorderWidthPicker(
     onSelect: (dev.omakey.core.theme.GridBorderWidth) -> Unit,
 ) {
     val widthOptions = listOf(
-        dev.omakey.core.theme.GridBorderWidth.SM to "SM",
-        dev.omakey.core.theme.GridBorderWidth.MD to "MD",
-        dev.omakey.core.theme.GridBorderWidth.LG to "LG",
+        dev.omakey.core.theme.GridBorderWidth.SM to "Thin",
+        dev.omakey.core.theme.GridBorderWidth.MD to "Medium",
+        dev.omakey.core.theme.GridBorderWidth.LG to "Thick",
     )
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(text = "Thickness", style = MaterialTheme.typography.bodyMedium)
-        SingleChoiceSegmentedButtonRow(modifier = Modifier.width(240.dp)) {
-            widthOptions.forEachIndexed { index, (width, label) ->
-                SegmentedButton(
-                    selected = width == selected,
-                    onClick = { onSelect(width) },
-                    shape = SegmentedButtonDefaults.itemShape(index = index, count = widthOptions.size),
-                    icon = {},
-                    label = { Text(label) },
-                )
-            }
-        }
-    }
+    Segmented(widthOptions, selected, onSelect, Modifier.width(280.dp))
 }
 
 /** Shown only when "Save theme" is tapped — see [ThemeEditorOverlay]'s own doc for why the name
@@ -524,25 +483,16 @@ private fun ThemeSaveNamePrompt(
     onDismiss: () -> Unit,
 ) {
     var nameInput by remember { mutableStateOf(initialName) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(text = "Name this theme") },
-        text = {
-            OutlinedTextField(
-                value = nameInput,
-                onValueChange = { nameInput = it },
-                label = { Text(text = "Name") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-            )
-        },
-        confirmButton = {
-            TextButton(onClick = { onConfirm(nameInput) }) { Text(text = "Save") }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text(text = "Cancel") }
-        },
-    )
+    ConfirmSheet(
+        title = "Name this theme",
+        message = null,
+        confirmLabel = "Save theme",
+        dismissLabel = "Keep editing",
+        onConfirm = { onConfirm(nameInput) },
+        onDismiss = onDismiss,
+    ) {
+        OmakeyField(value = nameInput, onValueChange = { nameInput = it }, modifier = Modifier.padding(top = 8.dp))
+    }
 }
 
 /** A real, full `KeyboardLayout` rendered row-by-row via `KeyRowView` (same composable the actual
@@ -737,18 +687,14 @@ private fun ThemeEditCarousel(pages: List<ThemeEditField>, modifier: Modifier = 
                 ) {
                     Box(
                         Modifier
-                            .size(32.dp)
-                            .background(field.color, RoundedCornerShape(6.dp))
-                            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(6.dp)),
+                            .size(28.dp)
+                            .background(field.color, CircleShape)
+                            .border(1.dp, Omakey.colors.hairline, CircleShape),
                     )
-                    Text(text = field.label, style = MaterialTheme.typography.titleSmall)
+                    Text(text = field.label, style = Omakey.type.row, color = Omakey.colors.ink)
                     when (field.isAuto) {
-                        true -> Text(
-                            text = "Automatic",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        false -> TextButton(onClick = field.onReset) { Text(text = "Reset to automatic") }
+                        true -> Text(text = "Automatic", style = Omakey.type.caption, color = Omakey.colors.muted)
+                        false -> OmakeyButton("Make automatic", field.onReset, height = 36.dp)
                         null -> Unit
                     }
                 }
@@ -766,9 +712,9 @@ private fun ThemeEditCarousel(pages: List<ThemeEditField>, modifier: Modifier = 
                 Box(
                     Modifier
                         .padding(horizontal = 4.dp)
-                        .size(if (index == pagerState.currentPage) 10.dp else 8.dp)
+                        .size(width = if (index == pagerState.currentPage) 16.dp else 6.dp, height = 6.dp)
                         .background(
-                            if (index == pagerState.currentPage) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                            if (index == pagerState.currentPage) Omakey.colors.ink else Omakey.colors.hairline,
                             CircleShape,
                         ),
                 )
@@ -855,6 +801,7 @@ private fun HsvColorPicker(color: Color, onColorChange: (Color) -> Unit) {
             BoxWithConstraints(
                 modifier = Modifier
                     .size(160.dp)
+                    .clip(RoundedCornerShape(Radius.control))
                     .background(hueColor)
                     .background(Brush.horizontalGradient(listOf(Color.White, Color.Transparent)))
                     .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black)))
@@ -884,14 +831,15 @@ private fun HsvColorPicker(color: Color, onColorChange: (Color) -> Unit) {
                                 y = ((maxHeight * (1f - value) - 6.dp).toPx()).roundToInt(),
                             )
                         }
-                        .size(12.dp)
-                        .border(2.dp, Color.White, CircleShape),
+                        .size(14.dp)
+                        .border(2.5.dp, Color.White, CircleShape),
                 )
             }
-            Box(
+            BoxWithConstraints(
                 modifier = Modifier
                     .width(28.dp)
                     .height(160.dp)
+                    .clip(CircleShape)
                     .background(
                         Brush.verticalGradient(
                             listOf(Color.Red, Color.Yellow, Color.Green, Color.Cyan, Color.Blue, Color.Magenta, Color.Red),
@@ -910,7 +858,16 @@ private fun HsvColorPicker(color: Color, onColorChange: (Color) -> Unit) {
                             emit()
                         }
                     },
-            )
+            ) {
+                // The thumb: where the chosen hue sits on the track.
+                Box(
+                    Modifier
+                        .offset { IntOffset(0, ((maxHeight * (hue / 360f) - 7.dp).toPx()).roundToInt().coerceIn(0, (maxHeight - 14.dp).toPx().roundToInt())) }
+                        .align(Alignment.TopCenter)
+                        .size(width = 28.dp, height = 14.dp)
+                        .border(2.5.dp, Color.White, CircleShape),
+                )
+            }
         }
 
         Row(
@@ -918,16 +875,13 @@ private fun HsvColorPicker(color: Color, onColorChange: (Color) -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            OutlinedTextField(
+            OmakeyField(
                 value = hexText,
                 onValueChange = { applyHex(it) },
-                label = { Text(text = "Hex") },
-                singleLine = true,
                 modifier = Modifier.weight(1f),
+                textStyle = Omakey.type.row.copy(fontWeight = FontWeight.Normal, fontFeatureSettings = "tnum"),
             )
-            IconButton(onClick = { clipboardManager.setText(AnnotatedString(hexText)) }) {
-                Icon(imageVector = PhosphorLineCopy, contentDescription = "Copy hex code")
-            }
+            IconAction(OmakeyIcons.Copy, "Copy colour code", { clipboardManager.setText(AnnotatedString(hexText)) })
         }
     }
 }

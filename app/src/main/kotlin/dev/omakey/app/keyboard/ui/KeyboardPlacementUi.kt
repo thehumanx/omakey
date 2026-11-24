@@ -34,6 +34,10 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.sp
 import dev.omakey.app.keyboard.KeyboardFeedback
 import dev.omakey.app.keyboard.KeyboardViewModel
@@ -248,6 +252,10 @@ private data class QuickTile(
     val label: String,
     val icon: ImageVector,
     val active: Boolean,
+    /** A language's code (EN, NE), drawn in place of [icon]: languages differ by code, not globe. */
+    val badge: String? = null,
+    /** On/off modes (incognito, floating…) are read out with their state; actions aren't. */
+    val toggle: Boolean = true,
     val onClick: () -> Unit,
 )
 
@@ -284,49 +292,66 @@ internal fun QuickAccessPanel(
     onOpenSettings: () -> Unit,
 ) {
     val isGrid = layoutMode == dev.omakey.core.theme.LayoutMode.GRID
-    val tiles = listOf(
+    // Which tiles, in what order: the user's choice (Settings → Quick access).
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val tilePrefs = remember { dev.omakey.core.layout.QuickAccessPreferences(context) }
+    androidx.compose.runtime.DisposableEffect(tilePrefs) { onDispose { tilePrefs.close() } }
+    val chosen by tilePrefs.tiles.collectAsState()
+    val autocorrectOn by viewModel.autocorrectOn.collectAsState()
+    fun tileFor(id: dev.omakey.core.layout.QuickTileId): QuickTile? = when (id) {
         // Here rather than in the text tools: it is a mode, like one-handed or floating, and the
         // moment you want it is while typing — leaving the field to find it in Settings defeats it.
-        QuickTile(if (incognito) "Incognito on" else "Incognito", PhosphorIncognito, incognito) {
+        dev.omakey.core.layout.QuickTileId.INCOGNITO -> QuickTile(if (incognito) "Incognito on" else "Incognito", PhosphorIncognito, incognito) {
             feedback.onKeyPress(); viewModel.toggleIncognito()
-        },
-        QuickTile("One-handed", PhosphorOneHanded, placement.isOneHanded) {
+        }
+        dev.omakey.core.layout.QuickTileId.ONE_HANDED -> QuickTile("One-handed", PhosphorOneHanded, placement.isOneHanded) {
             feedback.onKeyPress(); viewModel.toggleOneHanded()
-        },
-        QuickTile("Floating", PhosphorFloating, placement == KeyboardPlacement.FLOATING) {
+        }
+        dev.omakey.core.layout.QuickTileId.FLOATING -> QuickTile("Floating", PhosphorFloating, placement == KeyboardPlacement.FLOATING) {
             feedback.onKeyPress(); viewModel.setPlacement(KeyboardPlacement.FLOATING)
-        },
-        QuickTile("Size & position", PhosphorResize, false) {
+        }
+        dev.omakey.core.layout.QuickTileId.RESIZE -> QuickTile("Resize", PhosphorResize, false, toggle = false) {
             feedback.onKeyPress(); viewModel.setResizing(true)
-        },
+        }
         // Highlighted while Grid is on; tapping flips between the two layout styles.
-        QuickTile("Grid layout", PhosphorGrid, isGrid) {
+        dev.omakey.core.layout.QuickTileId.GRID -> QuickTile("Grid layout", PhosphorGrid, isGrid) {
             feedback.onKeyPress(); viewModel.toggleLayoutMode()
-        },
+        }
         // Hides the spacebar row; highlighted while on, tapping again brings it back.
-        QuickTile("Compact", PhosphorRows, compact) {
+        dev.omakey.core.layout.QuickTileId.COMPACT -> QuickTile("Compact", PhosphorRows, compact) {
             feedback.onKeyPress(); viewModel.toggleCompactMode()
-        },
-        // Highlighted while split. Flips split for this screen size (wide or narrow); from floating
-        // or one-handed it docks the keyboard and splits it.
-        QuickTile("Split", PhosphorSplit, split) {
+        }
+        // Flips split for this screen size (wide or narrow); from floating or one-handed it docks
+        // the keyboard and splits it.
+        dev.omakey.core.layout.QuickTileId.SPLIT -> QuickTile("Split", PhosphorSplit, split) {
             feedback.onKeyPress(); viewModel.toggleSplit(screenWidthDp)
-        },
-        QuickTile("Theme", PhosphorPalette, false) {
+        }
+        dev.omakey.core.layout.QuickTileId.THEME -> QuickTile("Theme", PhosphorPalette, false, toggle = false) {
             feedback.onKeyPress(); viewModel.cycleTheme()
-        },
-        QuickTile("Settings", PhosphorGear, false) {
+        }
+        dev.omakey.core.layout.QuickTileId.SETTINGS -> QuickTile("Settings", PhosphorGear, false, toggle = false) {
             feedback.onKeyPress(); viewModel.closeQuickAccess(); onOpenSettings()
-        },
-    ) + if (languageCount > 1) {
-        listOf(QuickTile("Language", PhosphorGlobe, false) { feedback.onKeyPress(); viewModel.openLanguagePicker(fromQuickAccess = true) })
-    } else {
-        emptyList()
+        }
+        // Only with a choice to make.
+        dev.omakey.core.layout.QuickTileId.LANGUAGE -> if (languageCount > 1) {
+            QuickTile("Language", PhosphorGlobe, false, toggle = false) { feedback.onKeyPress(); viewModel.openLanguagePicker(fromQuickAccess = true) }
+        } else null
+        dev.omakey.core.layout.QuickTileId.AUTOCORRECT -> QuickTile("Autocorrect", dev.omakey.core.icons.OmakeyIcons.Check, autocorrectOn) {
+            feedback.onKeyPress(); viewModel.toggleAutocorrect()
+        }
+        dev.omakey.core.layout.QuickTileId.CLIPBOARD -> QuickTile("Clipboard", dev.omakey.core.icons.OmakeyIcons.Clipboard, false, toggle = false) {
+            feedback.onKeyPress(); viewModel.selectExtension("builtin.clipboard")
+        }
+        dev.omakey.core.layout.QuickTileId.EMOJI -> QuickTile("Emoji", dev.omakey.core.icons.OmakeyIcons.Emoji, false, toggle = false) {
+            feedback.onKeyPress(); viewModel.selectExtension("builtin.emoji")
+        }
     }
+    val tiles = chosen.shown.mapNotNull(::tileFor)
 
     TilePanel(
         title = "Quick access",
         closeDescription = "Close quick access",
+        showHeader = false,
         onClose = { viewModel.closeQuickAccess() },
         tiles = tiles,
         theme = theme,
@@ -354,7 +379,7 @@ internal fun LanguagePickerPanel(
     onOpenSettings: () -> Unit,
 ) {
     val languageTiles = languages.map { language ->
-        QuickTile(language.nativeName, PhosphorGlobe, language.id == activeLanguageId) {
+        QuickTile(language.nativeName, PhosphorGlobe, language.id == activeLanguageId, badge = dev.omakey.core.locale.flagEmoji(language.id) ?: language.id.substringBefore('_').take(2).uppercase()) {
             feedback.onKeyPress(); viewModel.selectLanguage(language.id)
         }
     }
@@ -365,7 +390,7 @@ internal fun LanguagePickerPanel(
             feedback.onKeyPress(); viewModel.chooseLayout(id)
         }
     }
-    val tiles = languageTiles + layoutTiles + QuickTile("Languages…", PhosphorGear, false) {
+    val tiles = languageTiles + layoutTiles + QuickTile("Add languages", PhosphorGear, false, toggle = false) {
         feedback.onKeyPress(); viewModel.closeLanguagePicker(); onOpenSettings()
     }
     TilePanel(
@@ -385,6 +410,9 @@ internal fun LanguagePickerPanel(
 private fun TilePanel(
     title: String,
     closeDescription: String,
+    /** Quick access has no header (developer: it took space from the tiles); the Quick access
+     * button in the bar opens and closes it. The language picker keeps its title. */
+    showHeader: Boolean = true,
     onClose: () -> Unit,
     tiles: List<QuickTile>,
     theme: OmakeyTheme,
@@ -403,17 +431,32 @@ private fun TilePanel(
             // whenever a panel replaced the keys (real bug).
             .let { m -> if (isGridMode) m.border(theme.gridBorderWidth.toDp(), theme.gridBorderColor.toComposeColor()) else m },
     ) {
+        if (showHeader) {
         Row(
-            Modifier.fillMaxWidth().height(32.dp).padding(horizontal = 8.dp),
+            Modifier.fillMaxWidth().height(44.dp).padding(start = 16.dp, end = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
                 text = title,
-                color = theme.fadedLabelOn(theme.keyboardBackground, 0.7f).toComposeColor(),
-                fontFamily = fontFamily,
-                fontSize = 12.sp,
-                modifier = Modifier.padding(start = 6.dp),
+                color = theme.fadedLabelOn(theme.keyboardBackground, 0.8f).toComposeColor(),
+                fontFamily = fontFamily ?: dev.omakey.app.design.Figtree,
+                fontSize = 13.sp,
+                fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                modifier = Modifier.weight(1f),
             )
+            Box(
+                Modifier
+                    .size(44.dp)
+                    .clip(androidx.compose.foundation.shape.CircleShape)
+                    .clickable(onClickLabel = closeDescription) { feedback.onKeyPress(); onClose() }
+                    .semantics { contentDescription = closeDescription },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(dev.omakey.core.icons.OmakeyIcons.Close, contentDescription = null, tint = theme.labelOn(theme.keyboardBackground).toComposeColor(), modifier = Modifier.size(20.dp))
+            }
+        }
+        } else {
+            androidx.compose.foundation.layout.Spacer(Modifier.height(6.dp))
         }
         androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
             columns = androidx.compose.foundation.lazy.grid.GridCells.Fixed(4),
@@ -422,24 +465,23 @@ private fun TilePanel(
             gridItems(tiles) { tile ->
                 val interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
                 val isPressed by interactionSource.collectIsPressedAsState()
-                // Active tiles take the theme's accent and the rest its key colour, so the panel
-                // looks like part of the chosen theme rather than a stock grey sheet.
+                // An active tile is ink — the theme's label colour as fill — with an accent dot,
+                // so "on" reads the same on every theme. The rest sit on the key colour.
+                val ink = theme.labelOn(theme.keyboardBackground)
                 val background = when {
-                    tile.active -> theme.accent
+                    tile.active -> ink
                     isPressed -> theme.keyBackgroundPressed
                     isGridMode -> theme.keyboardBackground
                     else -> theme.keyBackground
                 }
-                val foreground = if (tile.active) theme.onAccent else theme.labelOn(background)
-                Column(
+                val foreground = if (tile.active) theme.keyboardBackground else theme.labelOn(background)
+                val shape = androidx.compose.foundation.shape.RoundedCornerShape(if (isGridMode) 0.dp else 14.dp)
+                Box(
                     modifier = Modifier
                         .padding(4.dp)
                         .fillMaxWidth()
-                        .height(64.dp)
-                        .background(
-                            background.toComposeColor(),
-                            androidx.compose.foundation.shape.RoundedCornerShape(if (isGridMode) 0.dp else 10.dp),
-                        )
+                        .height(76.dp)
+                        .background(background.toComposeColor(), shape)
                         .let { m ->
                             if (isGridMode) m.border(theme.gridBorderWidth.toDp(), theme.gridBorderColor.toComposeColor()) else m
                         }
@@ -448,25 +490,55 @@ private fun TilePanel(
                             indication = null,
                             onClick = tile.onClick,
                         )
-                        .semantics { contentDescription = tile.label },
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
+                        .semantics {
+                            contentDescription = tile.label
+                            if (tile.toggle) stateDescription = if (tile.active) "On" else "Off" else role = androidx.compose.ui.semantics.Role.Button
+                        },
                 ) {
-                    Icon(
-                        imageVector = tile.icon,
-                        contentDescription = null,
-                        // Resolved against this tile's own fill, which for an active tile is the
-                        // accent colour — see OmakeyTheme.labelOn.
-                        tint = foreground.toComposeColor(),
-                        modifier = Modifier.size(22.dp),
-                    )
-                    Text(
-                        text = tile.label,
-                        color = foreground.toComposeColor(),
-                        fontFamily = fontFamily,
-                        fontSize = 10.sp,
-                        modifier = Modifier.padding(top = 6.dp),
-                    )
+                    if (tile.active) {
+                        Box(
+                            Modifier.align(Alignment.TopEnd).padding(9.dp).size(6.dp)
+                                .background(theme.accent.toComposeColor(), androidx.compose.foundation.shape.CircleShape),
+                        )
+                    }
+                    Column(
+                        Modifier.fillMaxSize(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
+                    ) {
+                        if (tile.badge != null && tile.badge.length > 2) {
+                            // A flag (an emoji, not two Latin letters): drawn as itself.
+                            Text(text = tile.badge, fontSize = 22.sp)
+                        } else if (tile.badge != null) {
+                            Text(
+                                text = tile.badge,
+                                color = foreground.toComposeColor(),
+                                fontFamily = dev.omakey.app.design.Figtree,
+                                fontSize = 11.sp,
+                                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                modifier = Modifier
+                                    .border(1.5.dp, foreground.toComposeColor(), androidx.compose.foundation.shape.RoundedCornerShape(5.dp))
+                                    .padding(horizontal = 4.dp, vertical = 1.dp),
+                            )
+                        } else {
+                            Icon(
+                                imageVector = tile.icon,
+                                contentDescription = null,
+                                tint = foreground.toComposeColor(),
+                                modifier = Modifier.size(22.dp),
+                            )
+                        }
+                        Text(
+                            text = tile.label,
+                            color = foreground.toComposeColor(),
+                            fontFamily = fontFamily ?: dev.omakey.app.design.Figtree,
+                            fontSize = 12.sp,
+                            fontWeight = if (tile.active) androidx.compose.ui.text.font.FontWeight.SemiBold else androidx.compose.ui.text.font.FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(top = 8.dp, start = 4.dp, end = 4.dp),
+                        )
+                    }
                 }
             }
         }
@@ -507,10 +579,10 @@ internal fun OneHandedGutter(
             Box(
                 Modifier
                     .padding(vertical = 6.dp)
-                    .size(36.dp)
+                    .size(40.dp)
                     .background(
                         if (isPressed) theme.keyBackgroundPressed.toComposeColor() else theme.keyBackground.toComposeColor(),
-                        androidx.compose.foundation.shape.RoundedCornerShape(10.dp),
+                        androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
                     )
                     .clickable(interactionSource = interactionSource, indication = null, onClick = action)
                     .semantics { contentDescription = description },
@@ -521,7 +593,7 @@ internal fun OneHandedGutter(
                     contentDescription = null,
                     tint = theme.labelOn(if (isPressed) theme.keyBackgroundPressed else theme.keyBackground).toComposeColor(),
                     modifier = Modifier
-                        .size(18.dp)
+                        .size(20.dp)
                         .then(
                             if (icon == PhosphorSwitchSide && switchSideMirrored) {
                                 Modifier.graphicsLayer(scaleX = -1f)
@@ -702,7 +774,9 @@ internal fun androidx.compose.foundation.layout.BoxScope.ResizeOverlay(
             )
             .padding(horizontal = edgePaddingDp.dp)
             .width((place.widthDp - edgePaddingDp * 2).dp)
-            .height(totalHeightDp.dp),
+            .height(totalHeightDp.dp)
+            // Dims the keys 40 %, so the handles and Done read as the thing to touch now.
+            .background(theme.keyboardBackground.toComposeColor().copy(alpha = 0.4f)),
     ) {
         @Composable
         fun Corner(alignment: Alignment, horizontalSign: Int, verticalSign: Int, description: String) {
@@ -792,15 +866,24 @@ internal fun androidx.compose.foundation.layout.BoxScope.ResizeOverlay(
         // Done sits inside the keyboard's own rectangle, not below it: while floating there is no
         // "below" that belongs to us, and a button outside the touchable region would not receive
         // the tap at all.
+        val ink = theme.labelOn(theme.keyboardBackground)
         Box(
             Modifier
                 .align(Alignment.Center)
-                .background(accent, androidx.compose.foundation.shape.RoundedCornerShape(20.dp))
+                .height(44.dp)
+                .background(ink.toComposeColor(), androidx.compose.foundation.shape.RoundedCornerShape(14.dp))
                 .clickable { place.commit(); viewModel.setResizing(false) }
-                .padding(horizontal = 20.dp, vertical = 8.dp)
+                .padding(horizontal = 24.dp)
                 .semantics { contentDescription = "Done resizing" },
+            contentAlignment = Alignment.Center,
         ) {
-            Text(text = "Done", color = theme.onAccent.toComposeColor(), fontSize = 14.sp)
+            Text(
+                text = "Done",
+                color = theme.keyboardBackground.toComposeColor(),
+                fontFamily = dev.omakey.app.design.Figtree,
+                fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                fontSize = 15.sp,
+            )
         }
     }
 }

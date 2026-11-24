@@ -43,6 +43,22 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.omakey.app.R
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import dev.omakey.app.design.ButtonKind
+import dev.omakey.app.design.Omakey
+import dev.omakey.app.design.OmakeyButton
+import dev.omakey.app.design.PageHeader
+import dev.omakey.app.design.RowTrailing
+import dev.omakey.app.design.SectionLabel
+import dev.omakey.app.design.SettingsCard
+import dev.omakey.app.design.SettingsRowLayout
+import dev.omakey.core.icons.OmakeyIcons
 import dev.omakey.app.keyboard.VibratorKeyboardFeedback
 import dev.omakey.app.keyboard.ui.FontCatalog
 import dev.omakey.core.clipboard.ClipboardHistoryStore
@@ -76,11 +92,16 @@ class SettingsActivity : ComponentActivity() {
         registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) {}
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Launched with the splash theme (icon on the ground colour); swap to the real one before
+        // the first frame so the splash background doesn't sit behind the screen.
+        setTheme(R.style.Theme_Omakey)
         super.onCreate(savedInstanceState)
         // Draws edge-to-edge (content behind the status/nav bars) so we control inset padding
         // ourselves via statusBarsPadding()/navigationBarsPadding() below — without this the
         // system draws an opaque status bar and the title row underneath it visually blends in.
         enableEdgeToEdge()
+        // Before any preference is read: fresh installs get the new defaults, updates keep theirs.
+        dev.omakey.core.settings.InstallDefaults.apply(applicationContext)
         val themeRepository = ThemeRepository(applicationContext)
         val customThemePreferences = CustomThemePreferences(applicationContext)
         val accessibilityPreferences = AccessibilityPreferences(applicationContext)
@@ -116,7 +137,7 @@ class SettingsActivity : ComponentActivity() {
         }
         setContent {
             OmakeySettingsTheme {
-                Surface(modifier = Modifier.fillMaxSize()) {
+                Surface(modifier = Modifier.fillMaxSize(), color = dev.omakey.app.design.Omakey.colors.ground) {
                     SettingsScreen(
                         themeRepository = themeRepository,
                         customThemePreferences = customThemePreferences,
@@ -168,93 +189,9 @@ class SettingsActivity : ComponentActivity() {
     }
 }
 
-/** Neutral grey Material3 scheme — Compose's default `MaterialTheme { }` falls back to Material's
- * stock purple/violet palette (Purple40 etc.) for every unset role, which is where the previous
- * purple buttons/FAB/selection highlights actually came from (nothing in `OmakeyTheme`/`Presets`
- * is purple — those are the *keyboard's* theme, entirely separate from this Settings UI's own
- * Material theme). Overrides every role this screen actually paints with, rather than just
- * `primary`, so containers (buttons, FAB, selected-row highlight) don't fall back to Material's
- * purple-tinted defaults either. */
+/** Settings' theme: the design tokens (dev.omakey.app.design), light or dark with the phone. */
 @Composable
-internal fun OmakeySettingsTheme(content: @Composable () -> Unit) {
-    // Every role, not just the handful this screen was thought to use. Anything left unset falls
-    // back to Material's stock purple, and a lot of widgets reach for roles nobody expects:
-    // segmented buttons use secondaryContainer, dialogs and menus the surfaceContainer ramp, tonal
-    // elevation surfaceTint, switches outline. Those were the purple still showing after the
-    // earlier partial fix.
-    val colorScheme = if (isSystemInDarkTheme()) {
-        darkColorScheme(
-            primary = Color(0xFFD6D6D6),
-            onPrimary = Color(0xFF1C1C1C),
-            primaryContainer = Color(0xFF3A3A3A),
-            onPrimaryContainer = Color(0xFFEDEDED),
-            inversePrimary = Color(0xFF5F5F5F),
-            secondary = Color(0xFFB8B8B8),
-            onSecondary = Color(0xFF1C1C1C),
-            secondaryContainer = Color(0xFF3A3A3A),
-            onSecondaryContainer = Color(0xFFEDEDED),
-            tertiary = Color(0xFFB8B8B8),
-            onTertiary = Color(0xFF1C1C1C),
-            tertiaryContainer = Color(0xFF3A3A3A),
-            onTertiaryContainer = Color(0xFFEDEDED),
-            background = Color(0xFF0F0F0F),
-            onBackground = Color(0xFFE8E8E8),
-            surface = Color(0xFF141414),
-            onSurface = Color(0xFFE8E8E8),
-            surfaceVariant = Color(0xFF232323),
-            onSurfaceVariant = Color(0xFFC4C4C4),
-            surfaceTint = Color(0xFF8A8A8A),
-            inverseSurface = Color(0xFFE8E8E8),
-            inverseOnSurface = Color(0xFF1C1C1C),
-            outline = Color(0xFF8A8A8A),
-            outlineVariant = Color(0xFF3A3A3A),
-            scrim = Color(0xFF000000),
-            surfaceBright = Color(0xFF2E2E2E),
-            surfaceDim = Color(0xFF0F0F0F),
-            surfaceContainerLowest = Color(0xFF0A0A0A),
-            surfaceContainerLow = Color(0xFF1A1A1A),
-            surfaceContainer = Color(0xFF1E1E1E),
-            surfaceContainerHigh = Color(0xFF262626),
-            surfaceContainerHighest = Color(0xFF303030),
-        )
-    } else {
-        lightColorScheme(
-            primary = Color(0xFF3C3C3C),
-            onPrimary = Color.White,
-            primaryContainer = Color(0xFFE2E2E2),
-            onPrimaryContainer = Color(0xFF1C1C1C),
-            inversePrimary = Color(0xFFD0D0D0),
-            secondary = Color(0xFF5F5F5F),
-            onSecondary = Color.White,
-            secondaryContainer = Color(0xFFE2E2E2),
-            onSecondaryContainer = Color(0xFF1C1C1C),
-            tertiary = Color(0xFF5F5F5F),
-            onTertiary = Color.White,
-            tertiaryContainer = Color(0xFFE2E2E2),
-            onTertiaryContainer = Color(0xFF1C1C1C),
-            background = Color(0xFFFAFAFA),
-            onBackground = Color(0xFF1C1C1C),
-            surface = Color(0xFFFDFDFD),
-            onSurface = Color(0xFF1C1C1C),
-            surfaceVariant = Color(0xFFF0F0F0),
-            onSurfaceVariant = Color(0xFF474747),
-            surfaceTint = Color(0xFF7A7A7A),
-            inverseSurface = Color(0xFF2E2E2E),
-            inverseOnSurface = Color(0xFFF2F2F2),
-            outline = Color(0xFF7A7A7A),
-            outlineVariant = Color(0xFFD4D4D4),
-            scrim = Color(0xFF000000),
-            surfaceBright = Color(0xFFFDFDFD),
-            surfaceDim = Color(0xFFDCDCDC),
-            surfaceContainerLowest = Color(0xFFFFFFFF),
-            surfaceContainerLow = Color(0xFFF7F7F7),
-            surfaceContainer = Color(0xFFF1F1F1),
-            surfaceContainerHigh = Color(0xFFEBEBEB),
-            surfaceContainerHighest = Color(0xFFE5E5E5),
-        )
-    }
-    MaterialTheme(colorScheme = colorScheme, content = content)
-}
+internal fun OmakeySettingsTheme(content: @Composable () -> Unit) = dev.omakey.app.design.OmakeyDesignTheme(content = content)
 
 @Composable
 private fun SettingsScreen(
@@ -341,10 +278,27 @@ private fun SettingsScreen(
 
     Box(Modifier.fillMaxSize()) {
         androidx.compose.runtime.CompositionLocalProvider(LocalSettingHighlight provides highlight) {
-            when (val page = nav.page) {
-                null -> if (nav.searchOpen) {
+          // One screen at a time, moving the way it means: a page in from the right (where its
+          // chevron points), back out to the right, search rising from below. See Motion.
+          androidx.compose.animation.AnimatedContent(
+            targetState = nav,
+            contentKey = { it.screenKey() },
+            transitionSpec = {
+                val from = initialState.screenKey()
+                val to = targetState.screenKey()
+                when {
+                    to.page != null && from.page == null -> dev.omakey.app.design.Motion.push()
+                    to.page == null && from.page != null -> dev.omakey.app.design.Motion.pop()
+                    to.search && !from.search -> dev.omakey.app.design.Motion.rise()
+                    else -> dev.omakey.app.design.Motion.sink()
+                }.apply { targetContentZIndex = if (to.page != null || to.search) 1f else 0f }
+            },
+            label = "settings-screen",
+          ) { shown ->
+            when (val page = shown.page) {
+                null -> if (shown.searchOpen) {
                     SettingsSearchScreen(
-                        query = nav.query,
+                        query = shown.query,
                         onQueryChange = {
                             nav = nav.withQuery(it)
                             scope.launch { searchListState.scrollToItem(0) }
@@ -364,6 +318,10 @@ private fun SettingsScreen(
                         onSearch = { nav = nav.openSearch() },
                         onOpenSystemSettings = onOpenSystemSettings,
                         onSwitchKeyboard = onSwitchKeyboard,
+                        summaries = mapOf(
+                            SettingsPage.THEME to (if (useSystemAccent) "${currentTheme.name} · wallpaper colour" else currentTheme.name),
+                            SettingsPage.FONT to (dev.omakey.app.keyboard.ui.FontCatalog.displayNames[currentFontId] ?: "System default"),
+                        ),
                     )
                 }
 
@@ -371,7 +329,7 @@ private fun SettingsScreen(
                     page = page,
                     onBack = back,
                     scrollTo = highlight?.section?.takeIf { it.page == page },
-                    preview = if (page != SettingsPage.APPEARANCE) null else {
+                    preview = if (page !in PREVIEW_PAGES) null else {
                         {
                             // First, and fed the *resolved* theme plus every live appearance setting, so
                             // each change below shows up here immediately. Normal vs. Grid is the change
@@ -397,7 +355,7 @@ private fun SettingsScreen(
                 ) { section ->
                     when (section) {
                         SettingsSectionKey.LAYOUT_STYLE -> LayoutModePicker(themeRepository)
-                        SettingsSectionKey.THEME -> {
+                        SettingsSectionKey.THEME -> Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                             ThemePicker(
                                 themeRepository = themeRepository,
                                 customThemePreferences = customThemePreferences,
@@ -405,10 +363,10 @@ private fun SettingsScreen(
                                 onCreateTheme = { themeBeingEdited = null; showThemeEditor = true },
                                 onEditTheme = { theme -> themeBeingEdited = theme; showThemeEditor = true },
                             )
-                            if (Build.VERSION.SDK_INT >= SettingKey.SYSTEM_ACCENT.minSdk) {
+                            if (Build.VERSION.SDK_INT >= SettingKey.SYSTEM_ACCENT.minSdk) SettingsCard(contentPadding = 16.dp) {
                                 SettingToggle(
                                     key = SettingKey.SYSTEM_ACCENT,
-                                    description = "Colour the spacebar and active keys with your phone's wallpaper colour.",
+                                    description = "Colour the spacebar from your wallpaper.",
                                     checked = useSystemAccent,
                                     onCheckedChange = themeRepository::setUseSystemAccent,
                                 )
@@ -416,23 +374,25 @@ private fun SettingsScreen(
                         }
                         SettingsSectionKey.KEYS -> {
                             AppearanceLayoutToggles(layoutSettings, layoutPreferences)
-                            SecondarySymbolsToggle(layoutSettings, layoutPreferences)
                             CapitalizationToggleSection(layoutSettings, layoutPreferences)
+                            SecondarySymbolsToggle(layoutSettings, layoutPreferences)
+                            TapPreviewStylePicker(layoutSettings, layoutPreferences)
                         }
                         SettingsSectionKey.FONT -> FontPicker(fontPreferences, currentFontId)
                         SettingsSectionKey.SIZE_POSITION -> {
                             ClickableSettingRow(
                                 key = SettingKey.SIZE_POSITION,
-                                description = "Make the keyboard taller or shorter, or lift it off the bottom of the screen.",
+                                description = "Taller, shorter, or lifted off the bottom.",
                                 onClick = { showSizePositionOverlay = true },
                             )
                             EdgePaddingToggle(layoutSettings, layoutPreferences)
+                            SplitDuplicateKeysToggle(layoutSettings, layoutPreferences)
                         }
-                        SettingsSectionKey.SUGGESTION_BAR -> TopStripPagesSection(topStripPreferences)
+                        SettingsSectionKey.SUGGESTION_BAR -> BarPagesPage(topStripPreferences)
+                        SettingsSectionKey.QUICK_ACCESS -> QuickAccessTilesPage()
                         SettingsSectionKey.BUTTONS -> {
                             EmojiSlotKeyRow(layoutSettings, layoutPreferences)
                             SpacebarSideKeyRow(layoutSettings, layoutPreferences)
-                            TapPreviewStylePicker(layoutSettings, layoutPreferences)
                         }
                         SettingsSectionKey.SYMBOLS -> {
                             FleksySymbolsToggle(layoutSettings, layoutPreferences)
@@ -455,7 +415,7 @@ private fun SettingsScreen(
                             ImplicitLearningToggle(incognitoPreferences)
                             ClickableSettingRow(
                                 key = SettingKey.LEARNED_WORDS,
-                                description = "Words the keyboard picked up from you. Edit or remove any.",
+                                description = "Words omakey picked up from you.",
                                 onClick = { showLearnedWordsOverlay = true },
                             )
                         }
@@ -463,31 +423,30 @@ private fun SettingsScreen(
                             ClipboardHistoryToggle(clipboardPreferences)
                             ClickableSettingRow(
                                 key = SettingKey.CLIPBOARD_HISTORY,
-                                description = "What you copied. Pin, remove or clear it.",
+                                description = "Pin, remove or clear what you copied.",
                                 onClick = { showClipboardHistoryOverlay = true },
                             )
                         }
-                        SettingsSectionKey.WHAT_LEAVES ->
-                            Text(text = stringResource(R.string.privacy_notice), style = MaterialTheme.typography.bodyMedium)
+                        SettingsSectionKey.WHAT_LEAVES -> SettingBlock {
+                            SettingDescription(stringResource(R.string.privacy_notice))
+                        }
                         SettingsSectionKey.SOUND_HAPTICS -> FeedbackSettingsSection(hapticSoundPreferences, feedback)
                         SettingsSectionKey.ACCESSIBILITY -> AccessibleModeToggle(accessibilityPreferences)
                         SettingsSectionKey.UPDATES -> {
-                            Text(
-                                // Build number alongside the version name, because they can legitimately
-                                // disagree: versionName is held fixed across dev installs within a release
-                                // cycle while versionCode increments every time, so on a dev build "up to
-                                // date" means "no newer tag", not "running the tagged code".
-                                text = "Version ${dev.omakey.app.BuildConfig.VERSION_NAME} " +
-                                    "(build ${dev.omakey.app.BuildConfig.VERSION_CODE})",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            // Build number alongside the version name, because they can legitimately
+                            // disagree: versionName is held fixed across dev installs within a release
+                            // cycle while versionCode increments every time.
+                            dev.omakey.app.design.SettingsRowLayout(
+                                title = "Version ${dev.omakey.app.BuildConfig.VERSION_NAME}",
+                                description = "Build ${dev.omakey.app.BuildConfig.VERSION_CODE}",
+                                horizontalPadding = 0.dp,
                             )
                             // Play build: no update UI at all (see SELF_UPDATE in app/build.gradle.kts).
                             if (dev.omakey.app.BuildConfig.SELF_UPDATE) {
                             val autoCheckEnabled by updatePreferences.settings.collectAsState()
                             SettingToggle(
                                 key = SettingKey.AUTO_UPDATE_CHECKS,
-                                description = "Look for a new version twice a day and tell you. Nothing installs by itself.",
+                                description = "Twice a day. Nothing installs by itself.",
                                 checked = autoCheckEnabled.autoCheckEnabled,
                                 onCheckedChange = onAutoUpdateCheckToggled,
                             )
@@ -497,45 +456,39 @@ private fun SettingsScreen(
                     }
                 }
             }
+          }
         }
 
-        // Hidden while searching: it would sit over the results and the on-screen keyboard.
-        if (!(nav.searchOpen && nav.page == null)) {
-            FloatingActionButton(
-                onClick = { showTestOverlay = true },
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .statusBarsPadding()
-                    .navigationBarsPadding()
-                    .padding(24.dp),
-            ) {
-                androidx.compose.material3.Icon(
-                    imageVector = dev.omakey.core.icons.PhosphorLineKeyboard,
-                    contentDescription = "Try the keyboard",
-                    modifier = Modifier.size(24.dp),
-                )
-            }
+        // "Try it" on every page but search (where it would sit over the results and the
+        // keyboard). Ink, bottom right, the one primary action that's always there.
+        androidx.compose.animation.AnimatedVisibility(
+            visible = !(nav.searchOpen && nav.page == null),
+            enter = androidx.compose.animation.fadeIn(dev.omakey.app.design.Motion.out(200)) + androidx.compose.animation.scaleIn(dev.omakey.app.design.Motion.out(200), initialScale = 0.9f),
+            exit = androidx.compose.animation.fadeOut(dev.omakey.app.design.Motion.out(150)) + androidx.compose.animation.scaleOut(dev.omakey.app.design.Motion.out(150), targetScale = 0.9f),
+            modifier = Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(20.dp),
+        ) {
+            TryItButton(onClick = { showTestOverlay = true })
         }
     }
 
-    if (showTestOverlay) {
+    dev.omakey.app.design.RisingPage(showTestOverlay) {
         TestKeyboardOverlay(onClose = { showTestOverlay = false }, onSwitchKeyboard = onSwitchKeyboard)
     }
-    if (showLearnedWordsOverlay) {
+    dev.omakey.app.design.PushedPage(showLearnedWordsOverlay) {
         LearnedWordsOverlay(
             wordDao = wordDao,
             profileOf = { id -> languagePacks.registry[id]?.profile ?: dev.omakey.core.locale.LanguageProfile.English },
             onClose = { showLearnedWordsOverlay = false },
         )
     }
-    if (showClipboardHistoryOverlay) {
+    dev.omakey.app.design.PushedPage(showClipboardHistoryOverlay) {
         ClipboardHistoryOverlay(
             clipboardDao = clipboardDao,
             clipboardHistory = clipboardHistory,
             onClose = { showClipboardHistoryOverlay = false },
         )
     }
-    if (showSizePositionOverlay) {
+    dev.omakey.app.design.PushedPage(showSizePositionOverlay) {
         KeyboardSizePositionOverlay(
             layoutPreferences = layoutPreferences,
             theme = effectiveTheme,
@@ -544,7 +497,7 @@ private fun SettingsScreen(
             onClose = { showSizePositionOverlay = false },
         )
     }
-    if (showThemeEditor) {
+    dev.omakey.app.design.PushedPage(showThemeEditor) {
         ThemeEditorOverlay(
             initialTheme = themeBeingEdited,
             layoutMode = layoutMode,
@@ -559,6 +512,27 @@ private fun SettingsScreen(
     }
 }
 
+/** Pages whose settings change how the keys look, so the live keyboard preview sits on top. */
+private val PREVIEW_PAGES = setOf(SettingsPage.THEME, SettingsPage.KEYS, SettingsPage.FONT)
+
+/** The icon tile for each page on the home list (design: Settings → Home). */
+private fun SettingsPage.icon(): androidx.compose.ui.graphics.vector.ImageVector = when (this) {
+    SettingsPage.THEME -> OmakeyIcons.Theme
+    SettingsPage.KEYS -> OmakeyIcons.Keyboard
+    SettingsPage.FONT -> OmakeyIcons.Type
+    SettingsPage.SIZE_POSITION -> OmakeyIcons.Resize
+    SettingsPage.CORRECTIONS -> OmakeyIcons.Book
+    SettingsPage.GESTURES -> OmakeyIcons.Hand
+    SettingsPage.LANGUAGES -> OmakeyIcons.Globe
+    SettingsPage.BAR_PAGES -> OmakeyIcons.QuickAccess
+    SettingsPage.QUICK_ACCESS -> OmakeyIcons.QuickAccess
+    SettingsPage.CLIPBOARD -> OmakeyIcons.Clipboard
+    SettingsPage.SOUND -> OmakeyIcons.Sound
+    SettingsPage.PRIVACY -> OmakeyIcons.Shield
+    SettingsPage.ACCESSIBILITY -> OmakeyIcons.Accessibility
+    SettingsPage.ABOUT -> OmakeyIcons.Info
+}
+
 @Composable
 private fun SettingsHome(
     listState: androidx.compose.foundation.lazy.LazyListState,
@@ -566,65 +540,133 @@ private fun SettingsHome(
     onSearch: () -> Unit,
     onOpenSystemSettings: () -> Unit,
     onSwitchKeyboard: () -> Unit,
+    summaries: Map<SettingsPage, String>,
 ) {
+    val c = Omakey.colors
+    val context = androidx.compose.ui.platform.LocalContext.current
     LazyColumn(
         state = listState,
-        modifier = Modifier
-            .fillMaxSize()
-            .statusBarsPadding()
-            .navigationBarsPadding()
-            .padding(horizontal = 24.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp),
+        modifier = Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 16.dp, end = 16.dp, top = 32.dp, bottom = 104.dp),
+        verticalArrangement = Arrangement.spacedBy(24.dp),
     ) {
         item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.padding(horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Text(
                     text = stringResource(R.string.settings_title),
-                    style = MaterialTheme.typography.headlineSmall,
-                    modifier = Modifier.weight(1f),
+                    style = Omakey.type.headline,
+                    color = c.ink,
+                    modifier = Modifier.semantics { heading() },
                 )
-                androidx.compose.material3.IconButton(onClick = onSearch) {
-                    androidx.compose.material3.Icon(
-                        imageVector = dev.omakey.core.icons.PhosphorLineMagnifyingGlass,
-                        contentDescription = "Search settings",
-                        modifier = Modifier.size(22.dp),
-                    )
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .clip(RoundedCornerShape(24.dp))
+                        .background(c.tonal)
+                        .clickable(onClickLabel = "Search settings", onClick = onSearch)
+                        .padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Icon(OmakeyIcons.Search, contentDescription = null, tint = c.muted, modifier = Modifier.size(20.dp))
+                    Text("Search settings", style = Omakey.type.row.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Normal), color = c.muted)
+                }
+            }
+        }
+        item { SetupStatusCard(onOpenSystemSettings, onSwitchKeyboard) }
+        SettingsGroup.entries.forEach { group ->
+            item(key = group) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SectionLabel(group.title)
+                    SettingsCard(dividerInset = 70.dp) {
+                        SettingsIndex.pagesIn(group).forEach { page ->
+                            HomeRow(page.title, summaries[page] ?: page.summary, page.icon()) { onOpen(page) }
+                            // Snippets opens its own screen, so it isn't a page; it sits after Bar pages.
+                            if (page == SettingsPage.BAR_PAGES) {
+                                HomeRow("Snippets", "Saved text and passwords", OmakeyIcons.Snippet) {
+                                    openSnippets(context)
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
         item {
-            SettingsSection(title = "Setup") {
-                val (isEnabled, isDefault) = rememberSetupStatus()
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    SetupStatusIcon(done = isEnabled)
-                    Button(onClick = onOpenSystemSettings, modifier = Modifier.weight(1f).padding(start = 8.dp)) {
-                        Text(text = stringResource(R.string.settings_enable_keyboard))
-                    }
-                }
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    SetupStatusIcon(done = isDefault)
-                    Button(onClick = onSwitchKeyboard, modifier = Modifier.weight(1f).padding(start = 8.dp)) {
-                        Text(text = stringResource(R.string.settings_choose_keyboard))
-                    }
-                }
-            }
+            Text(
+                "Search finds any setting by name.",
+                style = Omakey.type.caption,
+                color = c.subtle,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
-        val groups = listOf(
-            "Look & feel" to listOf(SettingsPage.APPEARANCE, SettingsPage.KEYBOARD),
-            "Typing" to listOf(SettingsPage.LANGUAGES, SettingsPage.TYPING, SettingsPage.GESTURES, SettingsPage.SOUND),
-            "More" to listOf(SettingsPage.PRIVACY, SettingsPage.ACCESSIBILITY, SettingsPage.ABOUT),
-        )
-        groups.forEach { (title, pages) ->
-            item {
-                SettingsSection(title = title) {
-                    pages.forEach { page ->
-                        UnindexedClickableSettingRow(title = page.title, description = page.summary, onClick = { onOpen(page) })
-                    }
-                }
-            }
+    }
+}
+
+@Composable
+private fun HomeRow(title: String, summary: String, icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit) {
+    SettingsRowLayout(
+        title = title,
+        description = summary,
+        icon = icon,
+        trailing = RowTrailing.Chevron,
+        modifier = Modifier.clickable(role = androidx.compose.ui.semantics.Role.Button, onClick = onClick),
+    )
+}
+
+/**
+ * One card that says where setup stands and offers the single next step: turn omakey on, make it
+ * the keyboard, or (once both are done) try it. Re-checked on every resume, since the steps happen
+ * in the system's own screens.
+ */
+@Composable
+private fun SetupStatusCard(onOpenSystemSettings: () -> Unit, onSwitchKeyboard: () -> Unit) {
+    val c = Omakey.colors
+    val (isEnabled, isDefault) = rememberSetupStatus()
+    val ready = isEnabled && isDefault
+    val title = when {
+        !isEnabled -> "Turn on omakey"
+        !isDefault -> "Make omakey your keyboard"
+        else -> "omakey is ready"
+    }
+    val body = when {
+        !isEnabled -> "Allow it in your phone's keyboard list."
+        !isDefault -> "Pick it in the keyboard switcher."
+        else -> "Your keyboard in every app"
+    }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(dev.omakey.app.design.Radius.card))
+            .background(c.surface)
+            .padding(start = 14.dp, end = 12.dp, top = 14.dp, bottom = 14.dp)
+            .semantics(mergeDescendants = true) {},
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Box(
+            Modifier.size(40.dp).background(if (ready) c.ink else c.tonal, androidx.compose.foundation.shape.CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                if (ready) OmakeyIcons.Check else OmakeyIcons.Keyboard,
+                contentDescription = null,
+                tint = if (ready) c.onInk else c.ink,
+                modifier = Modifier.size(20.dp),
+            )
         }
-        // Room under the last card so the test-keyboard button doesn't cover it.
-        item { Spacer(Modifier.height(72.dp)) }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(title, style = Omakey.type.row, color = c.ink)
+            Text(body, style = Omakey.type.body, color = c.muted)
+        }
+        when {
+            !isEnabled -> OmakeyButton("Turn on", onOpenSystemSettings, kind = ButtonKind.Primary, height = 40.dp)
+            !isDefault -> OmakeyButton("Choose", onSwitchKeyboard, kind = ButtonKind.Primary, height = 40.dp)
+            // Ready: nothing to do here; "Try it" is the button at the bottom of every page.
+            else -> Unit
+        }
     }
 }
 
@@ -633,7 +675,8 @@ private const val HIGHLIGHT_MILLIS = 1500L
 
 private val SettingsNavSaver = androidx.compose.runtime.saveable.listSaver<SettingsNav, Any?>(
     save = { listOf(it.page?.name, it.searchOpen, it.query) },
-    restore = { SettingsNav((it[0] as String?)?.let(SettingsPage::valueOf), it[1] as Boolean, it[2] as String) },
+    // A page renamed since the state was saved (the 2026-11 restructure) restores to home.
+    restore = { SettingsNav((it[0] as String?)?.let { name -> runCatching { SettingsPage.valueOf(name) }.getOrNull() }, it[1] as Boolean, it[2] as String) },
 )
 
 /**
@@ -669,29 +712,61 @@ private fun SettingsSubPage(
     }
     LazyColumn(
         state = listState,
-        modifier = Modifier
-            .fillMaxSize()
-            .statusBarsPadding()
-            .navigationBarsPadding()
-            .padding(horizontal = 24.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp),
+        modifier = Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 104.dp),
+        verticalArrangement = Arrangement.spacedBy(24.dp),
     ) {
-        item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                androidx.compose.material3.IconButton(onClick = onBack, modifier = Modifier.padding(end = 4.dp)) {
-                    androidx.compose.material3.Icon(
-                        imageVector = dev.omakey.core.icons.PhosphorLineArrowLeft,
-                        contentDescription = "Back",
-                        modifier = Modifier.size(22.dp),
-                    )
-                }
-                Text(text = page.title, style = MaterialTheme.typography.headlineSmall)
-            }
-        }
+        item { PageHeader(title = page.title, onBack = onBack, modifier = Modifier.padding(start = 4.dp)) }
         if (preview != null) item { preview() }
         sections.forEach { key ->
-            item(key = key) { SettingsSection(key) { section(key) } }
+            item(key = key) {
+                when {
+                    // These two have no label, so the search flash goes on the content itself.
+                    key.bare -> Box(sectionHighlight(key)) { section(key) }
+                    // A page with one section named like the page: no label repeating the title.
+                    sections.size == 1 && key.title == page.title ->
+                        SettingsCard(sectionHighlight(key), contentPadding = 16.dp, dividerInset = 0.dp) { section(key) }
+                    else -> SettingsSection(key) { section(key) }
+                }
+            }
         }
-        item { Spacer(Modifier.height(72.dp)) }
     }
+}
+
+/** The search flash for a section whose picker has no row title of its own (Theme, Font…). */
+@Composable
+private fun sectionHighlight(key: SettingsSectionKey): Modifier {
+    val entry = SettingKey.entries.firstOrNull { it.sectionLevel && it.section == key }
+    return if (entry != null) rememberSettingHighlight(entry) else Modifier
+}
+
+/** Which screen a nav state shows, for the transition: the query changing isn't a new screen. */
+private data class ScreenKey(val page: SettingsPage?, val search: Boolean)
+
+private fun SettingsNav.screenKey() = ScreenKey(page, searchOpen && page == null)
+
+/** The ink "Try it" button: a keyboard icon and the verb, 56 tall. */
+@Composable
+private fun TryItButton(onClick: () -> Unit) {
+    val c = Omakey.colors
+    Row(
+        Modifier
+            .height(56.dp)
+            .shadow(6.dp, RoundedCornerShape(18.dp))
+            .clip(RoundedCornerShape(18.dp))
+            .background(c.ink)
+            .clickable(role = androidx.compose.ui.semantics.Role.Button, onClickLabel = "Try the keyboard", onClick = onClick)
+            .padding(horizontal = 20.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Icon(OmakeyIcons.Keyboard, contentDescription = null, tint = c.onInk, modifier = Modifier.size(22.dp))
+        Text("Try it", style = Omakey.type.button, color = c.onInk)
+    }
+}
+
+/** Opens the Snippets screen pushed in from the right, matching the in-app pages. */
+internal fun openSnippets(context: android.content.Context) {
+    val options = android.app.ActivityOptions.makeCustomAnimation(context, R.anim.page_in_right, R.anim.page_out_left)
+    context.startActivity(Intent(context, SnippetsActivity::class.java), options.toBundle())
 }

@@ -2,8 +2,8 @@ package dev.omakey.core.gesture
 
 /**
  * Holding the spacebar turns the key grid into a blank trackpad (as Fleksy did): sideways slides
- * move the cursor, and a "SELECT ALL" pill near the top of the grid selects all the text when the
- * finger lifts on it. This is the pill's geometry and the "is the finger on it" rule; `KeyGrid`
+ * move the cursor, and a "Select all" pill near the top of the grid selects all the text the moment
+ * the finger reaches it. This is the pill's geometry and the "is the finger on it" rule; `KeyGrid`
  * draws the pill and runs the gesture. All values are pixels in the key grid's own coordinates.
  */
 object SpacebarTrackpad {
@@ -30,12 +30,18 @@ object SpacebarTrackpad {
     enum class Lift { SELECT_ALL, SPACE, NOTHING }
 
     /**
+     * Whether reaching the pill selects all now: yes, the first time in a hold (Fleksy's behaviour,
+     * no waiting for the lift). Sliding off and back on doesn't select again.
+     */
+    fun onReachPill(selectedAll: Boolean): Boolean = !selectedAll
+
+    /**
      * What lifting the finger does. A [cancelled] touch (the system took it away: the keyboard
      * hid, the notification shade was pulled) does nothing, so Select All only ever happens on a
      * real lift on the pill: the spec's one anti-goal is selecting all by accident.
      */
-    fun onLift(onPill: Boolean, cursorMoved: Boolean, cancelled: Boolean): Lift = when {
-        cancelled -> Lift.NOTHING
+    fun onLift(onPill: Boolean, cursorMoved: Boolean, cancelled: Boolean, selectedAll: Boolean = false): Lift = when {
+        cancelled || selectedAll -> Lift.NOTHING
         onPill -> Lift.SELECT_ALL
         !cursorMoved -> Lift.SPACE
         else -> Lift.NOTHING

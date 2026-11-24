@@ -35,6 +35,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.Icon
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -255,6 +261,9 @@ fun KeyboardRoot(
     // Declared by the layout itself (asdfghjkl on QWERTY); -1, i.e. none, on the symbols pages.
     val homeRowIndex = uiState.layout.homeRow
 
+    // The bar's number row shows the same bubble as the keys; it reaches it through this.
+    val tapPreviewHost = remember { TapPreviewHost(tapPreview, ancestorCoordinatesStable, { showTapPreview }, scope) }
+    androidx.compose.runtime.CompositionLocalProvider(LocalTapPreviewHost provides tapPreviewHost) {
     // Everything below sits inside a placement container. Docked, it is a plain wrapper and the
     // keyboard fills it exactly as before. Floating, it is a tall transparent area the keyboard is
     // positioned within — which only works because onComputeInsets tells the system the IME
@@ -283,7 +292,9 @@ fun KeyboardRoot(
                     // position is unaffected.
                     Modifier.height(screenHeightDp.dp)
                 } else {
-                    Modifier.wrapContentHeight()
+                    // Clear space above the keys for popups to rise into (the number row's above
+                    // all). Not reserved from the app and not touchable: see onComputeInsets.
+                    Modifier.wrapContentHeight().padding(top = POPUP_HEADROOM_DP.dp)
                 },
             ),
     ) {
@@ -332,7 +343,18 @@ fun KeyboardRoot(
             // rectangle as the touchable region while floating. Everything outside it must reach
             // the app underneath, which is the whole point of floating.
             .onGloballyPositioned { onKeyboardBoundsChanged(it.boundsInWindow()) }
-            .background(theme.keyboardBackground.toComposeColor())
+            // Floating: a card lifted off the app, radius 24 with a soft shadow, so it reads as
+            // movable. Docked and one-handed sit flush, as keyboards do.
+            .then(
+                // A shaped background, not a clip, so key popups can still rise above it.
+                if (placement == KeyboardPlacement.FLOATING) {
+                    Modifier
+                        .shadow(16.dp, androidx.compose.foundation.shape.RoundedCornerShape(24.dp), clip = false)
+                        .background(theme.keyboardBackground.toComposeColor(), androidx.compose.foundation.shape.RoundedCornerShape(24.dp))
+                } else {
+                    Modifier.background(theme.keyboardBackground.toComposeColor())
+                },
+            )
             // Leaves a gap for the system gesture pill / 3-button nav bar instead of drawing under
             // it — without this the bottom row (and the extension panel's close button) can sit
             // underneath or flush against the system nav area. Bottom only (real bug, fixed): the
@@ -564,16 +586,31 @@ fun KeyboardRoot(
         // TopStrip itself, so it silently never appeared while any non-suggestion extension panel
         // (anything routed through the `bottomContentMode == null` / ExtensionPanelSlot branch
         // above) was open.
+        // An ink pill over the bar that fades in and out, instead of a band covering the whole
+        // bar: the suggestions stay visible around it, and it reads as a passing note.
         val banner = uiState.bannerMessage
-        if (banner != null) {
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(SUGGESTION_STRIP_HEIGHT_DP.dp)
-                    .background(theme.suggestionBarBackground.toComposeColor()),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(text = banner, color = theme.labelOn(theme.suggestionBarBackground).toComposeColor(), fontFamily = fontFamily, fontSize = 14.sp)
+        var lastBanner by remember { mutableStateOf("") }
+        if (banner != null) lastBanner = banner
+        androidx.compose.animation.AnimatedVisibility(
+            visible = banner != null,
+            enter = androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(120)),
+            exit = androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(200)),
+            modifier = Modifier.fillMaxWidth().height(SUGGESTION_STRIP_HEIGHT_DP.dp),
+        ) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                val ink = theme.labelOn(theme.keyboardBackground)
+                Text(
+                    text = lastBanner,
+                    color = theme.keyboardBackground.toComposeColor(),
+                    fontFamily = fontFamily ?: dev.omakey.app.design.Figtree,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
+                    fontSize = 14.sp,
+                    maxLines = 1,
+                    modifier = Modifier
+                        .background(ink.toComposeColor(), androidx.compose.foundation.shape.RoundedCornerShape(20.dp))
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite },
+                )
             }
         }
         }
@@ -617,6 +654,7 @@ fun KeyboardRoot(
             )
         }
     } // placement container
+    }
 }
 
 /** Tracks a single continuous long-press-and-drag on a key with `popupChars` (accents/punctuation
@@ -668,7 +706,7 @@ internal fun ExtensionPanelSlot(viewModel: KeyboardViewModel, heightDp: Int, sho
                 Row(
                     Modifier
                         .fillMaxWidth()
-                        .height(36.dp)
+                        .height(44.dp)
                         // Plain border() directly on this Row, same fix/reasoning as KeyGrid's own
                         // doc — its own tab cells already draw right+bottom only.
                         .let { m -> if (isGridMode) m.border(theme.gridBorderWidth.toDp(), gridBorderColor) else m },
@@ -703,17 +741,23 @@ internal fun ExtensionPanelSlot(viewModel: KeyboardViewModel, heightDp: Int, sho
                                 .let { m -> if (isGridMode) m.gridCellBorder(gridBorderColor, theme.gridBorderWidth.toDp()) else m },
                             contentAlignment = Alignment.Center,
                         ) {
-                            // Emoji carry their own colours; the "•" fallback does not, and
-                            // drew black on every theme without one.
-                            Text(
-                                text = glyph,
-                                color = when {
-                                    ext.id == activeId -> theme.onAccent
-                                    isPressed -> theme.labelOn(theme.keyBackgroundPressed)
-                                    else -> theme.labelOn(theme.stripSurface(isGridMode))
-                                }.toComposeColor(),
-                                fontSize = 18.sp,
-                            )
+                            val tint = when {
+                                ext.id == activeId -> theme.onAccent
+                                isPressed -> theme.labelOn(theme.keyBackgroundPressed)
+                                else -> theme.labelOn(theme.stripSurface(isGridMode))
+                            }.toComposeColor()
+                            // Built-in panels get their line icon; a third-party extension's own
+                            // glyph is all omakey knows about it, so that stays.
+                            val lineIcon = when (glyph) {
+                                "😊" -> dev.omakey.core.icons.OmakeyIcons.Emoji
+                                "📋" -> dev.omakey.core.icons.OmakeyIcons.Clipboard
+                                else -> null
+                            }
+                            if (lineIcon != null) {
+                                Icon(lineIcon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
+                            } else {
+                                Text(text = glyph, color = tint, fontSize = 18.sp)
+                            }
                         }
                     }
                     // Returns to the normal keyboard — lives in the panel's own header row rather
@@ -739,7 +783,12 @@ internal fun ExtensionPanelSlot(viewModel: KeyboardViewModel, heightDp: Int, sho
                             .padding(horizontal = 14.dp),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Text(text = "⌨", color = theme.labelOn(if (closeIsPressed) theme.keyBackgroundPressed else theme.keyboardBackground).toComposeColor(), fontSize = 18.sp)
+                        Icon(
+                            dev.omakey.core.icons.OmakeyIcons.Keyboard,
+                            contentDescription = "Back to keyboard",
+                            tint = theme.labelOn(if (closeIsPressed) theme.keyBackgroundPressed else theme.keyboardBackground).toComposeColor(),
+                            modifier = Modifier.size(22.dp),
+                        )
                     }
                 }
             }
@@ -760,3 +809,6 @@ internal fun ExtensionPanelSlot(viewModel: KeyboardViewModel, heightDp: Int, sho
         }
     }
 }
+
+/** Clear space kept above a docked or one-handed keyboard for key popups to rise into. */
+internal const val POPUP_HEADROOM_DP = 72

@@ -64,4 +64,18 @@ class SpacebarTrackpadTest {
     @Test
     fun `the resting spacebar position is not on the pill`() =
         assertFalse(SpacebarTrackpad.onPill(200f, 380f, pill, slop = 8f))
+
+    // Fleksy's behaviour (developer, 2026-11-24): reaching the pill selects all at once, without
+    // waiting for the lift.
+    @Test
+    fun `reaching the pill selects all at once, only once per hold`() {
+        assertEquals(true, SpacebarTrackpad.onReachPill(selectedAll = false))
+        assertEquals(false, SpacebarTrackpad.onReachPill(selectedAll = true))
+    }
+
+    @Test
+    fun `after selecting all, lifting does nothing more`() {
+        assertEquals(SpacebarTrackpad.Lift.NOTHING, SpacebarTrackpad.onLift(onPill = true, cursorMoved = false, cancelled = false, selectedAll = true))
+        assertEquals(SpacebarTrackpad.Lift.NOTHING, SpacebarTrackpad.onLift(onPill = false, cursorMoved = false, cancelled = false, selectedAll = true))
+    }
 }

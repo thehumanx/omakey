@@ -1,10 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Two layers, so the launcher can mask, move and animate them as it would any adaptive icon:
-     the gradient as the background and the white keyboard glyph, with its soft shadow, as the
-     foreground. Both are 108dp renders of the Figma design (iambishistha.com, "android-chrome-
-     192x192") with the design's 192px frame mapped onto the 72dp safe zone, and the gradient
-     carried on past it so a launcher that shows more than the safe zone sees no edge. The glyph
-     alone doubles as the monochrome layer for Android 13+ themed icons. -->
+     the blue gradient as the background and the white keyboard mark, with its soft shadow, as the
+     foreground. Both are 108dp renders of the Figma file "omakey" ("Play Store / App icon 512"):
+     the 512 frame maps onto the 72dp visible area, and the gradient is extended past it (same
+     gradient, re-anchored) so a launcher that shows more than that sees no edge. The launcher's
+     mask gives the rounded corners; the layers themselves are square. The mark alone doubles as
+     the monochrome layer for Android 13+ themed icons. -->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
     <background android:drawable="@drawable/ic_launcher_adaptive" />
     <foreground android:drawable="@drawable/ic_launcher_foreground" />
