@@ -142,3 +142,28 @@ fun KeyRow.computeKeyWidthsPx(availableWidthPx: Float): List<Float> {
     if (totalWeight <= 0f) return keys.map { 0f }
     return keys.map { availableWidthPx * (it.widthWeight / totalWeight) }
 }
+
+/**
+ * Where this row's keys are, as fractions of its width (start to end), with spacers left out and
+ * neighbouring keys merged into one span. A split row gives two spans, so decorations drawn across
+ * the row (the home-row stripe, the swipe-delete shimmer) can stop at the gap instead of bridging it.
+ */
+fun KeyRow.keySpans(): List<Pair<Float, Float>> {
+    val total = keys.sumOf { it.widthWeight.toDouble() }.toFloat()
+    if (total <= 0f) return emptyList()
+    val spans = mutableListOf<Pair<Float, Float>>()
+    var at = 0f
+    var open: Float? = null
+    for (key in keys) {
+        val start = at / total
+        at += key.widthWeight
+        if (key.keyType == KeyType.SPACER) {
+            open?.let { spans += it to start }
+            open = null
+        } else if (open == null) {
+            open = start
+        }
+    }
+    open?.let { spans += it to 1f }
+    return spans
+}

@@ -176,7 +176,7 @@ class SettingsActivity : ComponentActivity() {
  * `primary`, so containers (buttons, FAB, selected-row highlight) don't fall back to Material's
  * purple-tinted defaults either. */
 @Composable
-private fun OmakeySettingsTheme(content: @Composable () -> Unit) {
+internal fun OmakeySettingsTheme(content: @Composable () -> Unit) {
     // Every role, not just the handful this screen was thought to use. Anything left unset falls
     // back to Material's stock purple, and a lot of widgets reach for roles nobody expects:
     // segmented buttons use secondaryContainer, dialogs and menus the surfaceContainer ramp, tonal

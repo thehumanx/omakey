@@ -39,7 +39,36 @@ class AutocorrectIndexTest {
     fun `corrects common human misspellings`() {
         assertEquals("receive", index.correct("recieve"))
         assertEquals("definitely", index.correct("definately"))
-        assertEquals("separate", index.correct("seperate"))
+        assertEquals("believe", index.correct("beleive"))
+        // Ranked first, but "desperate" is too close behind for a silent change: offered instead.
+        assertEquals("separate", topCandidate("seperate"))
+    }
+
+    /** What [AutocorrectIndex.correct] would pick if its confidence gates let it act — for the
+     * tests about *reaching* and *ranking* the right word, which the gates are not about. */
+    private fun topCandidate(typed: String, context: AutocorrectIndex.Context = AutocorrectIndex.Context.NONE): String? =
+        index.rankedCorrections(typed, context).firstOrNull()?.text
+
+    /**
+     * A word the vocabulary does not hold is far more often a name, a brand or slang than a typo,
+     * so it is only changed when the correction is clearly better than leaving it. Before the
+     * confidence gates every one of these was rewritten — the "autocorrect changes my words into
+     * different words" reports — and 82% of the unknown words in the evaluation corpus with them.
+     */
+    @Test
+    fun `leaves names, slang and jargon the vocabulary lacks alone`() {
+        for (word in listOf("bibek", "Bibek", "priya", "rohan", "zoya", "omakey", "lmao", "airpods", "refinancing", "passcode", "noncompete", "namaste")) {
+            assertNull("$word was changed", index.correct(word))
+        }
+    }
+
+    @Test
+    fun `does not guess between two equally good readings`() {
+        // "home" (g→h) and "gone" (m→n) are each one neighbouring-key slip away.
+        assertNull(index.correct("gome"))
+        assertEquals("home", topCandidate("gome"))
+        // Context that settles it lets the correction through.
+        assertEquals("home", index.correct("gome", index.contextOf("go", null)))
     }
 
     @Test
@@ -75,7 +104,7 @@ class AutocorrectIndexTest {
         assertEquals("account", index.correct("qccount")) // q sits directly above a
         assertEquals("apple", index.correct("wpple"))
         assertEquals("world", index.correct("qorld"))
-        assertEquals("home", index.correct("gome"))
+        assertEquals("home", topCandidate("gome")) // tied with "gone" without context: see above
         assertEquals("call", index.correct("xall"))
         assertEquals("people", index.correct("oeople"))
     }
@@ -89,7 +118,7 @@ class AutocorrectIndexTest {
 
     @Test
     fun `corrects a word whose first letter was never typed`() {
-        assertEquals("account", index.correct("ccount"))
+        assertEquals("account", topCandidate("ccount")) // "count" is close behind, so offered, not applied
         assertEquals("hello", index.correct("ello"))
     }
 
@@ -140,7 +169,8 @@ class AutocorrectIndexTest {
     @Test
     fun `splits with one stray character where the space should have been`() {
         // "this" + a fat-fingered 'b' where the spacebar should have been + "is".
-        assertEquals("this is", index.correct("thisbis"))
+        // Ranked first; a stray letter on top of a missing space is too costly to apply silently.
+        assertEquals("this is", topCandidate("thisbis"))
     }
 
     @Test
@@ -156,8 +186,8 @@ class AutocorrectIndexTest {
         // against the single-word candidate — not a like-for-like comparison, since a split gets
         // to explain the same letters with two words. "seperate" became "see rate" and "wierd"
         // became "ie rd".
-        assertEquals("separate", index.correct("seperate"))
-        assertEquals("weird", index.correct("wierd"))
+        assertEquals("separate", topCandidate("seperate"))
+        assertEquals("weird", topCandidate("wierd"))
     }
 
     @Test

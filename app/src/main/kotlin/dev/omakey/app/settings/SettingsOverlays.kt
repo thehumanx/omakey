@@ -103,8 +103,11 @@ internal fun KeyboardSizePositionOverlay(
     var heightDp by remember(settings.keyboardHeightDp) { mutableFloatStateOf(settings.keyboardHeightDp.toFloat()) }
     var offsetDp by remember(settings.bottomOffsetDp) { mutableFloatStateOf(settings.bottomOffsetDp.toFloat()) }
 
-    val rows = KeyboardLocale.Default.letterLayout.rows
-    val rowHeightDp = (heightDp.roundToInt() / rows.size)
+    // Row height comes from the full layout, as on the keyboard; with compact on, the preview
+    // draws the rows the keyboard draws (one fewer), so it shows the real height.
+    val letterLayout = KeyboardLocale.Default.letterLayout
+    val rows = dev.omakey.core.layout.CompactMode.rows(letterLayout, settings.compactMode)
+    val rowHeightDp = (heightDp.roundToInt() / letterLayout.rows.size)
     val keyboardTotalHeightDp = rowHeightDp * rows.size
     val maxOffsetDp = (configuration.screenHeightDp / 2f - keyboardTotalHeightDp).coerceAtLeast(0f)
     val noOpAncestor: () -> androidx.compose.ui.layout.LayoutCoordinates? = remember { { null } }

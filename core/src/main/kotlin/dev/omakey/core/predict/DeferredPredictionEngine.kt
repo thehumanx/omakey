@@ -55,6 +55,10 @@ class DeferredPredictionEngine : PredictionEngine {
         delegate?.recordAcceptedWord(word, previousWord)
     }
 
+    override suspend fun recordKeptOverCorrection(word: String) {
+        delegate?.recordKeptOverCorrection(word)
+    }
+
     override suspend fun saveWord(word: String) {
         delegate?.saveWord(word)
     }

@@ -26,6 +26,12 @@ interface PredictionEngine {
 
     suspend fun recordAcceptedWord(word: String, previousWord: String?)
 
+    /** [word] was put back after autocorrect replaced it, and the user carried on with it: learn
+     * it now rather than after several clean uses. See
+     * [PersonalLanguageModel.KEPT_OVER_CORRECTION_WEIGHT]. Callers gate this on the
+     * incognito/learning preference, as for [recordAcceptedWord]. */
+    suspend fun recordKeptOverCorrection(word: String) = recordAcceptedWord(word, null)
+
     /** Explicitly adds/boosts a word the user chose to keep (e.g. via the swipe-up "save word"
      * gesture when no further suggestion exists to cycle to) — a stronger, one-shot signal than
      * the incremental bump from [recordAcceptedWord], so it ranks usefully right away. */

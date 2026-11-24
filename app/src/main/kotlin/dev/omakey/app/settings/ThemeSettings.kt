@@ -132,12 +132,15 @@ internal fun ThemePicker(
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         // Presets — a flat segmented toggle, same control style as Layout style above, since
         // there are always exactly these 4 and exactly one is ever selected.
-        val presetOptions = listOf(
-            Presets.Light to "Light",
-            Presets.Dark to "Dark",
-            Presets.Auto to "Auto",
-            Presets.Accent to "Accent",
+        val presetLabels = mapOf(
+            Presets.Light.id to "Light",
+            Presets.Dark.id to "Dark",
+            Presets.Auto.id to "Auto",
+            Presets.Accent.id to "Accent",
         )
+        // Accent (wallpaper colours) only where the phone has them: see themePresetChoices.
+        val presetOptions = dev.omakey.app.keyboard.themePresetChoices(android.os.Build.VERSION.SDK_INT, currentTheme.id)
+            .map { it to presetLabels.getValue(it.id) }
         SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
             presetOptions.forEachIndexed { index, (preset, label) ->
                 SegmentedButton(

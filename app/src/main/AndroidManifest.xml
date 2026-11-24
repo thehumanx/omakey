@@ -41,6 +41,17 @@
             </intent-filter>
         </activity>
 
+        <!-- Not exported: only omakey opens it, so no other app can open a secret snippet's form.
+             No task affinity of the launcher's, so opening it from the keyboard doesn't drag
+             Settings to the front. -->
+        <activity
+            android:name=".settings.SnippetsActivity"
+            android:exported="false"
+            android:label="@string/snippets_title"
+            android:taskAffinity=""
+            android:excludeFromRecents="true"
+            android:windowSoftInputMode="adjustResize" />
+
         <service
             android:name=".keyboard.OmakeyInputMethodService"
             android:exported="true"

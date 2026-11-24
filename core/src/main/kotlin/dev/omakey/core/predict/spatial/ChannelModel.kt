@@ -58,7 +58,8 @@ class ChannelModel(
     private val groupOf: IntArray? = groupTable(equivalentGroups)
     private val confusableGroupOf: IntArray? = groupTable(confusableGroups)
 
-    private fun areEquivalent(a: Char, b: Char): Boolean = sameGroup(groupOf, a, b)
+    /** Whether [a] and [b] are the same letter up to an accent, in the language's own groups. */
+    fun areEquivalent(a: Char, b: Char): Boolean = sameGroup(groupOf, a, b)
 
     /** The cheapest of the key-distance price and any spelling relationship between the letters. */
     private fun related(typed: Char, intended: Char, spatial: Float): Float {

@@ -126,10 +126,20 @@ fun KeyboardRoot(
     // enter) render dimmed by default and "light up" to full brightness while pressed, matching
     // the Fleksy reference the theme is modeled on. Separate from the tap preview's enlarged bubble
     // (below), which is character-keys-only.
-    var pressedKeyCode by remember { mutableStateOf<Int?>(null) }
+    // Held as the key's keyBoundsState entry (`row * 1000 + index`), not its code: a split
+    // keyboard repeats G and V, and by code both copies lit up and the preview went over the
+    // left one. [lastPressedEntry] outlives the release so the commit's preview flash finds the
+    // same copy; written only from callbacks, never read in composition.
+    var pressedKeyEntry by remember { mutableStateOf<Int?>(null) }
+    var lastPressedEntry by remember { mutableStateOf<Int?>(null) }
     // Passed down as a reader and a setter, never as the value: reading it here would recompose
     // this whole keyboard on every key down and up.
-    val pressedKeyCodeStable = remember { { pressedKeyCode } }
+    val pressedKeyEntryStable = remember { { pressedKeyEntry } }
+    val keyEntryAt = remember {
+        { x: Float, y: Float ->
+            keyBoundsState.value.entries.firstOrNull { it.value.second.contains(Offset(x, y)) }?.key
+        }
+    }
     val keyLookupByCode = remember {
         { code: Int -> keyBoundsState.value.values.firstOrNull { (key, _) -> key.code == code }?.first }
     }
@@ -148,7 +158,9 @@ fun KeyboardRoot(
     val showTapPreview by androidx.compose.runtime.rememberUpdatedState(uiState.layoutSettings.tapPreviewStyle.showsBubble)
     val previewableKey = remember {
         { code: Int ->
-            keyBoundsState.value.values.firstOrNull { (key, _) -> key.code == code }
+            val bounds = keyBoundsState.value
+            dev.omakey.core.layout.KeyBoundsCache.entryFor(bounds, code, lastPressedEntry) { it.first.code }
+                ?.let { bounds[it] }
                 ?.takeIf { (key, _) -> key.keyType == dev.omakey.core.layout.KeyType.CHARACTER }
         }
     }
@@ -163,11 +175,14 @@ fun KeyboardRoot(
     // It used to appear only once the tap resolved on release and then hang on for 180 ms, which
     // made it feel slow and heavy rather than instant.
     val onPressedKeyChangeStable = remember {
-        { code: Int? ->
-            pressedKeyCode = code
+        { entry: Int? ->
+            pressedKeyEntry = entry
+            if (entry != null) lastPressedEntry = entry
             if (showTapPreview) {
-                when (val match = code?.let(previewableKey)) {
-                    null -> if (code == null) tapPreview.release(scope) else tapPreview.hide()
+                val match = entry?.let { keyBoundsState.value[it] }
+                    ?.takeIf { (key, _) -> key.keyType == dev.omakey.core.layout.KeyType.CHARACTER }
+                when (match) {
+                    null -> if (entry == null) tapPreview.release(scope) else tapPreview.hide()
                     else -> tapPreview.hold(match)
                 }
             }
@@ -186,7 +201,12 @@ fun KeyboardRoot(
     val ancestorCoordinatesStable = remember { { keysAreaCoordinates } }
 
     val layoutSettings = uiState.layoutSettings
-    val effectiveRows = uiState.layout.rows
+    val compactActive = dev.omakey.core.layout.CompactMode.active(
+        compact = layoutSettings.compactMode,
+        accessibleMode = accessibleMode,
+        tilePanelOpen = uiState.quickAccessOpen || uiState.languagePickerOpen,
+    )
+    val compactRows = dev.omakey.core.layout.CompactMode.rows(uiState.layout, compactActive)
 
     // --- placement ---------------------------------------------------------------------------
     // Size and position live here as *local* state seeded from preferences, not read straight off
@@ -194,6 +214,16 @@ fun KeyboardRoot(
     // Committed on drag end, exactly like Settings' own KeyboardSizePositionOverlay.
     val configuration = androidx.compose.ui.platform.LocalConfiguration.current
     val screenWidthDp = configuration.screenWidthDp
+
+    // Split keyboard (SplitLayout): docked on a wide screen, or wherever the Split tile says.
+    // Remembered so the split rows keep their identity between recompositions; a fresh list each
+    // time would redraw the whole key grid on every keystroke.
+    val splitActive = dev.omakey.core.layout.SplitLayout.active(
+        layoutSettings.placement, screenWidthDp, layoutSettings.splitOnWide, layoutSettings.splitOnNarrow,
+    )
+    val effectiveRows = remember(compactRows, uiState.layout.id, splitActive, layoutSettings.splitDuplicateKeys) {
+        dev.omakey.core.layout.SplitLayout.rows(uiState.layout.id, compactRows, splitActive, layoutSettings.splitDuplicateKeys)
+    }
     val screenHeightDp = configuration.screenHeightDp
     val placement = layoutSettings.placement
     val place = rememberPlacementState(viewModel, layoutSettings, screenWidthDp, screenHeightDp)
@@ -476,6 +506,9 @@ fun KeyboardRoot(
                         languageCount = uiState.languages.size,
                         incognito = uiState.incognito,
                         layoutMode = uiState.layoutMode,
+                        compact = layoutSettings.compactMode,
+                        split = splitActive,
+                        screenWidthDp = screenWidthDp,
                         onOpenSettings = onOpenSettings,
                     )
                     "language-picker" -> LanguagePickerPanel(
@@ -513,8 +546,10 @@ fun KeyboardRoot(
                         onOpenSettings = onOpenSettings,
                         feedback = feedback,
                         fontFamily = fontFamily,
-                        pressedKeyCode = pressedKeyCodeStable,
+                        pressedKeyEntry = pressedKeyEntryStable,
                         onPressedKeyChange = onPressedKeyChangeStable,
+                        keyEntryAt = keyEntryAt,
+                        onPreviewEntry = { entry -> if (entry != null) lastPressedEntry = entry },
                     )
                 }
                 }
@@ -577,6 +612,8 @@ fun KeyboardRoot(
                 } else {
                     0
                 },
+                drawnRows = effectiveRows.size,
+                baseRows = uiState.baseRowCount,
             )
         }
     } // placement container

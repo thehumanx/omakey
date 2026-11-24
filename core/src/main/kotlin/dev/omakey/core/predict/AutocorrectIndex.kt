@@ -48,6 +48,12 @@ class AutocorrectIndex(
     /** log10 of how much likelier a contraction must be than a real bare word for [correct] to
      * apply it silently. See [contractionOnSpace]. */
     private val contractionRatio: Float = CONTRACTION_RATIO,
+    /** The score the best candidate must reach for [correct] to apply it silently; see
+     * [CONFIDENCE_THRESHOLD]. */
+    private val confidenceThreshold: Float = CONFIDENCE_THRESHOLD,
+    /** How far the best candidate must lead the next one for [correct] to apply it; see
+     * [AMBIGUITY_MARGIN]. */
+    private val ambiguityMargin: Float = AMBIGUITY_MARGIN,
 ) {
 
     @Volatile private var model: LanguageModel? = null
@@ -339,6 +345,18 @@ class AutocorrectIndex(
      * Can also return two words separated by a single space (e.g. `"this is"`) when [typed] looks
      * like two real words typed without the space — see [correctSplitCandidate]. Callers committing
      * the result must handle the two-word shape rather than assuming one token.
+     *
+     * Ranking decides *which* candidate; two gates decide *whether* to act at all, because a word
+     * missing from the vocabulary is far more often a name, a brand or slang than a typo nobody
+     * caught ("bibek", "omw", "refinancing"). Before them the best-scoring candidate was applied
+     * whatever it was, and 82% of such words were rewritten ("bibek" → "bike", "rohan" → "than",
+     * "refinancing" → "financing"): the reports of autocorrect "changing words to different
+     * words". The gates are the keep-it-as-typed reading competing on the same scale:
+     *  - [confidenceThreshold]: the best candidate must explain the letters well enough for how
+     *    rare it is. A one-key slip into almost any word passes; two dropped letters only into a
+     *    very common word.
+     *  - [ambiguityMargin]: it must clearly beat the next reading. Two near-equal guesses mean the
+     *    keyboard does not know, and the strip — which still offers both — is the place to ask.
      */
     fun correct(typed: String, context: Context = Context.NONE, taps: TouchTrace.Taps? = null): String? {
         model ?: return null
@@ -354,10 +372,36 @@ class AutocorrectIndex(
         if (!profile.isWord(lower)) return null
         if (isKnown(lower)) return null // never "correct" an already-real word
 
-        val scored = ArrayList<Scored>(SCORED_CAPACITY)
-        collectCandidates(lower, correctionFloor, context, maxEdits, taps, scored)
-        correctSplitCandidate(lower, context)?.let { scored += it }
-        return scored.maxByOrNull { it.score }?.text
+        val scored = rankedCorrections(lower, context, taps)
+        if (scored.isEmpty()) return null
+        val best = scored[0]
+        if (best.score < confidenceThreshold) return null
+        val runnerUp = scored.getOrNull(1)
+        if (runnerUp != null && best.score - runnerUp.score < ambiguityMargin && !isAccentRestoration(lower, best.text)) {
+            return null
+        }
+        return best.text
+    }
+
+    /**
+     * Whether [candidate] is [typed] with accents put back and nothing else changed ("etudie" →
+     * "étudie"). Exempt from the ambiguity margin: the typed letters already are that word, so
+     * acting on it is not a guess between two different words, only a choice of spelling — and
+     * leaving the bare form is certainly wrong. Measured 2026-11-23: with the margin applied to
+     * these too, French accent restoration fell from 87.6 % to 79.2 % fixed, Spanish from 91.8 %
+     * to 88.1 %, mostly on "étudie"/"étudié"-style pairs the language model ranks well.
+     */
+    private fun isAccentRestoration(typed: String, candidate: String): Boolean {
+        if (typed.length != candidate.length) return false
+        var restored = false
+        for (i in typed.indices) {
+            val a = typed[i]
+            val b = candidate[i]
+            if (a == b) continue
+            if (!channel.areEquivalent(a, b)) return false
+            restored = true
+        }
+        return restored
     }
 
     /**
@@ -414,7 +458,19 @@ class AutocorrectIndex(
         return neighbours
     }
 
-    private class Scored(val text: String, val score: Float)
+    internal class Scored(val text: String, val score: Float) {
+        override fun toString(): String = "$text(${"%.2f".format(score)})"
+    }
+
+    /** Every candidate [correct] weighs for [lower] (lowercase, already known not to be a word),
+     * best first, before its gates. Internal so tests can see why a word was or wasn't changed. */
+    internal fun rankedCorrections(lower: String, context: Context = Context.NONE, taps: TouchTrace.Taps? = null): List<Scored> {
+        val scored = ArrayList<Scored>(SCORED_CAPACITY)
+        collectCandidates(lower, correctionFloor, context, maxEdits, taps, scored)
+        correctSplitCandidate(lower, context)?.let { scored += it }
+        scored.sortByDescending { it.score }
+        return scored
+    }
 
     /**
      * Scores every vocabulary word within [MAX_EDITS] edits of [typed] that clears [floor],
@@ -730,6 +786,35 @@ class AutocorrectIndex(
          * the bar doesn't move when the vocabulary size changes. */
         const val CORRECTION_RANK = 25_000
         const val STRICT_RANK = 8_000
+
+        /**
+         * Minimum score (`-channelCost + λ·lnP`) for a silent correction: the keep-as-typed
+         * reading, a word the model has never seen, priced at λ·lnP ≈ −8 (lnP ≈ −23).
+         *
+         * Swept with [AMBIGUITY_MARGIN] on 2026-11-23, reading "fixed / wrong" on the spelling
+         * corpus and on simulated touch typing (key identity only, as the keyboard runs), and the
+         * share of unknown correctly-typed words changed (`unknown-words.txt` + Enron words
+         * outside the vocabulary):
+         * ```
+         *                      spelling        touch 0.35      unknown changed
+         * no gates             31.8 / 37.6     66.1 / 13.1     81.6 %
+         * margin 1 only        26.9 / 18.6     59.8 /  6.8     39.7 %
+         * −8.5, margin 1       17.0 /  9.5     59.8 /  2.9     17.3 %
+         * −8,   margin 1       13.9 /  8.0     59.6 /  2.5     12.8 %   ← chosen
+         * −8,   margin 1.25    13.1 /  6.1     57.1 /  1.9      9.5 %
+         * −7.5, margin 1       9.7 /  6.9      59.0 /  2.3     10.1 %
+         * ```
+         * Touch typing, what a phone keyboard mostly sees, keeps 90% of its fixes and loses 80%
+         * of its wrong changes. The spelling corpus loses more fixes because its errors are
+         * several letters deep ("definately"), the case where a guess is most often wrong — the
+         * strip still offers them. Thresholds from −11 to −6.5 and a per-letter allowance were
+         * also tried; this pair is where both corpora's `fixed − 1.5 × wrong` peak together.
+         */
+        const val CONFIDENCE_THRESHOLD = -8f
+
+        /** How far the best candidate's score must lead the runner-up's; see [CONFIDENCE_THRESHOLD]
+         * for the sweep. On its own it halves wrong corrections on both corpora. */
+        const val AMBIGUITY_MARGIN = 1f
 
         /** Fuzzy contraction matching only applies to keys at least this long — a 2-3 letter key
          * fuzzy-matched against arbitrary text collides with unrelated short words too readily. */

@@ -155,6 +155,7 @@ internal fun TopStrip(
             val showKeyBackgrounds = uiState.layoutSettings.showKeyBackgrounds
             when (pages[page]) {
                 dev.omakey.app.keyboard.TopStripTab.SUGGESTIONS -> SuggestionBar(viewModel, uiState, theme, fontFamily, feedback, quickAccessOpen, showKeyBackgrounds, gesturesActive)
+                dev.omakey.app.keyboard.TopStripTab.SNIPPETS -> SnippetsTabContent(theme, fontFamily, viewModel, feedback, showKeyBackgrounds)
                 dev.omakey.app.keyboard.TopStripTab.NUMBERS -> NumbersTabContent(theme, fontFamily, viewModel, feedback, uiState.layout.id, uiState.digits, showKeyBackgrounds)
                 dev.omakey.app.keyboard.TopStripTab.TOOLS -> ToolsTabContent(
                     theme, fontFamily, viewModel, feedback, uiState.canUndo, uiState.canRedo,
@@ -324,6 +325,8 @@ private fun SuggestionBar(
                 showKeyBackgrounds = showKeyBackgrounds,
                 onAccept = viewModel::onSuggestionAccepted,
                 onAcceptEmoji = viewModel::onEmojiSuggestionAccepted,
+                snippetOffer = uiState.snippetOffer,
+                onAcceptSnippet = viewModel::acceptSnippetOffer,
             )
         }
         // Which button (if any) goes here is SuggestionBarButtons' rule, shared with the autofill
@@ -414,6 +417,9 @@ internal fun SuggestionsTabContent(
     showKeyBackgrounds: Boolean,
     onAccept: (String) -> Unit,
     onAcceptEmoji: (String) -> Unit,
+    /** A typed short code's snippet, offered first (see KeyboardViewModel.acceptSnippetOffer). */
+    snippetOffer: dev.omakey.app.keyboard.SnippetOffer? = null,
+    onAcceptSnippet: () -> Unit = {},
 ) {
     val isGridMode = dev.omakey.core.theme.LocalKeyboardLayoutMode.current == dev.omakey.core.theme.LayoutMode.GRID
     // -1 means nothing's been cycled yet (via swipe up/down) — treat index 0 as active, same as
@@ -448,7 +454,29 @@ internal fun SuggestionsTabContent(
         Modifier.fillMaxWidth().fillMaxHeight().padding(horizontal = if (isGridMode) 0.dp else 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        suggestions.forEachIndexed { index, suggestion ->
+        // A short code was typed: its snippet takes the first slot, in the accent colour so it
+        // reads as an action rather than a word. Tapping replaces the code; space never does.
+        if (snippetOffer != null) {
+            val offerSurface = theme.accent
+            Box(
+                Modifier
+                    .weight(1f)
+                    .padding(horizontal = 2.dp, vertical = 6.dp)
+                    .background(offerSurface.toComposeColor(), androidx.compose.foundation.shape.RoundedCornerShape(if (isGridMode) 0.dp else 8.dp))
+                    .clickable(onClickLabel = "Type snippet") { onAcceptSnippet() }
+                    .padding(horizontal = 4.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = "✂ ${snippetOffer.label}",
+                    color = theme.onAccent.toComposeColor(),
+                    fontFamily = fontFamily,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                )
+            }
+        }
+        suggestions.take(if (snippetOffer != null) 2 else suggestions.size).forEachIndexed { index, suggestion ->
             val isActive = index == activeIndex
             // Quoted, same as Gboard/Fleksy's convention for "this slot is a typo fix," not just
             // another word choice — lets the user tell at a glance that swiping/tapping it

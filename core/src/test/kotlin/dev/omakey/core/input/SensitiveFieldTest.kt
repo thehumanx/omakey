@@ -19,6 +19,16 @@ class SensitiveFieldTest {
     }
 
     @Test
+    fun `omakey's own screens are never learned from`() {
+        // The snippet form: a secret is typed into a plain text field before the Secret switch
+        // is even reached, and was being learned into the dictionary in plain text.
+        val own = editorInfo(InputType.TYPE_CLASS_TEXT).apply { packageName = "dev.omakey.app" }
+        assertTrue(isSensitiveField(own, ownPackage = "dev.omakey.app"))
+        val other = editorInfo(InputType.TYPE_CLASS_TEXT).apply { packageName = "com.example.chat" }
+        assertFalse(isSensitiveField(other, ownPackage = "dev.omakey.app"))
+    }
+
+    @Test
     fun `a plain text field is not sensitive`() {
         assertFalse(isSensitiveField(editorInfo(InputType.TYPE_CLASS_TEXT)))
     }

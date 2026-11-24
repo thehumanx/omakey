@@ -228,6 +228,20 @@ val PhosphorGrid: ImageVector by lazy {
     )
 }
 
+/** Two blocks with a gap between them, a keyboard in two halves — quick-access "Split". */
+val PhosphorSplit: ImageVector by lazy {
+    pathIcon(
+        "M24,64h88v128h-88z M144,64h88v128h-88z",
+    )
+}
+
+/** Two bars, one row fewer than a keyboard — quick-access "Compact". */
+val PhosphorRows: ImageVector by lazy {
+    pathIcon(
+        "M40,64h176v48h-176z M40,144h176v48h-176z",
+    )
+}
+
 /** A keyboard — the language panel's layout tiles. */
 val PhosphorKeyboard: ImageVector by lazy {
     pathIcon(

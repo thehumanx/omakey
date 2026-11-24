@@ -23,7 +23,7 @@ import dev.omakey.core.theme.Presets
 /** What the strip above the key grid is currently showing. Fleksy-style: one shared strip slot,
  * not three permanently-visible rows — suggestions is the default/most-used tab, the other two
  * are a tap away. */
-enum class TopStripTab { SUGGESTIONS, TOOLS, NUMBERS }
+enum class TopStripTab { SUGGESTIONS, TOOLS, NUMBERS, SNIPPETS }
 
 /** Whether `suggestions[0]` is an [AutocorrectIndex.alternatives] result (a fix/variant of a
  * specific word — quoted in the strip) or an ordinary next-word prediction (unquoted). Purely a
@@ -107,6 +107,9 @@ data class KeyboardUiState(
      * it is legitimately empty during a cold start, and without this that is indistinguishable from
      * "there is nothing to suggest for this word". */
     val suggestionsLoading: Boolean = false,
+    /** A short code was just typed: the suggestion bar offers this snippet in front of the words.
+     * See KeyboardViewModel.acceptSnippetOffer. */
+    val snippetOffer: SnippetOffer? = null,
 )
 
 /** One enabled language, as the picker lists it. */
@@ -116,3 +119,7 @@ data class LanguageOption(
     /** The language's letter layouts as (id, short name), when it has more than one to choose. */
     val layouts: List<Pair<String, String>> = emptyList(),
 )
+
+/** The snippet a typed short code offers: [label] for the chip, and [code] exactly as typed
+ * before the cursor, which accepting it replaces (only if it is still there). */
+data class SnippetOffer(val id: Long, val label: String, val code: String)

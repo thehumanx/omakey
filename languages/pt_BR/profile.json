@@ -4,7 +4,7 @@
  "capitalizeAfter": ".!?",
  "openingPunctuation": "",
  "doubleSpaceInserts": ".",
- "punctuationCycle": ".,!?;:'\"",
+ "punctuationCycle": ".,?!;:'\"",
  "equivalentLetters": [
   "aáàâã",
   "eéêè",

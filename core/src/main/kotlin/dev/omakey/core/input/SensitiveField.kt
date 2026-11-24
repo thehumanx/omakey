@@ -25,8 +25,12 @@ import android.view.inputmethod.EditorInfo
  * `inputType and VARIATION == VARIATION` without first masking matches unrelated fields, which is
  * how this kind of check silently fails open.
  */
-fun isSensitiveField(info: EditorInfo?): Boolean {
+fun isSensitiveField(info: EditorInfo?, ownPackage: String? = null): Boolean {
     val editorInfo = info ?: return false
+    // omakey's own screens (the snippet form above all) are never learned from: a secret is typed
+    // into a plain text field there, before the Secret switch is reached, and was being learned
+    // into the dictionary in plain text. Nothing typed in omakey's settings is worth learning.
+    if (ownPackage != null && editorInfo.packageName == ownPackage) return true
     if ((editorInfo.imeOptions and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING) != 0) return true
 
     val inputType = editorInfo.inputType

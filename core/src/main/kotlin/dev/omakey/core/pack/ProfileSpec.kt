@@ -16,7 +16,7 @@ data class ProfileSpec(
     val capitalizeAfter: String = ".!?",
     val openingPunctuation: String = "",
     val doubleSpaceInserts: String = ".",
-    val punctuationCycle: String = ".,!?;:'\"",
+    val punctuationCycle: String = ".,?!;:'\"",
     val contractions: Map<String, String> = emptyMap(),
     val equivalentLetters: List<String> = emptyList(),
     /** Exact-word emoji suggestions, lowercase word → emoji. */

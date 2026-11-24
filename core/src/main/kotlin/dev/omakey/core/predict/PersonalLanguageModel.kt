@@ -113,7 +113,13 @@ class PersonalLanguageModel(private val clock: () -> Long = { System.currentTime
      * Only vocabulary rarer than [IMPLICIT_LEARNING_RANK], or absent from it entirely, is worth
      * remembering — that is where a personal signal actually changes an outcome.
      */
-    fun record(word: String, explicit: Boolean, display: String? = null): Entry? {
+    fun record(
+        word: String,
+        explicit: Boolean,
+        display: String? = null,
+        /** How many ordinary uses this one counts for. See [KEPT_OVER_CORRECTION_WEIGHT]. */
+        weight: Float = if (explicit) EXPLICIT_SAVE_WEIGHT else 1f,
+    ): Entry? {
         val lower = word.toLookupForm()
         if (lower.isEmpty()) return null
         val existing = byWord[lower]
@@ -123,7 +129,7 @@ class PersonalLanguageModel(private val clock: () -> Long = { System.currentTime
         val decayed = existing?.decayedCount(now) ?: 0f
         val updated = Entry(
             word = lower,
-            count = decayed + if (explicit) EXPLICIT_SAVE_WEIGHT else 1f,
+            count = decayed + weight,
             lastUsed = now,
             // Explicitness is sticky: a word the user deliberately saved stays deliberately saved
             // even if it is later typed casually.
@@ -281,6 +287,22 @@ class PersonalLanguageModel(private val clock: () -> Long = { System.currentTime
         /** An explicit save counts for this many ordinary uses, so a deliberately saved word ranks
          * usefully straight away rather than after being typed several more times. */
         const val EXPLICIT_SAVE_WEIGHT = 4f
+
+        /**
+         * A word the user undid a correction of and then kept (backspace or swipe back to what they
+         * typed, then carried on) counts for this many uses: learned at once, without being an
+         * explicit save.
+         *
+         * Undoing a correction is the clearest sign the keyboard has that a word is real to this
+         * user, and it is exactly the case three clean uses handled worst: a name corrected every
+         * time ("Rohan" → "than") never got its three clean uses, because each one was rewritten.
+         *
+         * Not explicit on purpose. A revert can be an accident (a stray backspace, then space), and
+         * an explicit save is permanent. This one fades: 4 decays below [IMPLICIT_TRUST_THRESHOLD]
+         * after about 19 days (45 × log2(4/3)) unless the word is typed again, and each use tops it
+         * up. A swipe up still unlearns it at once.
+         */
+        const val KEPT_OVER_CORRECTION_WEIGHT = 4f
 
         /** Share of belief given to the personal model when a word is present in both. */
         const val PERSONAL_WEIGHT = 0.35

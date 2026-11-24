@@ -434,41 +434,79 @@ internal fun TapPreviewStylePicker(settings: LayoutSettings, layoutPreferences: 
 internal fun TopStripPagesSection(topStripPreferences: dev.omakey.app.keyboard.TopStripTabPreferences) {
     val settings by topStripPreferences.settings.collectAsState()
     val pages = settings.pages
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    /** A page's row: its switch, and (for every page but Suggestions) ↑/↓ to reorder it, plus
+     * an optional action under the description (Snippets' "Manage snippets"). */
     @Composable
-    fun PageToggle(page: dev.omakey.app.keyboard.TopStripTab, key: SettingKey, description: String) {
+    fun PageRow(
+        page: dev.omakey.app.keyboard.TopStripTab,
+        key: SettingKey,
+        description: String,
+        index: Int? = null,
+        count: Int = 0,
+        extra: (@Composable () -> Unit)? = null,
+    ) {
         val shown = page in pages
-        SettingToggle(
-            key = key,
-            description = if (shown && pages.size == 1) "$description At least one page stays on." else description,
-            checked = shown,
-            onCheckedChange = { topStripPreferences.setPageShown(page, it) },
-        )
+        Row(
+            modifier = rememberSettingHighlight(key)
+                .fillMaxWidth()
+                .toggleable(value = shown, role = Role.Switch, onValueChange = { topStripPreferences.setPageShown(page, it) })
+                .padding(vertical = ROW_INNER_PADDING),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                SettingText(key.title, if (shown && pages.size == 1) "$description At least one page stays on." else description)
+                extra?.invoke()
+            }
+            if (index != null) {
+                TextButton(enabled = index > 0, onClick = { topStripPreferences.movePage(page, -1) }) { Text("↑") }
+                TextButton(enabled = index < count - 1, onClick = { topStripPreferences.movePage(page, +1) }) { Text("↓") }
+            }
+            Spacer(Modifier.width(ROW_CONTROL_GAP))
+            Switch(checked = shown, onCheckedChange = null)
+        }
     }
+
     // No wrapping Column: each row is its own row of the section card.
     Text(
-        text = "Pages you can swipe between above the keys. Turn off the ones you don't need.",
+        text = "Pages you swipe between above the keys. Suggestions stays first; use the arrows to order the rest, " +
+            "and turn off the ones you don't need.",
         style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
-    PageToggle(
-        dev.omakey.app.keyboard.TopStripTab.SUGGESTIONS,
-        SettingKey.BAR_SUGGESTIONS,
-        "Word suggestions, shortcuts and the language button.",
-    )
-    PageToggle(dev.omakey.app.keyboard.TopStripTab.NUMBERS, SettingKey.BAR_NUMBERS, "A row of numbers.")
-    PageToggle(
-        dev.omakey.app.keyboard.TopStripTab.TOOLS,
-        SettingKey.BAR_TEXT_TOOLS,
-        "Undo, redo, select all, copy, cut, paste and your clipboard.",
-    )
-    // Shown on every Android version; below 11 there is nothing for it to ask for, which the
-    // description says rather than hiding a setting people read about.
-    SettingToggle(
-        key = SettingKey.AUTOFILL,
-        description = "Shows logins from apps like Bitwarden above the keys. omakey can't see the passwords.",
-        checked = settings.autofillSuggestions,
-        onCheckedChange = topStripPreferences::setAutofillSuggestions,
-    )
+    PageRow(dev.omakey.app.keyboard.TopStripTab.SUGGESTIONS, SettingKey.BAR_SUGGESTIONS, "Word suggestions, shortcuts and the language button.")
+    // Part of the Suggestions page (that's where the logins appear), so it sits under it, indented.
+    Box(Modifier.padding(start = 16.dp)) {
+        SettingToggle(
+            key = SettingKey.AUTOFILL,
+            description = "Logins from apps like Bitwarden, shown on the Suggestions page. omakey can't see the passwords.",
+            checked = settings.autofillSuggestions,
+            onCheckedChange = topStripPreferences::setAutofillSuggestions,
+        )
+    }
+    val movable = settings.movableOrder
+    movable.forEachIndexed { index, page ->
+        when (page) {
+            dev.omakey.app.keyboard.TopStripTab.SNIPPETS -> PageRow(
+                page, SettingKey.BAR_SNIPPETS, "Your saved text (email, phone, passwords), a tap away.", index, movable.size,
+            ) {
+                TextButton(
+                    onClick = { context.startActivity(android.content.Intent(context, SnippetsActivity::class.java)) },
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
+                ) { Text("Manage snippets") }
+            }
+            dev.omakey.app.keyboard.TopStripTab.NUMBERS -> PageRow(page, SettingKey.BAR_NUMBERS, "A row of numbers.", index, movable.size)
+            dev.omakey.app.keyboard.TopStripTab.TOOLS -> PageRow(
+                page, SettingKey.BAR_TEXT_TOOLS, "Undo, redo, select all, copy, cut, paste and your clipboard.", index, movable.size,
+            )
+            dev.omakey.app.keyboard.TopStripTab.SUGGESTIONS -> Unit
+        }
+    }
 }
+
+/** Blank gutters down both sides of the keyboard. Fleksy shipped the same option for the same
+ * reason — on a phone with no side bezel the outer keys sit where the glass curves away, which is
+ * exactly where a thumb slides off. */
 
 @Composable
 internal fun EdgePaddingToggle(settings: LayoutSettings, layoutPreferences: LayoutPreferences) {
@@ -494,6 +532,12 @@ internal fun AppearanceLayoutToggles(settings: LayoutSettings, layoutPreferences
         description = "Shade the middle row of letters so it stands out.",
         checked = settings.showMiddleRowStripe,
         onCheckedChange = layoutPreferences::setShowMiddleRowStripe,
+    )
+    SettingToggle(
+        key = SettingKey.SPLIT_DUPLICATE_KEYS,
+        description = "On a split keyboard, repeat the middle keys (G, V) on both sides, like Gboard.",
+        checked = settings.splitDuplicateKeys,
+        onCheckedChange = layoutPreferences::setSplitDuplicateKeys,
     )
 }
 

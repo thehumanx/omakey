@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -64,6 +65,8 @@ import dev.omakey.core.gesture.GestureEvent
 import dev.omakey.core.gesture.GestureStateMachine
 import dev.omakey.core.gesture.GestureThresholds
 import dev.omakey.core.gesture.KeyHitTester
+import dev.omakey.core.gesture.SpacebarTrackpad
+import dev.omakey.core.layout.keySpans
 import dev.omakey.core.gesture.SwipeDirection
 import dev.omakey.core.gesture.TouchAction
 import dev.omakey.core.gesture.TouchSample
@@ -129,10 +132,25 @@ internal fun KeyGrid(
     onOpenSettings: () -> Unit,
     feedback: KeyboardFeedback,
     fontFamily: androidx.compose.ui.text.font.FontFamily?,
-    pressedKeyCode: () -> Int?,
+    /** The key-bounds entry (`row * 1000 + index`) of the held key, not its code: a split keyboard
+     * has two G keys, and only the one under the finger should light up. */
+    pressedKeyEntry: () -> Int?,
+    /** Takes the held key's entry, or null when nothing is held. */
     onPressedKeyChange: (Int?) -> Unit,
+    /** The key-bounds entry under a point, or null over a gap or outside every key. */
+    keyEntryAt: (Float, Float) -> Int?,
+    /** Tells the preview which copy of a key a second finger tapped (see onPreviewKey). */
+    onPreviewEntry: (Int?) -> Unit = {},
 ) {
     val gestureSettings = uiState.gestureSettings
+    // Compact mode hides the spacebar, so swipe right is the space there whatever the setting says.
+    val swipeRightSpace = dev.omakey.core.layout.CompactMode.swipeRightTypesSpace(
+        gestureSettings.swipeRightForSpace,
+        dev.omakey.core.layout.CompactMode.applies(
+            dev.omakey.core.layout.CompactMode.active(layoutSettings.compactMode, accessibleMode, tilePanelOpen = false),
+            uiState.layout.id,
+        ),
+    )
     // Bumped on every swipe-left word delete — drives [shimmerProgress] below. A plain counter
     // rather than a boolean so repeated deletes in quick succession each restart the animation
     // (a `LaunchedEffect` keyed on an unchanging `true` wouldn't refire).
@@ -177,6 +195,21 @@ internal fun KeyGrid(
             animationSpec = androidx.compose.animation.core.tween(160),
         )
     }
+    // Spacebar trackpad (see SpacebarTrackpad): while the spacebar is held, the keys fade out and
+    // TrackpadOverlay fades in with the "SELECT ALL" pill and a circle under the finger.
+    // [trackpadShown] is true while it is showing. The finger's spot lives in [trackpadFinger],
+    // which only TrackpadOverlay's offset lambda reads (layout phase), so following the finger
+    // never recomposes the key grid; it also keeps its last spot through the fade-out.
+    var trackpadShown by remember { mutableStateOf(false) }
+    var trackpadOnPill by remember { mutableStateOf(false) }
+    val trackpadFinger = remember { mutableStateOf(Offset.Zero) }
+    val trackpadAlpha = remember { androidx.compose.animation.core.Animatable(0f) }
+    androidx.compose.runtime.LaunchedEffect(trackpadShown) {
+        trackpadAlpha.animateTo(
+            if (trackpadShown) 1f else 0f,
+            animationSpec = androidx.compose.animation.core.tween(160),
+        )
+    }
     val isGridModeOuter = dev.omakey.core.theme.LocalKeyboardLayoutMode.current == dev.omakey.core.theme.LayoutMode.GRID
     Box(
         modifier = Modifier
@@ -200,7 +233,7 @@ internal fun KeyGrid(
                     // sensitivity/showKeyPopup are keys here (not just captured) so a change made
                     // in Settings while the keyboard is open takes effect on the very next gesture,
                     // not only after the layout itself changes.
-                    base.pointerInput(uiState.layout.id, touchSlopPx, gestureSettings.swipeSensitivity, gestureSettings.showKeyPopup, layoutSettings.secondarySymbolsShown, layoutSettings.popupSymbols) {
+                    base.pointerInput(uiState.layout.id, touchSlopPx, gestureSettings.swipeSensitivity, gestureSettings.showKeyPopup, layoutSettings.secondarySymbolsShown, layoutSettings.popupSymbols, swipeRightSpace, effectiveRows.size, uiState.baseRowCount) {
                         val thresholds = GestureThresholds(
                             // Was previously hardcoded to 12f — smaller than the system's real
                             // touch slop, which meant ordinary finger movement during normal
@@ -211,7 +244,11 @@ internal fun KeyGrid(
                             // the sensitivity multiplier, but the out-of-the-box default should
                             // not require a near-full-width swipe just to delete a word.
                             minSwipeDistancePxHorizontal = size.width * 0.13f * gestureSettings.swipeSensitivity,
-                            minSwipeDistancePxVertical = size.height * 0.18f * gestureSettings.swipeSensitivity,
+                            // Against the full keyboard's height: compact draws a row fewer, and
+                            // vertical swipes used to fire a quarter sooner there.
+                            minSwipeDistancePxVertical = dev.omakey.core.layout.SwipeDistance.verticalPx(
+                                size.height.toFloat(), effectiveRows.size, uiState.baseRowCount, gestureSettings.swipeSensitivity,
+                            ),
                         )
                         val machine = GestureStateMachine(thresholds, hitTester)
                         // Parent of the jobs a touch starts (held-Backspace repeat, swipe-and-hold
@@ -223,11 +260,17 @@ internal fun KeyGrid(
                         // alone, they kept deleting and vibrating forever, even with the
                         // keyboard closed; parented here they end with the handler.
                         val touchJobsParent = Job(currentCoroutineContext()[Job])
+                        // A handler that restarts or leaves composition mid-hold never sees the
+                        // finger lift; bring the keys back anyway so they can't stay hidden.
+                        touchJobsParent.invokeOnCompletion {
+                            trackpadShown = false
+                            trackpadOnPill = false
+                        }
 
                         awaitEachGesture {
                             val down = awaitFirstDown(requireUnconsumed = false)
                             val downTime = System.currentTimeMillis()
-                            onPressedKeyChange(hitTester.keyCodeAt(down.position.x, down.position.y).takeIf { it != 0 })
+                            onPressedKeyChange(keyEntryAt(down.position.x, down.position.y))
                             machine.onTouch(TouchSample(down.position.x, down.position.y, downTime, TouchAction.DOWN))
 
                             // Long-press-and-drag-to-move-cursor (spacebar only): once engaged,
@@ -238,6 +281,10 @@ internal fun KeyGrid(
                             // short-circuit the generic long-press fallback.
                             var cursorDragActive = false
                             var cursorDragAnchorX = down.position.x
+                            // Where the finger is now, not where it landed: the hold engages 400 ms
+                            // later, by which time a thumb has usually drifted. The trackpad's circle
+                            // and cursor anchor start here, so neither jumps on the first move.
+                            var lastPointer = down.position
                             // Whether the held spacebar actually moved the cursor. Released
                             // without moving, the hold was just a slow tap and types a space, as a
                             // held letter types its letter. It used to type nothing, which made
@@ -285,7 +332,13 @@ internal fun KeyGrid(
                                     } else if (heldKey?.code == SpecialKeyCode.SPACE) {
                                         feedback.onKeyPress()
                                         cursorDragActive = true
-                                        cursorDragAnchorX = down.position.x
+                                        cursorDragAnchorX = lastPointer.x
+                                        // The keys hide into the trackpad: no key is pressed now.
+                                        onPressedKeyChange(null)
+                                        tapPreview.hide()
+                                        trackpadOnPill = false
+                                        trackpadFinger.value = lastPointer
+                                        trackpadShown = true
                                     } else if (gestureSettings.showKeyPopup && heldKey != null && heldKey.popupChars.isNotEmpty()) {
                                         // Enters accent-drag mode instead of the generic
                                         // KeyLongPress fallback below — see AccentDragState's doc
@@ -308,7 +361,7 @@ internal fun KeyGrid(
                                         )
                                     } else {
                                         handleGestureEvent(
-                                            event, viewModel, keyLookupByCode, gestureSettings.swipeRightForSpace,
+                                            event, viewModel, keyLookupByCode, swipeRightSpace,
                                             onPreviewKey, onOpenSettings, feedback,
                                             onSwipeDeleteTriggered = onSwipeDeleteTriggeredStable,
                                         )
@@ -357,12 +410,15 @@ internal fun KeyGrid(
                                                         TouchSample(primaryPosition.x, primaryPosition.y, now, TouchAction.UP),
                                                     )
                                                     handleGestureEvent(
-                                                        primaryEvent, viewModel, keyLookupByCode, gestureSettings.swipeRightForSpace,
+                                                        primaryEvent, viewModel, keyLookupByCode, swipeRightSpace,
                                                         onPreviewKey, onOpenSettings, feedback,
                                                         onSwipeDeleteTriggered = onSwipeDeleteTriggeredStable,
                                                     )
                                                 }
                                                 feedback.onKeyPress()
+                                                // The copy this finger is on, so a split keyboard's
+                                                // right-hand G previews over itself, not the left one.
+                                                onPreviewEntry(keyEntryAt(other.position.x, other.position.y))
                                                 onPreviewKey(code)
                                                 viewModel.onKeyTap(code)
                                             }
@@ -371,16 +427,28 @@ internal fun KeyGrid(
                                 }
 
                                 val change = event.changes.firstOrNull { it.id == down.id } ?: continue
+                                if (change.pressed) lastPointer = change.position
                                 val dragState = accentDragState
                                 if (!change.pressed) {
                                     longPressJob.cancel()
                                     swipeDeleteHoldJob?.cancel()
                                     onPressedKeyChange(null)
                                     if (cursorDragActive) {
-                                        if (!cursorDragMoved) {
-                                            onPreviewKey(SpecialKeyCode.SPACE)
-                                            viewModel.onKeyTap(SpecialKeyCode.SPACE)
+                                        // This loop never consumes the primary pointer, so a
+                                        // consumed lift is Compose cancelling the touch.
+                                        when (SpacebarTrackpad.onLift(trackpadOnPill, cursorDragMoved, cancelled = change.isConsumed)) {
+                                            SpacebarTrackpad.Lift.SELECT_ALL -> {
+                                                feedback.onKeyPress()
+                                                viewModel.onSelectAll()
+                                            }
+                                            SpacebarTrackpad.Lift.SPACE -> {
+                                                onPreviewKey(SpecialKeyCode.SPACE)
+                                                viewModel.onKeyTap(SpecialKeyCode.SPACE)
+                                            }
+                                            SpacebarTrackpad.Lift.NOTHING -> Unit
                                         }
+                                        trackpadShown = false
+                                        trackpadOnPill = false
                                         settled = true
                                     } else if (dragState != null) {
                                         // Commits whichever option is selected: the one the finger
@@ -396,15 +464,39 @@ internal fun KeyGrid(
                                             TouchSample(change.position.x, change.position.y, now, TouchAction.UP),
                                         )
                                         handleGestureEvent(
-                                            gestureEvent, viewModel, keyLookupByCode, gestureSettings.swipeRightForSpace,
+                                            gestureEvent, viewModel, keyLookupByCode, swipeRightSpace,
                                             onPreviewKey, onOpenSettings, feedback,
                                             onSwipeDeleteTriggered = onSwipeDeleteTriggeredStable,
                                         )
                                         settled = true
                                     }
                                 } else if (cursorDragActive) {
+                                    trackpadFinger.value = change.position
+                                    // Read per move: the grid can be resized (floating, one-handed)
+                                    // without this handler restarting.
+                                    val pillBounds = SpacebarTrackpad.pill(
+                                        gridWidth = size.width.toFloat(),
+                                        pillWidth = TRACKPAD_PILL_WIDTH.toPx(),
+                                        pillHeight = TRACKPAD_PILL_HEIGHT.toPx(),
+                                        topMargin = TRACKPAD_PILL_TOP.toPx(),
+                                    )
+                                    val nowOnPill = SpacebarTrackpad.onPill(
+                                        change.position.x, change.position.y, pillBounds, TRACKPAD_PILL_SLOP.toPx(),
+                                    )
+                                    if (nowOnPill != trackpadOnPill) {
+                                        trackpadOnPill = nowOnPill
+                                        if (nowOnPill) {
+                                            feedback.onKeyPress()
+                                        } else {
+                                            // Pick cursor movement up from here, so the slide made
+                                            // while on the pill doesn't jump the cursor.
+                                            cursorDragAnchorX = change.position.x
+                                        }
+                                    }
                                     val delta = change.position.x - cursorDragAnchorX
-                                    if (delta >= cursorDragStepPx) {
+                                    if (nowOnPill) {
+                                        // On the pill, sideways movement aims at it; the cursor stays.
+                                    } else if (delta >= cursorDragStepPx) {
                                         cursorDragMoved = true
                                         feedback.onKeyPress()
                                         viewModel.moveCursor(forward = true)
@@ -464,7 +556,7 @@ internal fun KeyGrid(
                                         tapPreview.hide()
                                     }
                                     handleGestureEvent(
-                                        gestureEvent, viewModel, keyLookupByCode, gestureSettings.swipeRightForSpace,
+                                        gestureEvent, viewModel, keyLookupByCode, swipeRightSpace,
                                         onPreviewKey, onOpenSettings, feedback,
                                         onSwipeDeleteTriggered = onSwipeDeleteTriggeredStable,
                                     )
@@ -509,25 +601,26 @@ internal fun KeyGrid(
                 // removed from composition, so keyBoundsState (needed by the drag-select math in
                 // the pointer loop above, which reads the held key's own bounds throughout) keeps
                 // updating underneath the overlay the whole time.
-                .alpha(1f - symbolModeAlpha.value),
+                // The spacebar trackpad hides the keys the same way.
+                .alpha(1f - maxOf(symbolModeAlpha.value, trackpadAlpha.value)),
         ) {
+            val rowCount = androidx.compose.runtime.rememberUpdatedState(effectiveRows.size)
             effectiveRows.forEachIndexed { rowIndex, row ->
                 val onBoundsMeasuredStable = remember(rowIndex) {
                     { measured: List<Triple<Int, KeyDefinition, Rect>> ->
-                        // onGloballyPositioned fires whenever the row moves *on screen*, which for a
-                        // floating keyboard being dragged is every frame — yet bounds are stored
-                        // relative to the keys area, so they haven't changed. Writing anyway made
-                        // a new map and a state write per row per frame, recomposing the key grid
-                        // sixty times a second: the stutter in floating drags.
-                        val current = keyBoundsState.value
-                        val changed = measured.any { (keyIndex, key, rect) ->
-                            current[rowIndex * 1000 + keyIndex] != (key to rect)
-                        }
-                        if (changed) {
-                            keyBoundsState.value = current + measured.associate { (keyIndex, key, rect) ->
-                                rowIndex * 1000 + keyIndex to (key to rect)
-                            }
-                        }
+                        // Replaces this row's entries wholesale and drops rows no longer drawn, so
+                        // a row that lost keys (split turned off) or a row that went away (compact)
+                        // leaves no ghost key for a tap to land on. KeyBoundsCache.merge returns
+                        // null when nothing changed: onGloballyPositioned fires on every frame of
+                        // a floating drag, and writing anyway recomposed the key grid sixty times
+                        // a second, the stutter in floating drags.
+                        val next = dev.omakey.core.layout.KeyBoundsCache.merge(
+                            keyBoundsState.value,
+                            rowIndex,
+                            measured.associate { (keyIndex, key, rect) -> keyIndex to (key to rect) },
+                            rowCount.value,
+                        )
+                        if (next != null) keyBoundsState.value = next
                     }
                 }
                 KeyRowView(
@@ -543,7 +636,8 @@ internal fun KeyGrid(
                     ancestorCoordinates = ancestorCoordinatesStable,
                     onBoundsMeasured = onBoundsMeasuredStable,
                     fontFamily = fontFamily,
-                    pressedKeyCode = pressedKeyCode,
+                    pressedKeyEntry = pressedKeyEntry,
+                    rowIndex = rowIndex,
                     capsLockOn = uiState.capsLockOn,
                     enterAction = uiState.enterAction,
                     shimmerProgress = shimmerProgress.value,
@@ -554,7 +648,7 @@ internal fun KeyGrid(
             }
         }
 
-        if (layoutSettings.tapPreviewStyle.showsBubble) {
+        if (layoutSettings.tapPreviewStyle.showsBubble && trackpadAlpha.value == 0f) {
             TapPreviewBubble(
                 tapPreview, theme, fontFamily, ancestorCoordinatesStable,
                 slim = layoutSettings.tapPreviewStyle == dev.omakey.core.layout.TapPreviewStyle.SLIM,
@@ -573,6 +667,81 @@ internal fun KeyGrid(
                 )
             }
         }
+
+        if (trackpadAlpha.value > 0f) {
+            TrackpadOverlay(
+                finger = trackpadFinger,
+                onPill = trackpadOnPill,
+                alpha = trackpadAlpha.value,
+                theme = theme,
+                fontFamily = fontFamily,
+                gridHeightDp = gridHeightDp,
+            )
+        }
+    }
+}
+
+private val TRACKPAD_PILL_WIDTH = 160.dp
+private val TRACKPAD_PILL_HEIGHT = 44.dp
+private val TRACKPAD_PILL_TOP = 16.dp
+private val TRACKPAD_PILL_SLOP = 12.dp
+private val TRACKPAD_FINGER_CIRCLE = 48.dp
+
+/** The spacebar trackpad: the keys are gone, leaving the keyboard background, the "SELECT ALL"
+ * pill (at the bounds [SpacebarTrackpad.pill] gives the gesture loop) and a circle under the
+ * finger. Purely a drawing; KeyGrid's gesture loop decides what the finger does. */
+@Composable
+private fun TrackpadOverlay(
+    /** Read only inside the circle's offset lambda, so a moving finger re-lays-out the circle
+     * instead of recomposing anything. */
+    finger: androidx.compose.runtime.State<Offset>,
+    onPill: Boolean,
+    alpha: Float,
+    theme: OmakeyTheme,
+    fontFamily: androidx.compose.ui.text.font.FontFamily?,
+    gridHeightDp: Int,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(gridHeightDp.dp)
+            .alpha(alpha)
+            .background(theme.keyboardBackground.toComposeColor()),
+    ) {
+        val pillShape = androidx.compose.foundation.shape.RoundedCornerShape(50)
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = TRACKPAD_PILL_TOP)
+                .widthIn(max = TRACKPAD_PILL_WIDTH)
+                .fillMaxWidth()
+                .height(TRACKPAD_PILL_HEIGHT)
+                .background((if (onPill) theme.accent else theme.keyBackground).toComposeColor(), pillShape)
+                // An outline, so the pill stands out even on a theme whose keys are the
+                // background's colour (flat themes, key backgrounds off).
+                .border(1.dp, theme.fadedLabelOn(theme.keyboardBackground, 0.45f).toComposeColor(), pillShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = "SELECT ALL",
+                color = (if (onPill) theme.onAccent else theme.labelOn(theme.keyBackground)).toComposeColor(),
+                fontFamily = fontFamily,
+                fontSize = 14.sp,
+                fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                letterSpacing = 1.sp,
+            )
+        }
+        val circleColor = theme.accent.toComposeColor().copy(alpha = 0.35f)
+        Box(
+            modifier = Modifier
+                .offset {
+                    val half = TRACKPAD_FINGER_CIRCLE.roundToPx() / 2
+                    val spot = finger.value
+                    androidx.compose.ui.unit.IntOffset(spot.x.toInt() - half, spot.y.toInt() - half)
+                }
+                .size(TRACKPAD_FINGER_CIRCLE)
+                .background(circleColor, androidx.compose.foundation.shape.CircleShape),
+        )
     }
 }
 
@@ -848,6 +1017,11 @@ internal fun KeyRowView(
     fontFamily: androidx.compose.ui.text.font.FontFamily? = null,
     /** Which key is held, read lazily so a press recomposes only the keys it changes. */
     pressedKeyCode: () -> Int? = { null },
+    /** When given, the held key is matched by its key-bounds entry (`rowIndex * 1000 + index`)
+     * instead of [pressedKeyCode], so of a split keyboard's two G keys only the one under the
+     * finger lights up. */
+    pressedKeyEntry: (() -> Int?)? = null,
+    rowIndex: Int = 0,
     capsLockOn: Boolean = false,
     enterAction: Int = android.view.inputmethod.EditorInfo.IME_ACTION_NONE,
     // Right-to-left gradient shimmer along the home row's top/bottom borders — a quick, purely
@@ -880,11 +1054,25 @@ internal fun KeyRowView(
     /** The "Key lift" tap preview: a pressed letter key rises and grows instead of a bubble. */
     liftPressedKey: Boolean = false,
 ) {
+    // Where the keys are across the row: one span, or two on a split keyboard. The stripe and the
+    // shimmer below are drawn per span, so they stop at the split's gap instead of bridging it.
+    val keySpans = remember(rowKeys) { LayoutKeyRow(rowKeys).keySpans() }
     Box(
         Modifier
             .fillMaxWidth()
             .height(rowHeightDp.dp)
-            .let { m -> if (isHomeRow && homeRowTinted) m.background(theme.middleRowStripeColor.toComposeColor()) else m }
+            .let { m ->
+                if (isHomeRow && homeRowTinted) {
+                    val stripe = theme.middleRowStripeColor.toComposeColor()
+                    m.drawBehind {
+                        keySpans.forEach { (from, to) ->
+                            drawRect(stripe, topLeft = Offset(size.width * from, 0f), size = androidx.compose.ui.geometry.Size(size.width * (to - from), size.height))
+                        }
+                    }
+                } else {
+                    m
+                }
+            }
             .let { m ->
                 if (isHomeRow && shimmerProgress > 0f) {
                     m.then(
@@ -918,16 +1106,20 @@ internal fun KeyRowView(
                                 start = Offset(size.width, 0f),
                                 end = Offset(0f, 0f),
                             )
-                            drawRect(
-                                brush = brush,
-                                topLeft = Offset(0f, 0f),
-                                size = androidx.compose.ui.geometry.Size(size.width, barHeightPx),
-                            )
-                            drawRect(
-                                brush = brush,
-                                topLeft = Offset(0f, size.height - barHeightPx),
-                                size = androidx.compose.ui.geometry.Size(size.width, barHeightPx),
-                            )
+                            keySpans.forEach { (from, to) ->
+                                val left = size.width * from
+                                val width = size.width * (to - from)
+                                drawRect(
+                                    brush = brush,
+                                    topLeft = Offset(left, 0f),
+                                    size = androidx.compose.ui.geometry.Size(width, barHeightPx),
+                                )
+                                drawRect(
+                                    brush = brush,
+                                    topLeft = Offset(left, size.height - barHeightPx),
+                                    size = androidx.compose.ui.geometry.Size(width, barHeightPx),
+                                )
+                            }
                         },
                     )
                 } else {
@@ -950,7 +1142,11 @@ internal fun KeyRowView(
                 val measured = ArrayList<Triple<Int, KeyDefinition, Rect>>(rowKeys.size)
                 rowKeys.forEachIndexed { index, key ->
                     val w = widths[index]
-                    measured += Triple(index, key, Rect(x, top, x + w, bottom))
+                    // A spacer (the split keyboard's gap, an indent) is no key: left out, so a tap
+                    // there finds nothing, rather than a key with code 0.
+                    if (key.keyType != dev.omakey.core.layout.KeyType.SPACER) {
+                        measured += Triple(index, key, Rect(x, top, x + w, bottom))
+                    }
                     x += w
                 }
                 onBoundsMeasured(measured)
@@ -960,13 +1156,21 @@ internal fun KeyRowView(
         // into a boxed-key look for users who prefer it. The spacebar always gets its accent
         // color regardless of this setting, so it stays visually distinguishable either way.
         Row(Modifier.fillMaxWidth().fillMaxHeight(), verticalAlignment = Alignment.CenterVertically) {
-            rowKeys.forEach { key ->
+            rowKeys.forEachIndexed { index, key ->
+                if (key.keyType == dev.omakey.core.layout.KeyType.SPACER) {
+                    // Blank space only: no fill, no label, nothing for TalkBack to announce.
+                    androidx.compose.foundation.layout.Spacer(Modifier.weight(key.widthWeight).fillMaxHeight())
+                    return@forEachIndexed
+                }
                 // Per key, and only flips when *this* key's pressed-ness does: a keystroke used to
                 // pass the pressed key down as a plain value, so every press and release
                 // recomposed every key on the keyboard. Now only the key going down and the key
                 // coming up redraw — the rest skip.
-                val isPressedState = remember(key.code, pressedKeyCode) {
-                    androidx.compose.runtime.derivedStateOf { pressedKeyCode() == key.code }
+                val entry = rowIndex * 1000 + index
+                val isPressedState = remember(key.code, entry, pressedKeyCode, pressedKeyEntry) {
+                    androidx.compose.runtime.derivedStateOf {
+                        if (pressedKeyEntry != null) pressedKeyEntry() == entry else pressedKeyCode() == key.code
+                    }
                 }
                 KeyCell(
                     key = key,
@@ -983,6 +1187,7 @@ internal fun KeyRowView(
                     enterAction = enterAction,
                     alwaysShowUppercaseLetters = alwaysShowUppercaseLetters,
                     gridCellBottomBorder = gridCellBottomBorder,
+                    rowHeightDp = rowHeightDp,
                     showSecondarySymbols = showSecondarySymbols,
                     liftWhenPressed = liftPressedKey && key.keyType == dev.omakey.core.layout.KeyType.CHARACTER,
                     modifier = Modifier.weight(key.widthWeight),
@@ -1010,6 +1215,8 @@ private fun KeyCell(
     enterAction: Int,
     alwaysShowUppercaseLetters: Boolean,
     gridCellBottomBorder: Boolean,
+    /** The row's height: the gap between keys grows with it (see KeyInsets). */
+    rowHeightDp: Int = 0,
     showSecondarySymbols: Boolean,
     liftWhenPressed: Boolean,
     modifier: Modifier,
@@ -1102,7 +1309,12 @@ private fun KeyCell(
                     m.semantics { contentDescription = keyDescription }
                 }
             }
-            .padding(horizontal = if (isGridMode) 0.dp else 1.5.dp, vertical = if (isGridMode) 0.dp else 1.5.dp)
+            // Drawing inset only; the touch area is the whole cell. Grows with the row height,
+            // so a tall keyboard gets space between rows instead of thick slabs (see KeyInsets).
+            .padding(
+                horizontal = if (isGridMode) 0.dp else dev.omakey.core.layout.KeyInsets.HORIZONTAL_DP.dp,
+                vertical = if (isGridMode) 0.dp else dev.omakey.core.layout.KeyInsets.verticalDp(rowHeightDp).dp,
+            )
             .background(keyBackground, keyShapeForMode)
             // Home-row tint layered on top of the cell's own opaque fill, not
             // instead of the row's own background behind it. Real bug, fixed:

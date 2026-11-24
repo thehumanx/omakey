@@ -56,6 +56,8 @@ import dev.omakey.core.layout.LayoutSettings
 import dev.omakey.core.theme.OmakeyTheme
 import dev.omakey.core.icons.PhosphorIncognito
 import dev.omakey.core.icons.PhosphorGrid
+import dev.omakey.core.icons.PhosphorRows
+import dev.omakey.core.icons.PhosphorSplit
 import dev.omakey.core.icons.PhosphorKeyboard
 
 /*
@@ -273,6 +275,12 @@ internal fun QuickAccessPanel(
     languageCount: Int,
     incognito: Boolean,
     layoutMode: dev.omakey.core.theme.LayoutMode,
+    /** Compact mode is on; the Compact tile is highlighted and turns it off. */
+    compact: Boolean,
+    /** The keyboard is split right now; the Split tile is highlighted. See SplitLayout. */
+    split: Boolean,
+    /** Which screen class (wide or narrow) the Split tile's choice is remembered for. */
+    screenWidthDp: Int,
     onOpenSettings: () -> Unit,
 ) {
     val isGrid = layoutMode == dev.omakey.core.theme.LayoutMode.GRID
@@ -294,6 +302,15 @@ internal fun QuickAccessPanel(
         // Highlighted while Grid is on; tapping flips between the two layout styles.
         QuickTile("Grid layout", PhosphorGrid, isGrid) {
             feedback.onKeyPress(); viewModel.toggleLayoutMode()
+        },
+        // Hides the spacebar row; highlighted while on, tapping again brings it back.
+        QuickTile("Compact", PhosphorRows, compact) {
+            feedback.onKeyPress(); viewModel.toggleCompactMode()
+        },
+        // Highlighted while split. Flips split for this screen size (wide or narrow); from floating
+        // or one-handed it docks the keyboard and splits it.
+        QuickTile("Split", PhosphorSplit, split) {
+            feedback.onKeyPress(); viewModel.toggleSplit(screenWidthDp)
         },
         QuickTile("Theme", PhosphorPalette, false) {
             feedback.onKeyPress(); viewModel.cycleTheme()
@@ -647,6 +664,10 @@ internal fun androidx.compose.foundation.layout.BoxScope.ResizeOverlay(
     /** Matches the keyboard's own edge gutters so the brackets land on the keys' real edge rather
      * than the window's — only docked keyboards have them (see the root Column's own padding). */
     edgePaddingDp: Int,
+    /** Rows drawn, and the rows the keyboard's height is divided into. Compact draws one fewer,
+     * so a drag is scaled up for the visible edge to follow the finger (see SwipeDistance). */
+    drawnRows: Int = 1,
+    baseRows: Int = 1,
 ) {
     val density = androidx.compose.ui.platform.LocalDensity.current
     // Drawn over the keyboard, so lifted to 3:1 against it if the accent is too close.
@@ -689,7 +710,7 @@ internal fun androidx.compose.foundation.layout.BoxScope.ResizeOverlay(
                 Modifier
                     .align(alignment)
                     .size(bracket * 2)
-                    .pointerInput(place) {
+                    .pointerInput(place, drawnRows, baseRows) {
                         detectDragGestures(
                             onDragEnd = { place.commit() },
                         ) { change, dragAmount ->
@@ -700,7 +721,9 @@ internal fun androidx.compose.foundation.layout.BoxScope.ResizeOverlay(
                                 // vertical. Without this, two of the four corners would resize
                                 // backwards.
                                 place.resizeWidth(dragAmount.x.toDp().value * horizontalSign)
-                                place.resizeHeight(dragAmount.y.toDp().value * verticalSign)
+                                place.resizeHeight(
+                                    dev.omakey.core.layout.SwipeDistance.fullHeightDelta(dragAmount.y.toDp().value * verticalSign, drawnRows, baseRows),
+                                )
                             }
                         }
                     }

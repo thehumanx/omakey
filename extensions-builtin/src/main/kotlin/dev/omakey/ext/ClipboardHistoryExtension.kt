@@ -212,6 +212,20 @@ class ClipboardHistoryExtension : OmakeyExtension {
                                 ),
                             ) { Text("Remove") }
                         }
+                        if (item.contentType == ClipboardContentType.TEXT) {
+                            // A clip worth keeping becomes a snippet: the form opens with it filled in.
+                            OutlinedButton(
+                                onClick = {
+                                    actionsFor = null
+                                    extensionContext?.saveAsSnippet(item.content)
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
+                                    contentColor = theme.labelOn(theme.keyboardBackground).toComposeColor(),
+                                ),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, theme.accentOn(theme.keyboardBackground).toComposeColor()),
+                            ) { Text("Save as snippet") }
+                        }
                         OutlinedButton(
                             onClick = { actionsFor = null },
                             modifier = Modifier.fillMaxWidth(),

@@ -4,7 +4,7 @@
  "extraWordChars": "'’",
  "capitalizeAfter": ".!?",
  "doubleSpaceInserts": ".",
- "punctuationCycle": ".,!?;:'\"«»",
+ "punctuationCycle": ".,?!;:'\"«»",
  "equivalentLetters": [
   "aàâæä",
   "cç",

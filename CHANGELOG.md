@@ -3,6 +3,61 @@
 All notable changes to omakey are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Added
+- **Compact mode**, a new tile in Quick access. It hides the spacebar row so the keyboard is one row
+  shorter, the way Fleksy's compact mode did. Swipe right types a space while it's on. Enter,
+  symbols and emoji stay hidden until you turn it off; number pads keep all their keys.
+- **Snippets**, like Fleksy's Hotkeys but with no limit. A new Snippets page in the bar above the
+  keys holds your saved email, phone number, address or logins: tap one to type it, long-press
+  to edit it, and tap + to add one. Mark a snippet **secret** for passwords: it's encrypted on
+  your phone, shown as ••••, and hidden while the phone is locked. Snippets are never learned
+  as words or saved to clipboard history. Manage them in Settings → Snippets.
+  - **Short codes**: give a snippet a code like `@@`, type it, and the suggestion bar offers the
+    snippet. Tap it to swap the code for the text. Space never expands a code, and autocorrect
+    leaves it alone.
+  - **Placeholders**: `{date}`, `{time}` and `{clipboard}` fill themselves in when a snippet is typed.
+  - **Save as snippet** from clipboard history (long-press an item).
+  - **Export and import** your snippets as a file, to move them to a new phone. Secret snippets are
+    never exported.
+- **Split keyboard.** On wide screens (an unfolded foldable, a tablet, or a phone in landscape)
+  the keys split into two halves with one long spacebar between them, the way Gboard does it.
+  The middle keys (G and V on QWERTY) appear on both sides; Settings can turn that off. This
+  means a phone turned sideways now splits too: tap the new **Split** tile in Quick access while
+  in landscape to turn it off there, and omakey remembers that separately for wide and narrow
+  screens.
+- **Hold the spacebar for Select All.** Holding the spacebar now clears the keys into a trackpad,
+  as on Fleksy: slide sideways to move the cursor, or slide up onto "Select all" and lift to
+  select everything.
+
+### Changed
+- **More space between keys on a tall keyboard.** The gap between rows now grows with the
+  keyboard's height, so keys (and the spacebar most of all) don't turn into thick slabs.
+- **The snippet form says what each field does.** "What gets typed" comes first, with one-tap
+  buttons for today's date, the time and what you copied, and a preview of what will be typed.
+  "This is a password" hides it. The button label and shortcut explain themselves.
+- **Reorder the pages above the keys.** In Settings → Suggestion bar, Suggestions stays first
+  and the arrows order the rest. The password-manager switch now sits under Suggestions, where
+  those logins appear, and "Manage snippets" sits on the Snippets row.
+- **The "Accent" theme only shows on Android 12 and newer**, the phones that have wallpaper
+  colours to take it from.
+- **Swiping down on punctuation now goes `. , ? !`**, matching the order shown on the keyboard
+  (it used to put `!` before `?`). Language packs already installed keep the old order until
+  their next update.
+
+### Fixed
+- **Autocorrect no longer rewrites words it doesn't know.** Names, slang, brands and other words
+  missing from the dictionary used to be swapped for the nearest common word ("Rohan" became
+  "than", "lmao" became "lamp"). Now autocorrect only steps in when it is confident: a clear typo
+  like "teh" or "recieve" is still fixed, and when two fixes are about equally likely ("gome" could
+  be "home" or "gone") it leaves your word and puts both in the suggestion bar. Wrong corrections
+  dropped from about one word in eight to one in forty in our tests, in every language.
+- **Undoing a correction teaches the keyboard the word.** Put back what you typed (backspace right
+  after the correction, or swipe up) and carry on, and that word is learned straight away instead
+  of after three uses. If you never use it again it's forgotten after a few weeks; swipe up on it
+  to forget it now.
+
 ## [5.8.2] — 2026-11-20
 
 An urgent fix: on Android 13 and older, omakey 5.7.0 to 5.8.1 crashed as soon as it was chosen as
