@@ -142,8 +142,8 @@ class ClipboardHistoryExtension : OmakeyExtension {
                                 gridBorderWidth = gridBorderWidth,
                                 keyBackground = theme.keyboardBackground.toComposeColor(),
                                 keyBackgroundPressed = theme.keyBackgroundPressed.toComposeColor(),
-                                onClick = { if (item.contentType == ClipboardContentType.TEXT) host.insertText(item.content) },
-                                onLongClick = { actionsFor = item },
+                                onClick = { host.keyFeedback(); if (item.contentType == ClipboardContentType.TEXT) host.insertText(item.content) },
+                                onLongClick = { host.keyFeedback(); actionsFor = item },
                             )
                         }
                     }
@@ -157,8 +157,8 @@ class ClipboardHistoryExtension : OmakeyExtension {
                                 item = item,
                                 textColor = textColor,
                                 mutedTextColor = mutedTextColor,
-                                onClick = { if (item.contentType == ClipboardContentType.TEXT) host.insertText(item.content) },
-                                onLongClick = { actionsFor = item },
+                                onClick = { host.keyFeedback(); if (item.contentType == ClipboardContentType.TEXT) host.insertText(item.content) },
+                                onLongClick = { host.keyFeedback(); actionsFor = item },
                             )
                         }
                     }
@@ -200,7 +200,7 @@ class ClipboardHistoryExtension : OmakeyExtension {
                         @Composable
                         fun ActionRow(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit) {
                             Row(
-                                Modifier.fillMaxWidth().height(52.dp).combinedClickable(onClick = onClick, onLongClick = null).padding(horizontal = 20.dp),
+                                Modifier.fillMaxWidth().height(52.dp).combinedClickable(onClick = { host.keyFeedback(); onClick() }, onLongClick = null).padding(horizontal = 20.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(16.dp),
                             ) {

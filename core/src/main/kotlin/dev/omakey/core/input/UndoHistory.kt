@@ -62,16 +62,20 @@ class UndoHistory(private val limit: Int = DEFAULT_LIMIT) {
      * [character] is prepended, not appended: backspaces consume text right-to-left, so the
      * earliest-deleted character is the rightmost one in the restored string.
      */
-    fun recordBackspace(character: Char) {
+    fun recordBackspace(character: Char) = recordBackspace(character.toString())
+
+    /** [recordBackspace] for one backspace that removed several units: a whole emoji. */
+    fun recordBackspace(removed: String) {
+        if (removed.isEmpty()) return
         val top = undoStack.lastOrNull()
         // Merges only into another pure deletion. A step with an `inserted` side is some other kind
         // of edit that happens to sit on top, and folding a backspace into it would corrupt both.
         if (coalescingBackspaces && top != null && top.inserted.isEmpty()) {
-            undoStack[undoStack.lastIndex] = TextEdit(removed = character + top.removed)
+            undoStack[undoStack.lastIndex] = TextEdit(removed = removed + top.removed)
             redoStack.clear()
         } else {
             coalescingBackspaces = false
-            push(TextEdit(removed = character.toString()))
+            push(TextEdit(removed = removed))
         }
         coalescingBackspaces = true
     }

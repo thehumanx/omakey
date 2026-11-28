@@ -39,6 +39,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -206,6 +214,7 @@ class EmojiPanelExtension : OmakeyExtension {
                                         interactionSource = interactionSource,
                                         indication = null,
                                     ) {
+                                        host.keyFeedback()
                                         host.insertText(emoji)
                                         recentsRepository?.recordUse(emoji)
                                         recentEmojis = recentsRepository?.recent() ?: recentEmojis
@@ -270,7 +279,7 @@ class EmojiPanelExtension : OmakeyExtension {
                         .clickable(
                             interactionSource = abcInteractionSource,
                             indication = null,
-                        ) { host.close() }
+                        ) { host.keyFeedback(); host.close() }
                         .let { m ->
                             if (isGridMode) {
                                 m.background(if (abcIsPressed) theme.keyBackgroundPressed.toComposeColor() else theme.keyboardBackground.toComposeColor())
@@ -307,7 +316,7 @@ class EmojiPanelExtension : OmakeyExtension {
                                 .clickable(
                                     interactionSource = interactionSource,
                                     indication = null,
-                                ) { categoryIndex = categories.indexOf(cat) }
+                                ) { host.keyFeedback(); categoryIndex = categories.indexOf(cat) }
                                 .let { m ->
                                     val fill = when {
                                         // The open category: a faint tint of the bar's own label
@@ -344,15 +353,37 @@ class EmojiPanelExtension : OmakeyExtension {
                     // Same icon + dimmed-by-default/lit-on-press treatment as the alphabet
                     // keyboard's own backspace key (KeyRowView in KeyboardRoot.kt) — this used to
                     // be a plain "⌫" glyph, visually inconsistent with the rest of the keyboard.
-                    val interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
-                    val isPressed by interactionSource.collectIsPressedAsState()
+                    // Deletes on touch down and repeats while held, with the same timing as the main
+                    // backspace (KeyGrid): 400 ms before repeating, then every 60 ms until the
+                    // finger lifts or there is nothing left to delete.
+                    var isPressed by remember { androidx.compose.runtime.mutableStateOf(false) }
+                    val repeatScope = androidx.compose.runtime.rememberCoroutineScope()
                     Box(
                         modifier = Modifier
                             .fillMaxHeight()
-                            .clickable(
-                                interactionSource = interactionSource,
-                                indication = null,
-                            ) { extensionContext?.textEditor?.deleteBackward(1) }
+                            .semantics {
+                                role = androidx.compose.ui.semantics.Role.Button
+                                onClick { host.deleteBackward(); true }
+                            }
+                            .pointerInput(host) {
+                                awaitEachGesture {
+                                    awaitFirstDown()
+                                    isPressed = true
+                                    host.keyFeedback()
+                                    var more = host.deleteBackward()
+                                    val repeat = repeatScope.launch {
+                                        delay(BACKSPACE_REPEAT_DELAY_MS)
+                                        while (more) {
+                                            host.keyFeedback()
+                                            more = host.deleteBackward()
+                                            delay(BACKSPACE_REPEAT_INTERVAL_MS)
+                                        }
+                                    }
+                                    waitForUpOrCancellation()
+                                    repeat.cancel()
+                                    isPressed = false
+                                }
+                            }
                             .let { m ->
                                 if (isGridMode) {
                                     m.background(if (isPressed) theme.keyBackgroundPressed.toComposeColor() else theme.keyboardBackground.toComposeColor())
@@ -380,6 +411,8 @@ class EmojiPanelExtension : OmakeyExtension {
 
     private companion object {
         const val SWIPE_THRESHOLD_PX = 80f
+        const val BACKSPACE_REPEAT_DELAY_MS = 400L
+        const val BACKSPACE_REPEAT_INTERVAL_MS = 60L
     }
 }
 

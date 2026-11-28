@@ -204,7 +204,11 @@ fun KeyboardRoot(
     val onKeyTapStable = remember(viewModel, feedback) {
         { code: Int -> feedback.onKeyPress(); viewModel.onKeyTap(code) }
     }
-    val ancestorCoordinatesStable = remember { { keysAreaCoordinates } }
+    // Null while the key grid is off screen. Opening the emoji (or clipboard) panel removes the
+    // grid but leaves keysAreaCoordinates pointing at its now-detached layout, and the bar's
+    // Numbers page, which stays on screen, measures its keys against it: localPositionOf on
+    // detached coordinates throws, and that crashed the keyboard on opening emoji.
+    val ancestorCoordinatesStable = remember { { keysAreaCoordinates?.takeIf { it.isAttached } } }
 
     val layoutSettings = uiState.layoutSettings
     val compactActive = dev.omakey.core.layout.CompactMode.active(
@@ -304,6 +308,7 @@ fun KeyboardRoot(
                 theme = theme,
                 placement = placement,
                 heightDp = SUGGESTION_STRIP_HEIGHT_DP + gridHeightDp,
+                feedback = feedback,
                 modifier = Modifier.align(
                     if (placement == KeyboardPlacement.ONE_HANDED_LEFT) Alignment.TopEnd else Alignment.TopStart,
                 ),
@@ -449,6 +454,8 @@ fun KeyboardRoot(
             ExtensionPanelSlot(
                 viewModel = viewModel,
                 heightDp = SUGGESTION_STRIP_HEIGHT_DP + gridHeightDp,
+                feedback = feedback,
+                fontFamily = fontFamily,
             )
         } else if (bottomContentMode != null) {
             when (bottomContentMode) {
@@ -544,7 +551,7 @@ fun KeyboardRoot(
                         heightDp = gridHeightDp,
                         onOpenSettings = onOpenSettings,
                     )
-                    "emoji", "clipboard" -> ExtensionPanelSlot(viewModel = viewModel, heightDp = gridHeightDp, showHeaderRow = false)
+                    "emoji", "clipboard" -> ExtensionPanelSlot(viewModel = viewModel, heightDp = gridHeightDp, feedback = feedback, fontFamily = fontFamily, showHeaderRow = false)
                     else -> KeyGrid(
                         viewModel = viewModel,
                         uiState = uiState,
@@ -675,9 +682,22 @@ internal data class AccentDragState(
 )
 
 @Composable
-internal fun ExtensionPanelSlot(viewModel: KeyboardViewModel, heightDp: Int, showHeaderRow: Boolean = true) {
+internal fun ExtensionPanelSlot(
+    viewModel: KeyboardViewModel,
+    heightDp: Int,
+    feedback: KeyboardFeedback,
+    fontFamily: androidx.compose.ui.text.font.FontFamily?,
+    showHeaderRow: Boolean = true,
+) {
     val uiState by viewModel.uiState.collectAsState()
     val activeId = uiState.activeExtensionId ?: return
+    // The view model's host plus the key feedback it can't reach (feedback lives with the UI).
+    val host = remember(viewModel, feedback) {
+        val base = viewModel.extensionHost
+        object : dev.omakey.extapi.ExtensionHost by base {
+            override fun keyFeedback() = feedback.onKeyPress()
+        }
+    }
     // A misbehaving third-party-style extension must not be able to take down the whole IME
     // process. This catches instantiation/onAttach failures and first-composition failures —
     // it does not cover exceptions thrown during later recomposition, which would need a full
@@ -722,7 +742,7 @@ internal fun ExtensionPanelSlot(viewModel: KeyboardViewModel, heightDp: Int, sho
                                 .clickable(
                                     interactionSource = interactionSource,
                                     indication = null,
-                                ) { viewModel.selectExtension(ext.id) }
+                                ) { feedback.onKeyPress(); viewModel.selectExtension(ext.id) }
                                 .background(
                                     when {
                                         // Selected = accent, held = key tap colour: the same two
@@ -771,7 +791,7 @@ internal fun ExtensionPanelSlot(viewModel: KeyboardViewModel, heightDp: Int, sho
                             .clickable(
                                 interactionSource = closeInteractionSource,
                                 indication = null,
-                            ) { viewModel.extensionHost.close() }
+                            ) { feedback.onKeyPress(); host.close() }
                             .let { m ->
                                 if (isGridMode) {
                                     m.background(if (closeIsPressed) theme.keyBackgroundPressed.toComposeColor() else theme.keyboardBackground.toComposeColor())
@@ -801,9 +821,17 @@ internal fun ExtensionPanelSlot(viewModel: KeyboardViewModel, heightDp: Int, sho
                         modifier = Modifier.padding(12.dp),
                     )
                 } else {
-                    runCatching {
-                        extension.PanelContent(host = viewModel.extensionHost)
-                    }.onFailure { failed = true }
+                    // Panels write plain Text, which takes its font from LocalTextStyle: setting
+                    // it here gives every panel the user's keyboard font, as the keys have.
+                    val textStyle = androidx.compose.material3.LocalTextStyle.current
+                    androidx.compose.runtime.CompositionLocalProvider(
+                        androidx.compose.material3.LocalTextStyle provides
+                            if (fontFamily != null) textStyle.copy(fontFamily = fontFamily) else textStyle,
+                    ) {
+                        runCatching {
+                            extension.PanelContent(host = host)
+                        }.onFailure { failed = true }
+                    }
                 }
             }
         }

@@ -88,6 +88,16 @@ interface ExtensionContext {
 interface ExtensionHost {
     fun insertText(text: String)
     fun close()
+
+    /** One press of the keyboard's own backspace: a selection goes whole, an emoji goes whole, and
+     * undo can bring it back. Returns whether there is still something to delete, so a held
+     * backspace knows when to stop. A panel's backspace calls this rather than
+     * [TextEditorFacade.deleteBackward], which only removes characters. */
+    fun deleteBackward(): Boolean = false
+
+    /** The keyboard's key-press vibration and sound, as the user set them. Call it on every tap a
+     * panel handles, so a panel feels like the keys around it. */
+    fun keyFeedback() {}
 }
 
 /**

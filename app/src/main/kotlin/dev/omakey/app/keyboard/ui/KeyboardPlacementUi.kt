@@ -557,6 +557,7 @@ internal fun OneHandedGutter(
     theme: OmakeyTheme,
     placement: KeyboardPlacement,
     heightDp: Int,
+    feedback: KeyboardFeedback,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -576,16 +577,18 @@ internal fun OneHandedGutter(
         buttons.forEach { (description, icon, action) ->
             val interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
             val isPressed by interactionSource.collectIsPressedAsState()
+            // A 48 dp touch target, like every other control, around the 40 dp tile that is drawn.
             Box(
                 Modifier
-                    .padding(vertical = 6.dp)
-                    .size(40.dp)
+                    .padding(vertical = 2.dp)
+                    .size(48.dp)
+                    .clickable(interactionSource = interactionSource, indication = null) { feedback.onKeyPress(); action() }
+                    .semantics { contentDescription = description }
+                    .padding(4.dp)
                     .background(
                         if (isPressed) theme.keyBackgroundPressed.toComposeColor() else theme.keyBackground.toComposeColor(),
                         androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
-                    )
-                    .clickable(interactionSource = interactionSource, indication = null, onClick = action)
-                    .semantics { contentDescription = description },
+                    ),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
