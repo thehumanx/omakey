@@ -3,6 +3,37 @@
 All notable changes to omakey are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [6.0.1] — 2026-11-28
+
+A fix for a crash when opening emoji, emoji that delete in one go, image paste from clipboard
+history, and a keyboard preview in Settings you can actually type on.
+
+### Fixed
+- **Opening emoji no longer crashes the keyboard** when the bar above the keys shows the number
+  row.
+- **One backspace deletes one emoji**, however it's built: 👍🏽, ❤️, 1️⃣, 👨‍👩‍👧 and flags used to
+  take several presses and show broken pieces on the way. Undo brings the whole emoji back.
+- **The emoji panel's backspace works like the keyboard's**: it deletes a selection whole, undo
+  works on it, and holding it keeps deleting.
+- **The keyboard preview in Settings answers every key.** Before, only part of one row reacted.
+
+### Added
+- **Paste images from clipboard history.** Tap a copied image to put it into the message, in
+  apps that accept images (most chat apps). Where a field can't take one, a short note says so.
+- **Try your settings on the preview.** On the Theme, Keys and Font pages the preview keyboard
+  now behaves like the real one: keys light up or lift, the key-press popup shows in the style
+  you picked, Shift and caps lock work, a swipe left plays the delete sweep, and every touch
+  vibrates and clicks as you set it.
+- **The preview stays at the top** of those pages as you scroll, so you can change a setting far
+  down the page and see it at once.
+
+### Changed
+- **Emoji and clipboard panels feel like the keys**: taps vibrate and click, and the panels use
+  the keyboard font you picked.
+- **One-handed side buttons** (switch side, full width, size & position) are easier to hit.
+- **Small Settings polish**: rounder search bar, steadier corners and colours on a few buttons and
+  chips.
+
 ## [6.0.0] — 2026-11-24
 
 The biggest update yet: a new look, snippets, split and compact keyboards, and autocorrect that

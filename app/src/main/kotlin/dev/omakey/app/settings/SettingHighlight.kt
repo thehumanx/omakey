@@ -7,7 +7,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.compositionLocalOf
@@ -32,7 +31,7 @@ internal val LocalSettingHighlight = compositionLocalOf<SettingKey?> { null }
 internal fun rememberSettingHighlight(key: SettingKey): Modifier {
     val highlighted = LocalSettingHighlight.current == key
     val color by animateColorAsState(
-        targetValue = if (highlighted) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
+        targetValue = if (highlighted) dev.omakey.app.design.Omakey.colors.tonal else Color.Transparent,
         animationSpec = tween(durationMillis = 400),
         label = "settingHighlight",
     )
@@ -46,5 +45,5 @@ internal fun rememberSettingHighlight(key: SettingKey): Modifier {
     }
     return Modifier
         .bringIntoViewRequester(requester)
-        .background(color, RoundedCornerShape(8.dp))
+        .background(color, RoundedCornerShape(dev.omakey.app.design.Radius.key))
 }

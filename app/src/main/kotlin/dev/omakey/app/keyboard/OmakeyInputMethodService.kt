@@ -245,6 +245,26 @@ class OmakeyInputMethodService :
         return !sensitive
     }
 
+    /** A content URI for a saved clipboard image, shared through [CLIP_IMAGE_AUTHORITY] (see
+     * res/xml/clip_image_paths.xml). Only files inside the clipboard image folder: the provider
+     * would refuse anything else anyway, and checking here keeps a bad path from throwing. */
+    private fun clipImageUri(imagePath: String): android.net.Uri? {
+        val dir = java.io.File(filesDir, dev.omakey.core.clipboard.ClipboardHistoryStore.IMAGES_DIR).canonicalFile
+        val file = java.io.File(imagePath).canonicalFile
+        if (file.parentFile != dir || !file.isFile) return null
+        return runCatching {
+            androidx.core.content.FileProvider.getUriForFile(this, packageName + CLIP_IMAGE_AUTHORITY, file)
+        }.getOrNull()
+    }
+
+    /** The image's real type, read from its header: images are saved as `.png` whatever they were
+     * copied as, and a field that only takes PNG or GIF must be told the truth. */
+    private fun imageMimeType(imagePath: String): String? {
+        val options = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        android.graphics.BitmapFactory.decodeFile(imagePath, options)
+        return options.outMimeType
+    }
+
     private fun copyClipboardImage(uri: android.net.Uri): String? =
         contentResolver.openInputStream(uri)?.let { clipboardHistory.saveImage(it) }
 
@@ -369,6 +389,14 @@ class OmakeyInputMethodService :
                 // suggestion strip for this path, so it kept showing whatever was suggested
                 // before the delete, stale, real bug fixed.
                 keyboardViewModel?.refreshSuggestionsAfterDeletion()
+            }
+
+            override fun insertImage(imagePath: String): Boolean {
+                val uri = clipImageUri(imagePath) ?: return false
+                val mime = imageMimeType(imagePath) ?: return false
+                val sent = this@OmakeyInputMethodService.textEditor.commitContent(uri, mime, "Copied image", currentInputEditorInfo)
+                if (sent) keyboardViewModel?.onContentInserted()
+                return sent
             }
         }
         override val clipboardRepository: ClipboardRepository = object : ClipboardRepository {
@@ -784,6 +812,8 @@ class OmakeyInputMethodService :
          * short enough that it can never swallow a copy the user makes afterwards. */
         const val OWN_COPY_SUPPRESS_MS = 1_000L
         const val INSETS_SETTLE_MS = 60L
+        /** Appended to the package name; must match the provider in AndroidManifest.xml. */
+        const val CLIP_IMAGE_AUTHORITY = ".clipimages"
         /** Ceiling on a single copied clipboard image. Generous enough for any screenshot or photo
          * a user would plausibly paste, small enough that 50 of them is a bounded amount of
          * app-private storage rather than an open-ended one. */

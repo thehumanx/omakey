@@ -195,21 +195,47 @@ class TextEditor(
         return before to after
     }
 
-    /** Real bug, fixed: plain `deleteSurroundingText(1, 0)` deletes exactly one UTF-16 code unit,
-     * but most emoji (anything outside the Basic Multilingual Plane — the overwhelming majority
-     * of the emoji panel's own catalog) are encoded as a *surrogate pair*, two code units for one
-     * visible character. Deleting just one left the other half of the pair behind as a lone
-     * unpaired surrogate, which every renderer shows as the "?" tofu box (confirmed: type an
-     * emoji, hit backspace once, the emoji visibly turns into "?" instead of disappearing).
-     * Doesn't attempt full grapheme-cluster awareness (ZWJ sequences, skin-tone modifiers, flags —
-     * each themselves multiple codepoints) — deliberately scoped to the specific, common case this
-     * bug report was about; those compound emoji still delete one codepoint at a time same as
-     * before, just without ever leaving a *dangling* surrogate. */
-    fun deleteCharacterBackward() {
-        val connection = ic ?: return
-        val before = connection.getTextBeforeCursor(2, 0)
-        val deleteCount = if (before != null && before.length == 2 && Character.isSurrogatePair(before[0], before[1])) 2 else 1
-        connection.deleteSurroundingText(deleteCount, 0)
+    /** One backspace: one visible character before the cursor. That is a whole emoji however many
+     * code points it is made of (see [BackspaceCluster]), never half a surrogate pair, which every
+     * renderer shows as a "?" box. Returns what was removed, empty if there was nothing, so undo can
+     * restore the same thing. */
+    fun deleteCharacterBackward(): String {
+        val connection = ic ?: return ""
+        val before = connection.getTextBeforeCursor(BACKSPACE_LOOKBEHIND, 0)
+        if (before.isNullOrEmpty()) {
+            // The host gave no text (or there is none): still ask for one unit, as before.
+            connection.deleteSurroundingText(1, 0)
+            return ""
+        }
+        val count = BackspaceCluster.length(before)
+        connection.deleteSurroundingText(count, 0)
+        return before.subSequence(before.length - count, before.length).toString()
+    }
+
+    /** Whether the field described by [info] says it accepts content of [mimeType] (an app opts in
+     * with `EditorInfo.contentMimeTypes`, e.g. any image type in a chat box). */
+    fun acceptsContent(info: android.view.inputmethod.EditorInfo?, mimeType: String): Boolean {
+        if (info == null) return false
+        return androidx.core.view.inputmethod.EditorInfoCompat.getContentMimeTypes(info)
+            .any { android.content.ClipDescription.compareMimeTypes(mimeType, it) }
+    }
+
+    /** Hands [uri] (content of [mimeType]) to the field through the content-commit API, granting
+     * it read access for this one URI. False when the field doesn't accept that type or refuses
+     * it; the field is left as it was then. */
+    fun commitContent(uri: android.net.Uri, mimeType: String, label: String, info: android.view.inputmethod.EditorInfo?): Boolean {
+        val connection = ic ?: return false
+        if (info == null || !acceptsContent(info, mimeType)) return false
+        val content = androidx.core.view.inputmethod.InputContentInfoCompat(
+            uri,
+            android.content.ClipDescription(label, arrayOf(mimeType)),
+            null,
+        )
+        return androidx.core.view.inputmethod.InputConnectionCompat.commitContent(
+            connection, info, content,
+            androidx.core.view.inputmethod.InputConnectionCompat.INPUT_CONTENT_GRANT_READ_URI_PERMISSION,
+            null,
+        )
     }
 
     /** Plain text immediately before the cursor, up to [maxChars] — the same
@@ -353,5 +379,7 @@ class TextEditor(
         private const val MAX_CURSOR_CONTEXT_CHARS = 128
         /** How much separator [replaceLastWord] looks past: a space, or ". " and a stray space. */
         private const val MAX_SEPARATOR_CHARS = 4
+        /** Enough text before the cursor to see the longest emoji sequence in use. */
+        private const val BACKSPACE_LOOKBEHIND = 64
     }
 }

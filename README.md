@@ -47,6 +47,7 @@ ever leaves your phone.
 
 ## App Updates / Plans and PSA
 - I've publicly shared this keyboard only on Reddit threads (besides my website) and few kind volunteers have tried and provided feedback on fixes/improvements and features. 
+- **6.0.1** fixes a crash when opening emoji, deletes emoji in one press, pastes copied images from clipboard history, and lets you try your settings on the keyboard preview in Settings.
 - **6.0.0** is the biggest update yet: a new look, snippets (saved text and passwords a tap away), split and compact keyboards, hold space to select all, and autocorrect that leaves names and slang alone. Earlier: more languages from 5.0.0 (Spanish, French, Portuguese, Nepali, then Italian and Russian), a number pad, password-manager logins, search in Settings, and many rounds of fixes from testers. The full story is in the [changelog](CHANGELOG.md). More to come.
 - The next build will also be released on the Google Play Store. If you'd like to help test it, reach out to omakey@iambishistha.com.
 - I am prioritizing more on optimizing the UX and autocorrection/prediction engine as its being written from the scratch.
@@ -279,7 +280,8 @@ Swipe to the Tools tab for:
   selection counts as one step, however much text it moved.
 - **Select all / Copy / Cut / Paste**, without leaving the keyboard.
 - **Clipboard history** — every recent copy, text and images, one tap away — including something
-  you copied with the keyboard closed, like "Select all" and Copy on a web page. Long-press an entry to
+  you copied with the keyboard closed, like "Select all" and Copy on a web page. Tap an image to
+  paste it into apps that accept pictures, like most chat apps. Long-press an entry to
   pin or remove it; pinned entries stay at the top and are never cleared out to make room for newer
   ones. Opening clipboard mode dims everything else so it's clearly its own space.
 - Settings → Privacy & data has the full list: see everything that's saved, unpin or remove single
@@ -298,6 +300,8 @@ Swipe to the Tools tab for:
 - Six skin tones, set once in Settings and applied to hands, faces and people everywhere emoji
   turn up — including the suggestion chips.
 - Smooth directional slides switching categories or leaving the panel.
+- One backspace removes one emoji, even ones built from several pieces like 👍🏽 or a flag. Hold
+  the panel's backspace to keep deleting.
 
 ### Make it feel like yours
 
@@ -313,8 +317,10 @@ Swipe to the Tools tab for:
 - Text and icons are checked for contrast against whatever they sit on, on every theme including
   your own, so nothing turns unreadable.
 - A live keyboard preview in Settings that reflects your theme, layout style, font, key
-  backgrounds, home-row highlight and capitalization as you change them — and responds to touch,
-  so you can see the tap colour, and the accent on Shift and caps lock.
+  backgrounds, home-row highlight and capitalization as you change them. It works like the real
+  keyboard: tap keys to see the key-press popup you picked, try Shift and caps lock, swipe left for
+  the delete sweep, and feel your vibration and sound settings. It stays at the top of the page as
+  you scroll, so every change below shows up right away.
 - **Grid layout mode**, independent of whichever color theme you're on — bordered, edge-to-edge
   cells with no gaps, a pressed key filling solid instead of just dimming. Border color and
   thickness (Small/Medium/Large) are both yours to set. Left on automatic, the border is a soft

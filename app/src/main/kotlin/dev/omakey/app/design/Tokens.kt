@@ -38,6 +38,9 @@ data class OmakeyColors(
     val muted: Color,
     val subtle: Color,
     val hairline: Color,
+    /** A thumb or chip that sits one step above [tonal]: white in light, lighter grey in dark
+     * (where [surface] is darker than the tonal track, so it can't step up). */
+    val raised: Color,
     val accent: Color,
     val danger: Color,
     val isDark: Boolean,
@@ -52,6 +55,7 @@ data class OmakeyColors(
             muted = Color(0xFF5E5E5E),
             subtle = Color(0xFF8A8A8A),
             hairline = Color(0xFFE4E4E2),
+            raised = Color(0xFFFFFFFF),
             accent = Color(0xFF2F5FF5),
             danger = Color(0xFFB3261E),
             isDark = false,
@@ -65,6 +69,7 @@ data class OmakeyColors(
             muted = Color(0xFFA3A3A3),
             subtle = Color(0xFF6B6B6B),
             hairline = Color(0xFF2E2E2E),
+            raised = Color(0xFF3A3A3A),
             accent = Color(0xFF7C9CFF),
             danger = Color(0xFFF2B8B5),
             isDark = true,

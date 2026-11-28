@@ -61,7 +61,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -245,7 +244,7 @@ private fun ThemeTile(theme: OmakeyTheme, selected: Boolean, onClick: () -> Unit
         ) { KeyboardSwatch(theme) }
         Text(
             theme.name,
-            style = if (selected) Omakey.type.label else Omakey.type.body.copy(fontSize = 13.sp),
+            style = if (selected) Omakey.type.label else Omakey.type.label.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Normal),
             color = if (selected) c.ink else c.muted,
             maxLines = 1,
             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
@@ -267,7 +266,7 @@ private fun NewThemeTile(onClick: () -> Unit) {
                 .clickable(onClickLabel = "Make a new theme", onClick = onClick),
             contentAlignment = Alignment.Center,
         ) { Icon(OmakeyIcons.Plus, contentDescription = null, tint = c.ink, modifier = Modifier.size(24.dp)) }
-        Text("New", style = Omakey.type.body.copy(fontSize = 13.sp), color = c.muted)
+        Text("New", style = Omakey.type.label.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Normal), color = c.muted)
     }
 }
 
@@ -411,7 +410,7 @@ internal fun ThemeEditorOverlay(
             androidx.compose.runtime.CompositionLocalProvider(
                 dev.omakey.core.theme.LocalKeyboardLayoutMode provides layoutMode,
             ) {
-                ThemePreviewMock(previewTheme, showKeyBackgrounds = layoutSettings.showKeyBackgrounds, interactive = true)
+                ThemePreviewMock(previewTheme, showKeyBackgrounds = layoutSettings.showKeyBackgrounds, interactive = true, tapPreviewStyle = layoutSettings.tapPreviewStyle)
             }
 
             // "Key colour" only shows in Normal mode with key backgrounds on, so the switch sits here,
@@ -518,15 +517,36 @@ internal fun ThemePreviewMock(
     /** Whether the letters' long-press symbols follow the Fleksy symbols page — see
      * `LayoutSettings.fleksySymbols`; matters only when [showSecondarySymbols] draws them. */
     fleksySymbols: Boolean = true,
-    // Keys respond to touch: a held key fills with the key tap colour, and Shift steps through
-    // off → shift → caps lock, which is where the accent shows. Nothing is typed.
+    // The keys behave like the real keyboard's, so a setting can be felt before it is used: a held
+    // key lights up (or rises, with Lift), its pop-up shows in the chosen style, Shift steps
+    // through off → shift → caps lock and a letter drops a one-shot shift, a swipe left plays the
+    // delete sweep and swoosh, and every touch vibrates and clicks as set. Nothing is typed.
     interactive: Boolean = false,
+    tapPreviewStyle: dev.omakey.core.layout.TapPreviewStyle = dev.omakey.core.layout.TapPreviewStyle.OFF,
+    /** The keyboard's own vibration and sound; null for none. */
+    feedback: dev.omakey.app.keyboard.KeyboardFeedback? = null,
+    /** The user's swipe sensitivity, so a swipe here needs the distance it needs on the keyboard. */
+    swipeSensitivity: Float = 1f,
 ) {
     val noOpAncestor: () -> androidx.compose.ui.layout.LayoutCoordinates? = remember { { null } }
     var rowsCoordinates by remember { mutableStateOf<androidx.compose.ui.layout.LayoutCoordinates?>(null) }
     val ancestor: () -> androidx.compose.ui.layout.LayoutCoordinates? = remember { { rowsCoordinates } }
-    val keyBounds = remember { HashMap<Int, androidx.compose.ui.geometry.Rect>() }
+    val keyBounds = remember { HashMap<Int, Pair<dev.omakey.core.layout.KeyDefinition, androidx.compose.ui.geometry.Rect>>() }
     var pressedCode by remember { mutableStateOf<Int?>(null) }
+    val tapPreview = remember { dev.omakey.app.keyboard.ui.TapPreviewState() }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    // Read inside the long-lived gesture loop, so a setting changed below applies to the next touch.
+    val currentStyle by androidx.compose.runtime.rememberUpdatedState(tapPreviewStyle)
+    val currentFeedback by androidx.compose.runtime.rememberUpdatedState(feedback)
+    val currentSensitivity by androidx.compose.runtime.rememberUpdatedState(swipeSensitivity)
+    // The swipe-left delete sweep, timed as in KeyGrid.
+    var shimmerTrigger by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    val shimmerProgress = remember { androidx.compose.animation.core.Animatable(0f) }
+    androidx.compose.runtime.LaunchedEffect(shimmerTrigger) {
+        if (shimmerTrigger == 0) return@LaunchedEffect
+        shimmerProgress.snapTo(1f)
+        shimmerProgress.animateTo(0f, androidx.compose.animation.core.tween(225, easing = androidx.compose.animation.core.LinearEasing))
+    }
     var shiftOn by remember { mutableStateOf(false) }
     var capsLockOn by remember { mutableStateOf(false) }
     val rowHeightDp = 44
@@ -575,6 +595,7 @@ internal fun ThemePreviewMock(
         }
         // Matches KeyGrid's own container border — see the strip's comment above. Its cells already
         // draw right+bottom, so this contributes the top and left edges.
+        Box(Modifier.fillMaxWidth()) {
         Column(
             Modifier
                 .fillMaxWidth()
@@ -591,15 +612,46 @@ internal fun ThemePreviewMock(
                         .pointerInput(Unit) {
                             awaitEachGesture {
                                 val down = awaitFirstDown()
-                                val code = keyBounds.entries.firstOrNull { it.value.contains(down.position) }?.key
+                                val hit = keyBounds.values.firstOrNull { it.second.contains(down.position) }
+                                val code = hit?.first?.code
+                                val isCharacter = hit?.first?.keyType == dev.omakey.core.layout.KeyType.CHARACTER
                                 pressedCode = code
-                                val up = waitForUpOrCancellation()
+                                currentFeedback?.onKeyPress()
+                                if (isCharacter && currentStyle.showsBubble) tapPreview.hold(hit!!)
+                                // The same distance a swipe needs on the keyboard (KeyGrid).
+                                val swipeDistance = size.width * 0.13f * currentSensitivity
+                                var swiped = false
+                                while (true) {
+                                    val event = awaitPointerEvent()
+                                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                    // Taken here, so a drag across the keys swipes instead of
+                                    // scrolling the page.
+                                    change.consume()
+                                    if (!change.pressed) break
+                                    val dx = change.position.x - down.position.x
+                                    if (!swiped && kotlin.math.abs(dx) > swipeDistance) {
+                                        swiped = true
+                                        pressedCode = null
+                                        tapPreview.hide()
+                                        if (dx < 0) {
+                                            currentFeedback?.onSwipeDelete()
+                                            shimmerTrigger++
+                                        } else {
+                                            currentFeedback?.onSwipe()
+                                        }
+                                    }
+                                }
                                 pressedCode = null
-                                if (up != null && code == dev.omakey.core.layout.SpecialKeyCode.SHIFT) {
+                                if (!swiped) {
+                                    tapPreview.release(scope)
                                     when {
-                                        capsLockOn -> { capsLockOn = false; shiftOn = false }
-                                        shiftOn -> capsLockOn = true
-                                        else -> shiftOn = true
+                                        code == dev.omakey.core.layout.SpecialKeyCode.SHIFT -> when {
+                                            capsLockOn -> { capsLockOn = false; shiftOn = false }
+                                            shiftOn -> capsLockOn = true
+                                            else -> shiftOn = true
+                                        }
+                                        // A letter uses up a one-shot shift, as when typing.
+                                        isCharacter && shiftOn && !capsLockOn -> shiftOn = false
                                     }
                                 }
                             }
@@ -632,10 +684,22 @@ internal fun ThemePreviewMock(
                 homeRowTinted = homeRowTinted,
                 onKeyTap = {},
                 ancestorCoordinates = if (interactive) ancestor else noOpAncestor,
-                onBoundsMeasured = { measured -> measured.forEach { (code, _, rect) -> keyBounds[code] = rect } },
+                // Keyed by row and position, as KeyGrid does (rowIndex * 1000 + index). The first
+                // value is the key's index in its row, not its code: keyed by it alone, every row
+                // overwrote the same slots and only the last row measured could be tapped.
+                onBoundsMeasured = { measured -> measured.forEach { (index, key, rect) -> keyBounds[rowIndex * 1000 + index] = key to rect } },
                 fontFamily = fontFamily,
                 alwaysShowUppercaseLetters = alwaysShowUppercaseLetters,
                 showSecondarySymbols = showSecondarySymbols,
+                shimmerProgress = shimmerProgress.value,
+                liftPressedKey = tapPreviewStyle == dev.omakey.core.layout.TapPreviewStyle.LIFT,
+            )
+        }
+        }
+        if (interactive && tapPreviewStyle.showsBubble) {
+            dev.omakey.app.keyboard.ui.TapPreviewBubble(
+                tapPreview, theme, fontFamily, ancestor,
+                slim = tapPreviewStyle == dev.omakey.core.layout.TapPreviewStyle.SLIM,
             )
         }
         }

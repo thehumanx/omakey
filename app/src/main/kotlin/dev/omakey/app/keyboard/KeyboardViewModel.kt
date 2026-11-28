@@ -429,6 +429,20 @@ class KeyboardViewModel(
         override fun close() {
             _uiState.update { it.copy(activeExtensionId = null) }
         }
+        /** The same backspace as the key: selection, undo and whole-emoji rules included. The emoji
+         * panel's backspace used to delete through the text editor directly and skipped all three. */
+        override fun deleteBackward(): Boolean {
+            onDeleteCharacter()
+            return canDeleteBackward()
+        }
+    }
+
+    /** Something other than text went into the field (an image from the clipboard panel): the
+     * word being typed and any backspace run no longer describe what's before the cursor. */
+    fun onContentInserted() {
+        undoHistory.breakCoalescing()
+        resetTypingState()
+        refreshSuggestions()
     }
 
     // --- snippets ------------------------------------------------------------------------------
@@ -1659,9 +1673,7 @@ class KeyboardViewModel(
         // sentence), previously untracked by undo entirely. Read the character before deleting
         // it, then record (and coalesce with any immediately preceding run of the same kind —
         // see [UndoHistory.recordBackspace]) so Ctrl+Z-style undo can restore it.
-        val deletedChar = textEditor.textBeforeCursor(1).lastOrNull()
-        textEditor.deleteCharacterBackward()
-        if (deletedChar != null) recordPlainCharDelete(deletedChar)
+        recordPlainCharDelete(textEditor.deleteCharacterBackward())
         refreshSuggestionsAfterDeletion()
     }
 
@@ -1670,9 +1682,9 @@ class KeyboardViewModel(
      * step; every other action that mutates text or moves the cursor calls
      * [UndoHistory.breakCoalescing], so the merge only continues across an unbroken run of exactly
      * this kind of backspace. */
-    private fun recordPlainCharDelete(char: Char) {
-        if (fieldSensitive) return // see pushUndo: nothing from a password field is kept
-        undoHistory.recordBackspace(char)
+    private fun recordPlainCharDelete(removed: String) {
+        if (fieldSensitive || removed.isEmpty()) return // see pushUndo: nothing from a password field is kept
+        undoHistory.recordBackspace(removed)
         _uiState.update { it.copy(canUndo = undoHistory.canUndo, canRedo = undoHistory.canRedo) }
     }
 

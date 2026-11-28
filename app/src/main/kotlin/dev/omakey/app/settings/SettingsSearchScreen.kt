@@ -26,8 +26,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
@@ -165,29 +163,17 @@ private fun SearchField(
         placeholder = { Text("Search settings", style = Omakey.type.row.copy(fontWeight = FontWeight.Normal), color = Omakey.colors.muted) },
         textStyle = Omakey.type.row.copy(fontWeight = FontWeight.Normal),
         leadingIcon = {
-            IconButton(onClick = onBack) {
-                Icon(
-                    imageVector = OmakeyIcons.Back,
-                    contentDescription = "Close search",
-                    modifier = Modifier.size(22.dp),
-                )
-            }
+            dev.omakey.app.design.IconAction(OmakeyIcons.Back, contentDescription = "Close search", onClick = onBack)
         },
         trailingIcon = if (value.text.isEmpty()) null else {
             {
-                IconButton(onClick = onClear) {
-                    Icon(
-                        imageVector = OmakeyIcons.Close,
-                        contentDescription = "Clear search",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(20.dp),
-                    )
-                }
+                dev.omakey.app.design.IconAction(OmakeyIcons.Close, contentDescription = "Clear search", onClick = onClear, tint = Omakey.colors.muted)
             }
         },
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
         keyboardActions = KeyboardActions(onSearch = { onSearch() }),
-        shape = RoundedCornerShape(24.dp),
+        // A pill, like the search row on the main page that opens this.
+        shape = androidx.compose.foundation.shape.CircleShape,
         colors = TextFieldDefaults.colors(
             focusedContainerColor = container,
             unfocusedContainerColor = container,

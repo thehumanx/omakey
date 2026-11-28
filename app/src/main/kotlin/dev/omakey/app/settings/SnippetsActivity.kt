@@ -324,7 +324,7 @@ private fun SnippetRow(s: dev.omakey.core.snippets.Snippet, onClick: () -> Unit)
                 code,
                 style = Omakey.type.caption.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
                 color = c.ink,
-                modifier = Modifier.background(c.tonal, RoundedCornerShape(6.dp)).padding(horizontal = 8.dp, vertical = 4.dp),
+                modifier = Modifier.background(c.tonal, RoundedCornerShape(dev.omakey.app.design.Radius.key)).padding(horizontal = 8.dp, vertical = 4.dp),
             )
         }
     }

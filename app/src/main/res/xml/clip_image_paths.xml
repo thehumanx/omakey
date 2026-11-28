@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Only the clipboard image folder (ClipboardHistoryStore.IMAGES_DIR) is shared, and only
+     through per-paste read grants. -->
+<paths>
+    <files-path name="clipboard_images" path="clipboard_images/" />
+</paths>
