@@ -32,6 +32,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
@@ -89,6 +91,25 @@ class ClipboardHistoryExtension : OmakeyExtension {
         // an affordance too, and a clipboard row is too small to carry two separate ones.
         var actionsFor by remember { mutableStateOf<ClipboardItem?>(null) }
 
+        // Shown for a moment when an image can't go into this field (most plain text boxes).
+        var notice by remember { mutableStateOf<String?>(null) }
+        LaunchedEffect(notice) {
+            if (notice != null) {
+                kotlinx.coroutines.delay(NOTICE_MS)
+                notice = null
+            }
+        }
+        fun paste(item: ClipboardItem) {
+            host.keyFeedback()
+            when (item.contentType) {
+                ClipboardContentType.TEXT -> host.insertText(item.content)
+                ClipboardContentType.IMAGE -> {
+                    val sent = item.imagePath?.let { extensionContext?.textEditor?.insertImage(it) } == true
+                    if (!sent) notice = "This field doesn't take images"
+                }
+            }
+        }
+
         suspend fun reload() {
             items = extensionContext?.clipboardRepository?.recent() ?: emptyList()
         }
@@ -142,7 +163,7 @@ class ClipboardHistoryExtension : OmakeyExtension {
                                 gridBorderWidth = gridBorderWidth,
                                 keyBackground = theme.keyboardBackground.toComposeColor(),
                                 keyBackgroundPressed = theme.keyBackgroundPressed.toComposeColor(),
-                                onClick = { host.keyFeedback(); if (item.contentType == ClipboardContentType.TEXT) host.insertText(item.content) },
+                                onClick = { paste(item) },
                                 onLongClick = { host.keyFeedback(); actionsFor = item },
                             )
                         }
@@ -157,7 +178,7 @@ class ClipboardHistoryExtension : OmakeyExtension {
                                 item = item,
                                 textColor = textColor,
                                 mutedTextColor = mutedTextColor,
-                                onClick = { host.keyFeedback(); if (item.contentType == ClipboardContentType.TEXT) host.insertText(item.content) },
+                                onClick = { paste(item) },
                                 onLongClick = { host.keyFeedback(); actionsFor = item },
                             )
                         }
@@ -177,6 +198,19 @@ class ClipboardHistoryExtension : OmakeyExtension {
             // process, reported as "long-press closes the keyboard." Replaced with a plain
             // in-tree overlay instead of a system Dialog — same trick every other popup in this
             // app (AccentDragPopup, SymbolModeOverlay, KeyboardRoot's own banner) already uses.
+            notice?.let { text ->
+                Text(
+                    text,
+                    color = theme.labelOn(theme.keyBackground).toComposeColor(),
+                    fontSize = 14.sp,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 16.dp)
+                        .background(theme.keyBackground.toComposeColor(), RoundedCornerShape(50))
+                        .padding(horizontal = 16.dp, vertical = 10.dp)
+                        .semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite },
+                )
+            }
             actionsFor?.let { item ->
                 // An in-tree bottom sheet (no system Dialog: the IME window can't host a second
                 // one — see the history of the AlertDialog that used to crash the keyboard here).
@@ -340,3 +374,6 @@ private fun ClipboardImageOrPlaceholder(imagePath: String, mutedTextColor: Color
         }
     }
 }
+
+/** How long the "doesn't take images" note stays up. */
+private const val NOTICE_MS = 2_500L

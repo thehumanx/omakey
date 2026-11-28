@@ -212,6 +212,32 @@ class TextEditor(
         return before.subSequence(before.length - count, before.length).toString()
     }
 
+    /** Whether the field described by [info] says it accepts content of [mimeType] (an app opts in
+     * with `EditorInfo.contentMimeTypes`, e.g. any image type in a chat box). */
+    fun acceptsContent(info: android.view.inputmethod.EditorInfo?, mimeType: String): Boolean {
+        if (info == null) return false
+        return androidx.core.view.inputmethod.EditorInfoCompat.getContentMimeTypes(info)
+            .any { android.content.ClipDescription.compareMimeTypes(mimeType, it) }
+    }
+
+    /** Hands [uri] (content of [mimeType]) to the field through the content-commit API, granting
+     * it read access for this one URI. False when the field doesn't accept that type or refuses
+     * it; the field is left as it was then. */
+    fun commitContent(uri: android.net.Uri, mimeType: String, label: String, info: android.view.inputmethod.EditorInfo?): Boolean {
+        val connection = ic ?: return false
+        if (info == null || !acceptsContent(info, mimeType)) return false
+        val content = androidx.core.view.inputmethod.InputContentInfoCompat(
+            uri,
+            android.content.ClipDescription(label, arrayOf(mimeType)),
+            null,
+        )
+        return androidx.core.view.inputmethod.InputConnectionCompat.commitContent(
+            connection, info, content,
+            androidx.core.view.inputmethod.InputConnectionCompat.INPUT_CONTENT_GRANT_READ_URI_PERMISSION,
+            null,
+        )
+    }
+
     /** Plain text immediately before the cursor, up to [maxChars] — the same
      * `getTextBeforeCursor` [wordAtCursor]/[deleteWordBackward] already use internally, exposed
      * publicly for callers (e.g. the inline calculator) that need to inspect a run of characters

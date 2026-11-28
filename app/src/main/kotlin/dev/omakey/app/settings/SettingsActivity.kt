@@ -36,6 +36,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -56,6 +57,7 @@ import dev.omakey.app.design.OmakeyButton
 import dev.omakey.app.design.PageHeader
 import dev.omakey.app.design.RowTrailing
 import dev.omakey.app.design.SectionLabel
+import dev.omakey.app.design.Radius
 import dev.omakey.app.design.SettingsCard
 import dev.omakey.app.design.SettingsRowLayout
 import dev.omakey.core.icons.OmakeyIcons
@@ -231,6 +233,7 @@ private fun SettingsScreen(
     // actual keycaps rather than only in the picker's own label.
     val previewFontFamily = remember(currentFontId) { dev.omakey.app.keyboard.ui.FontCatalog.resolve(currentFontId) }
     val layoutSettings by layoutPreferences.settings.collectAsState()
+    val gestureSettings by gesturePreferences.settings.collectAsState()
     // Collected once here and passed down. Each of these used to be collected again inside every
     // toggle that read it — five separate collectors on layoutPreferences.settings and three on
     // autocorrectPreferences.settings, so touching any one field recomposed all of them.
@@ -348,6 +351,9 @@ private fun SettingsScreen(
                                     showSecondarySymbols = layoutSettings.secondarySymbolsShown,
                                     fleksySymbols = layoutSettings.fleksySymbols,
                                     interactive = true,
+                                    tapPreviewStyle = layoutSettings.tapPreviewStyle,
+                                    feedback = feedback,
+                                    swipeSensitivity = gestureSettings.swipeSensitivity,
                                 )
                             }
                         }
@@ -562,7 +568,7 @@ private fun SettingsHome(
                     Modifier
                         .fillMaxWidth()
                         .height(48.dp)
-                        .clip(RoundedCornerShape(24.dp))
+                        .clip(androidx.compose.foundation.shape.CircleShape)
                         .background(c.tonal)
                         .clickable(onClickLabel = "Search settings", onClick = onSearch)
                         .padding(horizontal = 16.dp),
@@ -685,6 +691,7 @@ private val SettingsNavSaver = androidx.compose.runtime.saveable.listSaver<Setti
  * [preview] sits above the sections (Appearance's live keyboard). When [scrollTo] is set the list
  * scrolls that section into view; the row inside it then finishes the job (rememberSettingHighlight).
  */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun SettingsSubPage(
     page: SettingsPage,
@@ -695,6 +702,8 @@ private fun SettingsSubPage(
 ) {
     val sections = SettingsIndex.sectionsOf(page)
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    // The pinned preview's height: a section scrolled to the top must land below it, not under it.
+    var previewHeightPx by remember { androidx.compose.runtime.mutableIntStateOf(0) }
     androidx.compose.runtime.LaunchedEffect(scrollTo) {
         val position = sections.indexOf(scrollTo)
         if (position < 0) return@LaunchedEffect
@@ -706,9 +715,9 @@ private fun SettingsSubPage(
         val layout = androidx.compose.runtime.snapshotFlow { listState.layoutInfo }
             .first { it.visibleItemsInfo.isNotEmpty() }
         val item = layout.visibleItemsInfo.firstOrNull { it.index == index }
-        val topShown = item != null && item.offset >= layout.viewportStartOffset &&
+        val topShown = item != null && item.offset >= layout.viewportStartOffset + previewHeightPx &&
             item.offset < layout.viewportEndOffset
-        if (!topShown) listState.animateScrollToItem(index)
+        if (!topShown) listState.animateScrollToItem(index, scrollOffset = -previewHeightPx)
     }
     LazyColumn(
         state = listState,
@@ -717,7 +726,18 @@ private fun SettingsSubPage(
         verticalArrangement = Arrangement.spacedBy(24.dp),
     ) {
         item { PageHeader(title = page.title, onBack = onBack, modifier = Modifier.padding(start = 4.dp)) }
-        if (preview != null) item { preview() }
+        // Pinned under the status bar once the title scrolls away, so a setting far down the page
+        // can be changed and seen at once. Painted with the page's ground and a gap below, so the
+        // rows sliding under it don't show through.
+        if (preview != null) stickyHeader(key = "preview") {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .onSizeChanged { previewHeightPx = it.height }
+                    .background(Omakey.colors.ground)
+                    .padding(bottom = 12.dp),
+            ) { preview() }
+        }
         sections.forEach { key ->
             item(key = key) {
                 when {
@@ -752,8 +772,8 @@ private fun TryItButton(onClick: () -> Unit) {
     Row(
         Modifier
             .height(56.dp)
-            .shadow(6.dp, RoundedCornerShape(18.dp))
-            .clip(RoundedCornerShape(18.dp))
+            .shadow(6.dp, RoundedCornerShape(Radius.control))
+            .clip(RoundedCornerShape(Radius.control))
             .background(c.ink)
             .clickable(role = androidx.compose.ui.semantics.Role.Button, onClickLabel = "Try the keyboard", onClick = onClick)
             .padding(horizontal = 20.dp),

@@ -66,6 +66,18 @@
                 android:resource="@xml/method" />
         </service>
 
+        <!-- Shares a saved clipboard image with the field it is pasted into, one URI at a time
+             (a read grant per paste). Not exported; only the clipboard image folder is served. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.clipimages"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/clip_image_paths" />
+        </provider>
+
     </application>
 
 </manifest>

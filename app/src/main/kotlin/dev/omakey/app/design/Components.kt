@@ -305,7 +305,7 @@ fun <T> Segmented(options: List<Pair<T, String>>, selected: T, onSelect: (T) -> 
             .fillMaxWidth()
             .height(44.dp)
             .background(c.tonal, RoundedCornerShape(Radius.control))
-            .padding(3.dp),
+            .padding(SEGMENT_INSET),
     ) {
         val segment = maxWidth / options.size
         val x by animateDpAsState(segment * index.coerceAtLeast(0), spring(stiffness = 700f), label = "segment")
@@ -314,8 +314,7 @@ fun <T> Segmented(options: List<Pair<T, String>>, selected: T, onSelect: (T) -> 
                 .offset(x = x)
                 .width(segment)
                 .fillMaxHeight()
-                // In dark the card is darker than the track, so the thumb steps up instead.
-                .background(if (c.isDark) Color(0xFF3A3A3A) else c.surface, RoundedCornerShape(11.dp)),
+                .background(c.raised, RoundedCornerShape(SEGMENT_THUMB_RADIUS)),
         )
         Row(Modifier.fillMaxWidth().fillMaxHeight()) {
             options.forEach { (value, label) ->
@@ -324,7 +323,7 @@ fun <T> Segmented(options: List<Pair<T, String>>, selected: T, onSelect: (T) -> 
                     Modifier
                         .weight(1f)
                         .fillMaxHeight()
-                        .clip(RoundedCornerShape(11.dp))
+                        .clip(RoundedCornerShape(SEGMENT_THUMB_RADIUS))
                         .selectable(selected = isOn, role = Role.RadioButton, onClick = { onSelect(value) }),
                     contentAlignment = Alignment.Center,
                 ) {
@@ -334,6 +333,11 @@ fun <T> Segmented(options: List<Pair<T, String>>, selected: T, onSelect: (T) -> 
         }
     }
 }
+
+private val SEGMENT_INSET = 3.dp
+
+/** The track's radius less its inset, so the thumb's corners run parallel to the track's. */
+private val SEGMENT_THUMB_RADIUS = Radius.control - SEGMENT_INSET
 
 /** One of several choices drawn as a tile: tonal when not chosen, an ink ring when chosen. */
 @Composable

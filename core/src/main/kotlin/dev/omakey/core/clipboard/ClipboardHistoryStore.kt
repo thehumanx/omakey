@@ -90,7 +90,7 @@ class ClipboardHistoryStore(context: Context, private val dao: ClipboardDao) {
         }
     }
 
-    private companion object {
+    companion object {
         const val IMAGES_DIR = "clipboard_images"
         const val KEEP = 50
 

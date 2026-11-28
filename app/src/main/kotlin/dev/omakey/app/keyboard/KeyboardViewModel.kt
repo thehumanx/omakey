@@ -437,6 +437,14 @@ class KeyboardViewModel(
         }
     }
 
+    /** Something other than text went into the field (an image from the clipboard panel): the
+     * word being typed and any backspace run no longer describe what's before the cursor. */
+    fun onContentInserted() {
+        undoHistory.breakCoalescing()
+        resetTypingState()
+        refreshSuggestions()
+    }
+
     // --- snippets ------------------------------------------------------------------------------
     // Whether the phone is locked (a reply typed from a lock-screen notification). The service
     // sets it each time the keyboard opens and when the phone is unlocked. Secrets hide while it

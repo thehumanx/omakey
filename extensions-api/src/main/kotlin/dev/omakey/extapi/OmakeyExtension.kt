@@ -23,6 +23,11 @@ sealed interface ExtensionIcon {
 interface TextEditorFacade {
     fun insertText(text: String)
     fun deleteBackward(count: Int = 1)
+
+    /** Hands the image saved at [imagePath] (a [ClipboardItem.imagePath]) to the field, the way a
+     * chat app receives a sticker. False when the field doesn't take images or the file is gone;
+     * nothing is inserted then. */
+    fun insertImage(imagePath: String): Boolean = false
 }
 
 interface ClipboardRepository {
