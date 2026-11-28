@@ -40,11 +40,11 @@ attach the map to a release: it undoes the obfuscation.
    shows:
    ```
    <en-US>
-   - A new look for Settings and the keyboard's panels
-   - Snippets: your email, phone or passwords a tap away; type a shortcut like @@ to insert one
-   - Split keyboard on wide screens, compact mode, and hold space to select all
-   - Autocorrect leaves names and slang alone
-   - Choose and reorder Quick access tiles
+   - Fixed a crash when opening emoji
+   - One backspace deletes a whole emoji, flags and skin tones included
+   - Tap a copied image in clipboard history to paste it into chat apps
+   - Try your settings on the keyboard preview in Settings: popups, Shift, swipes, sound
+   - The preview stays at the top while you scroll
    </en-US>
    ```
 6. **Next** shows the review page. Warnings (yellow) don't block a release. Errors (red) do. Read
